@@ -11,29 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions.OutputGroupFileModes;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import java.util.Collection;
+/** Interface for [BuildEvent]s reporting artifacts as named sets  */
+interface EventReportingArtifacts : BuildEvent {
+    /** Pair of artifacts and a [CompletionContext].  */
+    class ReportedArtifacts(
+        artifacts: MutableCollection<NestedSet<Artifact?>?>?,
+        completionContext: CompletionContext?
+    ) {
+        val artifacts: MutableCollection<NestedSet<Artifact?>?>?
+        val completionContext: CompletionContext?
 
-/** Interface for {@link BuildEvent}s reporting artifacts as named sets */
-public interface EventReportingArtifacts extends BuildEvent {
-
-  /** Pair of artifacts and a {@link CompletionContext}. */
-  class ReportedArtifacts {
-    public final Collection<NestedSet<Artifact>> artifacts;
-    public final CompletionContext completionContext;
-
-    public ReportedArtifacts(
-        Collection<NestedSet<Artifact>> artifacts, CompletionContext completionContext) {
-      this.artifacts = artifacts;
-      this.completionContext = completionContext;
+        init {
+            this.artifacts = artifacts
+            this.completionContext = completionContext
+        }
     }
-  }
 
-  /** The sets of artifacts this build event assumes already known in the build event stream. */
-  ReportedArtifacts reportedArtifacts(OutputGroupFileModes outputGroupFileModes);
+    /** The sets of artifacts this build event assumes already known in the build event stream.  */
+    fun reportedArtifacts(outputGroupFileModes: OutputGroupFileModes?): ReportedArtifacts?
 }

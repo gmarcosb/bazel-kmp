@@ -11,62 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.RETURNS_MOCKS;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-
-import junit.framework.TestCase;
-import org.junit.runner.Request;
-import org.junit.runner.Runner;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.internal.junit4.MemoizingRequest.getRunner
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import junit.framework.TestCase
+import org.mockito.Mockito
 
 /**
- * Tests for {@code MemoizingRequest}.
+ * Tests for `MemoizingRequest`.
  */
-public class MemoizingRequestTest extends TestCase {
-  private Request mockRequestDelegate;
+class MemoizingRequestTest : TestCase() {
+    private var mockRequestDelegate: org.junit.runner.Request? = null
 
-  @Override
-  protected void setUp() throws Exception {
-    super.setUp();
-    mockRequestDelegate = mock(Request.class, RETURNS_MOCKS);
-  }
+    @Throws(java.lang.Exception::class)
+    override fun setUp() {
+        super.setUp()
+        mockRequestDelegate =
+            Mockito.mock<org.junit.runner.Request>(org.junit.runner.Request::class.java, Mockito.RETURNS_MOCKS)
+    }
 
-  public void testConstructorDoesNoWork() {
-    new MemoizingRequest(mockRequestDelegate);
+    fun testConstructorDoesNoWork() {
+        com.google.testing.junit.runner.internal.junit4.MemoizingRequest(mockRequestDelegate)
 
-    verifyNoMoreInteractions(mockRequestDelegate);
-  }
+        Mockito.verifyNoMoreInteractions(mockRequestDelegate)
+    }
 
-  public void testMemoizesRunner() {
-    MemoizingRequest memoizingRequest = new MemoizingRequest(mockRequestDelegate);
+    fun testMemoizesRunner() {
+        val memoizingRequest: com.google.testing.junit.runner.internal.junit4.MemoizingRequest =
+            com.google.testing.junit.runner.internal.junit4.MemoizingRequest(mockRequestDelegate)
 
-    Runner firstRunner = memoizingRequest.getRunner();
-    Runner secondRunner = memoizingRequest.getRunner();
+        val firstRunner: org.junit.runner.Runner? = memoizingRequest.getRunner()
+        val secondRunner: org.junit.runner.Runner? = memoizingRequest.getRunner()
 
-    assertThat(secondRunner).isSameInstanceAs(firstRunner);
-    verify(mockRequestDelegate).getRunner();
-    verifyNoMoreInteractions(mockRequestDelegate);
-  }
+        Truth.assertThat(secondRunner).isSameInstanceAs(firstRunner)
+        Mockito.verify<org.junit.runner.Request?>(mockRequestDelegate).getRunner()
+        Mockito.verifyNoMoreInteractions(mockRequestDelegate)
+    }
 
-  public void testOverridingCreateRunner() {
-    final Runner stubRunner = mock(Runner.class);
-    MemoizingRequest memoizingRequest = new MemoizingRequest(mockRequestDelegate) {
-      @Override
-      protected Runner createRunner(Request delegate) {
-        return stubRunner;
-      }
-    };
+    fun testOverridingCreateRunner() {
+        val stubRunner: org.junit.runner.Runner? =
+            Mockito.mock<org.junit.runner.Runner?>(org.junit.runner.Runner::class.java)
+        val memoizingRequest: com.google.testing.junit.runner.internal.junit4.MemoizingRequest =
+            object : com.google.testing.junit.runner.internal.junit4.MemoizingRequest(mockRequestDelegate) {
+                protected override fun createRunner(delegate: org.junit.runner.Request?): org.junit.runner.Runner? {
+                    return stubRunner
+                }
+            }
 
-    Runner firstRunner = memoizingRequest.getRunner();
-    Runner secondRunner = memoizingRequest.getRunner();
+        val firstRunner: org.junit.runner.Runner? = memoizingRequest.getRunner()
+        val secondRunner: org.junit.runner.Runner? = memoizingRequest.getRunner()
 
-    assertThat(firstRunner).isSameInstanceAs(stubRunner);
-    assertThat(secondRunner).isSameInstanceAs(firstRunner);
-    verifyNoMoreInteractions(mockRequestDelegate);
-  }
+        Truth.assertThat(firstRunner).isSameInstanceAs(stubRunner)
+        Truth.assertThat(secondRunner).isSameInstanceAs(firstRunner)
+        Mockito.verifyNoMoreInteractions(mockRequestDelegate)
+    }
 }

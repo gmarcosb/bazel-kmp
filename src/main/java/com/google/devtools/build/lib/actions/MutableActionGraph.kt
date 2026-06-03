@@ -11,28 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
+import com.google.devtools.build.lib.actions.ActionConflictException
+import com.google.devtools.build.lib.actions.ActionGraph
 
-/** A mutable action graph. Implementations of this interface must be thread-safe. */
-public interface MutableActionGraph extends ActionGraph {
+/** A mutable action graph. Implementations of this interface must be thread-safe.  */
+interface MutableActionGraph : ActionGraph {
+    /**
+     * Attempts to register the action. If any of the action's outputs already has a generating
+     * action, and the two actions are not compatible, then an [ActionConflictException] is
+     * thrown. The internal data structure may be partially modified when that happens; it is not
+     * guaranteed that all potential conflicts are detected, but at least one of them is.
+     * 
+     * 
+     * For example, take three actions A, B, and C, where A creates outputs a and b, B creates just
+     * b, and C creates c and b. There are two potential conflicts in this case, between A and B, and
+     * between B and C. Depending on the ordering of calls to this method and the ordering of outputs
+     * in the action output lists, either one or two conflicts are detected: if B is registered first,
+     * then both conflicts are detected; if either A or C is registered first, then only one conflict
+     * is detected.
+     */
+    @Throws(ActionConflictException::class, java.lang.InterruptedException::class)
+    fun registerAction(action: ActionAnalysisMetadata?)
 
-  /**
-   * Attempts to register the action. If any of the action's outputs already has a generating
-   * action, and the two actions are not compatible, then an {@link ActionConflictException} is
-   * thrown. The internal data structure may be partially modified when that happens; it is not
-   * guaranteed that all potential conflicts are detected, but at least one of them is.
-   *
-   * <p>For example, take three actions A, B, and C, where A creates outputs a and b, B creates just
-   * b, and C creates c and b. There are two potential conflicts in this case, between A and B, and
-   * between B and C. Depending on the ordering of calls to this method and the ordering of outputs
-   * in the action output lists, either one or two conflicts are detected: if B is registered first,
-   * then both conflicts are detected; if either A or C is registered first, then only one conflict
-   * is detected.
-   */
-  void registerAction(ActionAnalysisMetadata action)
-      throws ActionConflictException, InterruptedException;
-
-  /** Returns the size of the action graph. */
-  int getSize();
+    /** Returns the size of the action graph.  */
+    fun getSize(): Int
 }

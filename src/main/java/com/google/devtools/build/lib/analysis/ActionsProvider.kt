@@ -11,44 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.starlarkbuildapi.ActionsInfoProviderApi;
-import java.util.HashMap;
-import java.util.Map;
-import net.starlark.java.eval.Dict;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
  * This provides a view over the actions that were created during the analysis of a rule
  * (not including actions for its transitive dependencies).
  */
-public final class ActionsProvider extends BuiltinProvider<StructImpl>
-    implements ActionsInfoProviderApi {
+object ActionsProvider : BuiltinProvider<StructImpl?>(), ActionsInfoProviderApi {
+    /** The ActionsProvider singleton instance.  */
+    val INSTANCE: ActionsProvider = ActionsProvider()
 
-  /** The ActionsProvider singleton instance. */
-  public static final ActionsProvider INSTANCE = new ActionsProvider();
-
-  private ActionsProvider() {
-    super("Actions", StructImpl.class);
-  }
-
-  /** Factory method for creating instances of the Actions provider. */
-  public static StructImpl create(Iterable<ActionAnalysisMetadata> actions) {
-    Map<Artifact, ActionAnalysisMetadata> map = new HashMap<>();
-    for (ActionAnalysisMetadata action : actions) {
-      for (Artifact artifact : action.getOutputs()) {
-        // In the case that two actions generated the same artifact, the first wins. They
-        // ought to be equal anyway.
-        map.putIfAbsent(artifact, action);
-      }
+    /** Factory method for creating instances of the Actions provider.  */
+    fun create(actions: Iterable<ActionAnalysisMetadata>): StructImpl {
+        val map: MutableMap<Artifact?, ActionAnalysisMetadata?> = HashMap<Artifact?, ActionAnalysisMetadata?>()
+        for (action in actions) {
+            for (artifact in action.getOutputs()) {
+                // In the case that two actions generated the same artifact, the first wins. They
+                // ought to be equal anyway.
+                map.putIfAbsent(artifact, action)
+            }
+        }
+        val fields: com.google.common.collect.ImmutableMap<String?, Any?> =
+            com.google.common.collect.ImmutableMap.of<K?, V?>("by_file", Dict.immutableCopyOf(map))
+        return StarlarkInfo.create(INSTANCE, fields)
     }
-    ImmutableMap<String, Object> fields = ImmutableMap.of("by_file", Dict.immutableCopyOf(map));
-    return StarlarkInfo.create(INSTANCE, fields);
-  }
 }

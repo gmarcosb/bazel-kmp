@@ -11,14 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import com.google.devtools.build.lib.skyframe.ActionExecutionValue;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * An event that is fired after an action completes successfully.
- *
- * <p>See {@link ActionCompletionEvent} for an event that fires regardless of success.
+ * 
+ * 
+ * See [ActionCompletionEvent] for an event that fires regardless of success.
  */
-public record ActionSuccessEvent(ActionExecutionValue actionExecutionValue) implements Postable {}
+class ActionSuccessEvent(actionExecutionValue: ActionExecutionValue?) : Postable {
+    val actionExecutionValue: ActionExecutionValue?
+
+    init {
+        this.actionExecutionValue = actionExecutionValue
+    }
+}

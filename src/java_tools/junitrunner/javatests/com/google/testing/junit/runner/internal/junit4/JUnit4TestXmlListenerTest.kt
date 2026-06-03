@@ -11,282 +11,317 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import com.google.testing.junit.runner.internal.SignalHandlers;
-import com.google.testing.junit.runner.model.TestSuiteModel;
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Supplier;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.runner.Description;
-import org.junit.runner.JUnitCore;
-import org.junit.runner.Request;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.InOrder;
-import sun.misc.Signal;
-import sun.misc.SignalHandler;
+import com.google.common.truth.Truth
+import com.google.devtools.build.docgen.annot.GlobalMethods.Environment.getDescription
+import com.google.testing.junit.runner.internal.SignalHandlers
+import com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory
+import com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory.cancelRun
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestNameListener.testRunStarted
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestXmlListener
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestXmlListener.testRunStarted
+import com.google.testing.junit.runner.internal.junit4.MemoizingRequest.getRunner
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.junit4.JUnit4Runner.run
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import com.google.testing.junit.runner.model.TestNode.testFailure
+import com.google.testing.junit.runner.model.TestNode.testSkipped
+import com.google.testing.junit.runner.model.TestNode.testSuppressed
+import com.google.testing.junit.runner.model.TestSuiteModel
+import com.google.testing.junit.runner.model.TestSuiteModel.testFailure
+import com.google.testing.junit.runner.model.TestSuiteModel.testRunInterrupted
+import com.google.testing.junit.runner.model.TestSuiteModel.testSkipped
+import com.google.testing.junit.runner.model.TestSuiteModel.testSuppressed
+import com.google.testing.junit.runner.model.TestSuiteModel.writeAsXml
+import com.google.testing.junit.runner.model.TestSuiteNode.getChildren
+import com.google.testing.junit.runner.model.TestSuiteNode.testFailure
+import com.google.testing.junit.runner.model.TestSuiteNode.testSkipped
+import com.google.testing.junit.runner.model.TestSuiteNode.testSuppressed
+import net.starlark.java.syntax.Identifier.getName
+import org.junit.Assume
+import org.junit.Before
+import org.junit.BeforeClass
+import org.junit.Ignore
+import org.junit.runner.JUnitCore
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.ArgumentMatchers
+import org.mockito.InOrder
+import org.mockito.Mockito
+import java.io.PrintStream
 
 /**
- * Tests for {@link JUnit4TestXmlListener}
+ * Tests for [JUnit4TestXmlListener]
  */
-@RunWith(JUnit4.class)
-public class JUnit4TestXmlListenerTest {
-  private static final String CHARSET = "UTF-8";
-  private final FakeSignalHandlers fakeSignalHandlers = new FakeSignalHandlers();
-  private final ByteArrayOutputStream errStream = new ByteArrayOutputStream();
-  private PrintStream errPrintStream;
+@RunWith(JUnit4::class)
+class JUnit4TestXmlListenerTest {
+    private val fakeSignalHandlers = FakeSignalHandlers()
+    private val errStream: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+    private var errPrintStream: PrintStream? = null
 
-  @Before
-  public void createErrPrintStream() throws Exception {
-    errPrintStream = new PrintStream(errStream, true, CHARSET);
-  }
-
-  @Test
-  public void signalHandlerWritesXml() throws Exception {
-    TestSuiteModelSupplier mockModelSupplier = mock(TestSuiteModelSupplier.class);
-    TestSuiteModel mockModel = mock(TestSuiteModel.class);
-    CancellableRequestFactory mockRequestFactory = mock(CancellableRequestFactory.class);
-    OutputStream mockXmlStream = mock(OutputStream.class);
-    JUnit4TestXmlListener listener = new JUnit4TestXmlListener(
-        mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream);
-
-    Request request = Request.classWithoutSuiteMethod(PassingTest.class);
-    Description suiteDescription = request.getRunner().getDescription();
-
-    when(mockModelSupplier.get()).thenReturn(mockModel);
-
-    listener.testRunStarted(suiteDescription);
-    assertThat(fakeSignalHandlers.handlers).hasSize(1);
-
-    fakeSignalHandlers.handlers.get(0).handle(new Signal("TERM"));
-
-    String errOutput = errStream.toString(CHARSET);
-    assertWithMessage("expected signal name in stderr")
-        .that(errOutput.contains("SIGTERM"))
-        .isTrue();
-    assertWithMessage("expected message in stderr")
-        .that(errOutput.contains("Done writing test XML"))
-        .isTrue();
-
-    InOrder inOrder = inOrder(mockRequestFactory, mockModel);
-    inOrder.verify(mockRequestFactory).cancelRun();
-    inOrder.verify(mockModel).testRunInterrupted();
-    inOrder.verify(mockModel).writeAsXml(mockXmlStream);
-  }
-
-  @Test
-  public void writesXmlAtTestEnd() throws Exception {
-    TestSuiteModelSupplier mockModelSupplier = mock(TestSuiteModelSupplier.class);
-    TestSuiteModel mockModel = mock(TestSuiteModel.class);
-    CancellableRequestFactory mockRequestFactory = mock(CancellableRequestFactory.class);
-    OutputStream mockXmlStream = mock(OutputStream.class);
-    JUnit4TestXmlListener listener = new JUnit4TestXmlListener(
-        mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream);
-
-    when(mockModelSupplier.get()).thenReturn(mockModel);
-
-    JUnitCore core = new JUnitCore();
-    core.addListener(listener);
-    core.run(Request.classWithoutSuiteMethod(PassingTest.class));
-
-    assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0);
-    verify(mockModel).writeAsXml(mockXmlStream);
-    verify(mockRequestFactory, never()).cancelRun();
-  }
-
-  @Test
-  public void assumptionViolationsAreReportedAsSkippedTests() throws Exception {
-    TestSuiteModelSupplier mockModelSupplier = mock(TestSuiteModelSupplier.class);
-    TestSuiteModel mockModel = mock(TestSuiteModel.class);
-    CancellableRequestFactory mockRequestFactory = mock(CancellableRequestFactory.class);
-    OutputStream mockXmlStream = mock(OutputStream.class);
-    JUnit4TestXmlListener listener = new JUnit4TestXmlListener(
-        mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream);
-
-    Request request = Request.classWithoutSuiteMethod(TestWithAssumptionViolation.class);
-    Description suiteDescription = request.getRunner().getDescription();
-    Description testDescription = suiteDescription.getChildren().get(0);
-
-    when(mockModelSupplier.get()).thenReturn(mockModel);
-
-    JUnitCore core = new JUnitCore();
-    core.addListener(listener);
-    core.run(request);
-
-    assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0);
-    InOrder inOrder = inOrder(mockModel);
-    inOrder.verify(mockModel).testSkipped(testDescription);
-    inOrder.verify(mockModel).writeAsXml(mockXmlStream);
-    verify(mockRequestFactory, never()).cancelRun();
-  }
-
-  @Test
-  public void assumptionViolationsAtSuiteLevelAreReportedAsSkippedSuite() throws Exception {
-    TestSuiteModelSupplier mockModelSupplier = mock(TestSuiteModelSupplier.class);
-    TestSuiteModel mockModel = mock(TestSuiteModel.class);
-    CancellableRequestFactory mockRequestFactory = mock(CancellableRequestFactory.class);
-    OutputStream mockXmlStream = mock(OutputStream.class);
-    JUnit4TestXmlListener listener = new JUnit4TestXmlListener(
-        mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream);
-
-    Request request = Request.classWithoutSuiteMethod(
-        TestWithAssumptionViolationOnTheSuiteLevel.class);
-    Description suiteDescription = request.getRunner().getDescription();
-
-    when(mockModelSupplier.get()).thenReturn(mockModel);
-
-    JUnitCore core = new JUnitCore();
-    core.addListener(listener);
-    core.run(request);
-
-    assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0);
-    InOrder inOrder = inOrder(mockModel);
-    inOrder.verify(mockModel).testSkipped(suiteDescription);
-    inOrder.verify(mockModel).writeAsXml(mockXmlStream);
-    verify(mockRequestFactory, never()).cancelRun();
-  }
-
-  @Test
-  public void failuresAreReported() throws Exception {
-    TestSuiteModelSupplier mockModelSupplier = mock(TestSuiteModelSupplier.class);
-    TestSuiteModel mockModel = mock(TestSuiteModel.class);
-    CancellableRequestFactory mockRequestFactory = mock(CancellableRequestFactory.class);
-    OutputStream mockXmlStream = mock(OutputStream.class);
-    JUnit4TestXmlListener listener = new JUnit4TestXmlListener(
-        mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream);
-
-    Request request = Request.classWithoutSuiteMethod(FailingTest.class);
-    Description suiteDescription = request.getRunner().getDescription();
-    Description testDescription = suiteDescription.getChildren().get(0);
-
-    when(mockModelSupplier.get()).thenReturn(mockModel);
-
-    JUnitCore core = new JUnitCore();
-    core.addListener(listener);
-    core.run(request);
-
-    assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0);
-    InOrder inOrder = inOrder(mockModel);
-    inOrder.verify(mockModel).testFailure(eq(testDescription), any(Throwable.class));
-    inOrder.verify(mockModel).writeAsXml(mockXmlStream);
-    verify(mockRequestFactory, never()).cancelRun();
-  }
-
-  @Test
-  public void ignoredTestAreReportedAsSuppressedTests() throws Exception {
-    TestSuiteModelSupplier mockModelSupplier = mock(TestSuiteModelSupplier.class);
-    TestSuiteModel mockModel = mock(TestSuiteModel.class);
-    CancellableRequestFactory mockRequestFactory = mock(CancellableRequestFactory.class);
-    OutputStream mockXmlStream = mock(OutputStream.class);
-    JUnit4TestXmlListener listener = new JUnit4TestXmlListener(
-        mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream);
-
-    Request request = Request.classWithoutSuiteMethod(TestWithIgnoredTestCase.class);
-    Description suiteDescription = request.getRunner().getDescription();
-    Description testDescription = suiteDescription.getChildren().get(0);
-
-    when(mockModelSupplier.get()).thenReturn(mockModel);
-
-    JUnitCore core = new JUnitCore();
-    core.addListener(listener);
-    core.run(request);
-
-    assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0);
-    InOrder inOrder = inOrder(mockModel);
-    inOrder.verify(mockModel).testSuppressed(testDescription);
-    inOrder.verify(mockModel).writeAsXml(mockXmlStream);
-    verify(mockRequestFactory, never()).cancelRun();
-  }
-
-  /**
-   * Test with a method that always passes.
-   */
-  public static class PassingTest {
-    @Test
-    public void alwaysPasses() {
-    }
-  }
-
-
-  /**
-   * Test with a method that always fails.
-   */
-  public static class FailingTest {
-    @Test
-    public void alwaysFails() {
-      fail();
-    }
-  }
-
-
-  /**
-   * Test with a method that is always skipped.
-   */
-  public static class TestWithAssumptionViolation {
-    @Test
-    public void alwaysSkipped() {
-      assumeTrue(false);
-    }
-  }
-
-  /**
-   * Test with a method that is always skipped.
-   */
-  public static class TestWithAssumptionViolationOnTheSuiteLevel {
-    @BeforeClass
-    public static void failedSuiteLevelAssumption() {
-      assumeTrue(false);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createErrPrintStream() {
+        errPrintStream = PrintStream(errStream, true, CHARSET)
     }
 
-    @Test
-    public void fakeTest() {}
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun signalHandlerWritesXml() {
+        val mockModelSupplier: TestSuiteModelSupplier =
+            Mockito.mock<TestSuiteModelSupplier>(TestSuiteModelSupplier::class.java)
+        val mockModel: TestSuiteModel? = Mockito.mock<TestSuiteModel?>(TestSuiteModel::class.java)
+        val mockRequestFactory: CancellableRequestFactory =
+            Mockito.mock<CancellableRequestFactory>(CancellableRequestFactory::class.java)
+        val mockXmlStream: java.io.OutputStream? = Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+        val listener: JUnit4TestXmlListener = JUnit4TestXmlListener(
+            mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream
+        )
 
-  public static class TestWithIgnoredTestCase {
-    @Test
-    @Ignore
-    public void alwaysIgnored() {
+        val request: org.junit.runner.Request =
+            org.junit.runner.Request.classWithoutSuiteMethod(PassingTest::class.java)
+        val suiteDescription: org.junit.runner.Description = request.getRunner().getDescription()
 
+        Mockito.`when`<TestSuiteModel?>(mockModelSupplier.get()).thenReturn(mockModel)
+
+        listener.testRunStarted(suiteDescription)
+        Truth.assertThat(fakeSignalHandlers.handlers).hasSize(1)
+
+        fakeSignalHandlers.handlers.get(0).handle(sun.misc.Signal("TERM"))
+
+        val errOutput = errStream.toString(CHARSET)
+        Truth.assertWithMessage("expected signal name in stderr")
+            .that(errOutput.contains("SIGTERM"))
+            .isTrue()
+        Truth.assertWithMessage("expected message in stderr")
+            .that(errOutput.contains("Done writing test XML"))
+            .isTrue()
+
+        val inOrder: InOrder = Mockito.inOrder(mockRequestFactory, mockModel)
+        inOrder.verify<CancellableRequestFactory?>(mockRequestFactory).cancelRun()
+        inOrder.verify<TestSuiteModel?>(mockModel).testRunInterrupted()
+        inOrder.verify<TestSuiteModel?>(mockModel).writeAsXml(mockXmlStream)
     }
-  }
 
-  private static class FakeSignalHandlers extends SignalHandlers {
-    public List<SignalHandler> handlers = new ArrayList<>();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun writesXmlAtTestEnd() {
+        val mockModelSupplier: TestSuiteModelSupplier =
+            Mockito.mock<TestSuiteModelSupplier>(TestSuiteModelSupplier::class.java)
+        val mockModel: TestSuiteModel? = Mockito.mock<TestSuiteModel?>(TestSuiteModel::class.java)
+        val mockRequestFactory: CancellableRequestFactory =
+            Mockito.mock<CancellableRequestFactory>(CancellableRequestFactory::class.java)
+        val mockXmlStream: java.io.OutputStream? = Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+        val listener: JUnit4TestXmlListener = JUnit4TestXmlListener(
+            mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream
+        )
 
-    public FakeSignalHandlers() {
-      super(null);
+        Mockito.`when`<TestSuiteModel?>(mockModelSupplier.get()).thenReturn(mockModel)
+
+        val core: JUnitCore = JUnitCore()
+        core.addListener(listener)
+        core.run(org.junit.runner.Request.classWithoutSuiteMethod(PassingTest::class.java))
+
+        Truth.assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0)
+        Mockito.verify<TestSuiteModel?>(mockModel).writeAsXml(mockXmlStream)
+        Mockito.verify<CancellableRequestFactory?>(mockRequestFactory, Mockito.never()).cancelRun()
     }
 
-    @Override
-    public void installHandler(Signal signal, SignalHandler signalHandler) {
-      if (signal.getName().equals("TERM")) {
-        handlers.add(signalHandler);
-      }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun assumptionViolationsAreReportedAsSkippedTests() {
+        val mockModelSupplier: TestSuiteModelSupplier =
+            Mockito.mock<TestSuiteModelSupplier>(TestSuiteModelSupplier::class.java)
+        val mockModel: TestSuiteModel? = Mockito.mock<TestSuiteModel?>(TestSuiteModel::class.java)
+        val mockRequestFactory: CancellableRequestFactory =
+            Mockito.mock<CancellableRequestFactory>(CancellableRequestFactory::class.java)
+        val mockXmlStream: java.io.OutputStream? = Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+        val listener: JUnit4TestXmlListener = JUnit4TestXmlListener(
+            mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream
+        )
+
+        val request: org.junit.runner.Request =
+            org.junit.runner.Request.classWithoutSuiteMethod(TestWithAssumptionViolation::class.java)
+        val suiteDescription: org.junit.runner.Description = request.getRunner().getDescription()
+        val testDescription: org.junit.runner.Description? = suiteDescription.getChildren().get(0)
+
+        Mockito.`when`<TestSuiteModel?>(mockModelSupplier.get()).thenReturn(mockModel)
+
+        val core: JUnitCore = JUnitCore()
+        core.addListener(listener)
+        core.run(request)
+
+        Truth.assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0)
+        val inOrder: InOrder = Mockito.inOrder(mockModel)
+        inOrder.verify<TestSuiteModel?>(mockModel).testSkipped(testDescription)
+        inOrder.verify<TestSuiteModel?>(mockModel).writeAsXml(mockXmlStream)
+        Mockito.verify<CancellableRequestFactory?>(mockRequestFactory, Mockito.never()).cancelRun()
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun assumptionViolationsAtSuiteLevelAreReportedAsSkippedSuite() {
+        val mockModelSupplier: TestSuiteModelSupplier =
+            Mockito.mock<TestSuiteModelSupplier>(TestSuiteModelSupplier::class.java)
+        val mockModel: TestSuiteModel? = Mockito.mock<TestSuiteModel?>(TestSuiteModel::class.java)
+        val mockRequestFactory: CancellableRequestFactory =
+            Mockito.mock<CancellableRequestFactory>(CancellableRequestFactory::class.java)
+        val mockXmlStream: java.io.OutputStream? = Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+        val listener: JUnit4TestXmlListener = JUnit4TestXmlListener(
+            mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream
+        )
+
+        val request: org.junit.runner.Request = org.junit.runner.Request.classWithoutSuiteMethod(
+            TestWithAssumptionViolationOnTheSuiteLevel::class.java
+        )
+        val suiteDescription: org.junit.runner.Description = request.getRunner().getDescription()
+
+        Mockito.`when`<TestSuiteModel?>(mockModelSupplier.get()).thenReturn(mockModel)
+
+        val core: JUnitCore = JUnitCore()
+        core.addListener(listener)
+        core.run(request)
+
+        Truth.assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0)
+        val inOrder: InOrder = Mockito.inOrder(mockModel)
+        inOrder.verify<TestSuiteModel?>(mockModel).testSkipped(suiteDescription)
+        inOrder.verify<TestSuiteModel?>(mockModel).writeAsXml(mockXmlStream)
+        Mockito.verify<CancellableRequestFactory?>(mockRequestFactory, Mockito.never()).cancelRun()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun failuresAreReported() {
+        val mockModelSupplier: TestSuiteModelSupplier =
+            Mockito.mock<TestSuiteModelSupplier>(TestSuiteModelSupplier::class.java)
+        val mockModel: TestSuiteModel? = Mockito.mock<TestSuiteModel?>(TestSuiteModel::class.java)
+        val mockRequestFactory: CancellableRequestFactory =
+            Mockito.mock<CancellableRequestFactory>(CancellableRequestFactory::class.java)
+        val mockXmlStream: java.io.OutputStream? = Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+        val listener: JUnit4TestXmlListener = JUnit4TestXmlListener(
+            mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream
+        )
+
+        val request: org.junit.runner.Request =
+            org.junit.runner.Request.classWithoutSuiteMethod(FailingTest::class.java)
+        val suiteDescription: org.junit.runner.Description = request.getRunner().getDescription()
+        val testDescription: org.junit.runner.Description? = suiteDescription.getChildren().get(0)
+
+        Mockito.`when`<TestSuiteModel?>(mockModelSupplier.get()).thenReturn(mockModel)
+
+        val core: JUnitCore = JUnitCore()
+        core.addListener(listener)
+        core.run(request)
+
+        Truth.assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0)
+        val inOrder: InOrder = Mockito.inOrder(mockModel)
+        inOrder.verify<TestSuiteModel?>(mockModel).testFailure(
+            ArgumentMatchers.eq<org.junit.runner.Description?>(testDescription),
+            ArgumentMatchers.any<Throwable?>(Throwable::class.java)
+        )
+        inOrder.verify<TestSuiteModel?>(mockModel).writeAsXml(mockXmlStream)
+        Mockito.verify<CancellableRequestFactory?>(mockRequestFactory, Mockito.never()).cancelRun()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun ignoredTestAreReportedAsSuppressedTests() {
+        val mockModelSupplier: TestSuiteModelSupplier =
+            Mockito.mock<TestSuiteModelSupplier>(TestSuiteModelSupplier::class.java)
+        val mockModel: TestSuiteModel? = Mockito.mock<TestSuiteModel?>(TestSuiteModel::class.java)
+        val mockRequestFactory: CancellableRequestFactory =
+            Mockito.mock<CancellableRequestFactory>(CancellableRequestFactory::class.java)
+        val mockXmlStream: java.io.OutputStream? = Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+        val listener: JUnit4TestXmlListener = JUnit4TestXmlListener(
+            mockModelSupplier, mockRequestFactory, fakeSignalHandlers, mockXmlStream, errPrintStream
+        )
+
+        val request: org.junit.runner.Request =
+            org.junit.runner.Request.classWithoutSuiteMethod(TestWithIgnoredTestCase::class.java)
+        val suiteDescription: org.junit.runner.Description = request.getRunner().getDescription()
+        val testDescription: org.junit.runner.Description? = suiteDescription.getChildren().get(0)
+
+        Mockito.`when`<TestSuiteModel?>(mockModelSupplier.get()).thenReturn(mockModel)
+
+        val core: JUnitCore = JUnitCore()
+        core.addListener(listener)
+        core.run(request)
+
+        Truth.assertWithMessage("no output to stderr expected").that(errStream.size()).isEqualTo(0)
+        val inOrder: InOrder = Mockito.inOrder(mockModel)
+        inOrder.verify<TestSuiteModel?>(mockModel).testSuppressed(testDescription)
+        inOrder.verify<TestSuiteModel?>(mockModel).writeAsXml(mockXmlStream)
+        Mockito.verify<CancellableRequestFactory?>(mockRequestFactory, Mockito.never()).cancelRun()
+    }
+
+    /**
+     * Test with a method that always passes.
+     */
+    class PassingTest {
+        @org.junit.Test
+        fun alwaysPasses() {
+        }
+    }
 
 
-  private interface TestSuiteModelSupplier extends Supplier<TestSuiteModel> {
-  }
+    /**
+     * Test with a method that always fails.
+     */
+    class FailingTest {
+        @org.junit.Test
+        fun alwaysFails() {
+            org.junit.Assert.fail()
+        }
+    }
+
+
+    /**
+     * Test with a method that is always skipped.
+     */
+    class TestWithAssumptionViolation {
+        @org.junit.Test
+        fun alwaysSkipped() {
+            Assume.assumeTrue(false)
+        }
+    }
+
+    /**
+     * Test with a method that is always skipped.
+     */
+    class TestWithAssumptionViolationOnTheSuiteLevel {
+        @org.junit.Test
+        fun fakeTest() {
+        }
+
+        companion object {
+            @BeforeClass
+            fun failedSuiteLevelAssumption() {
+                Assume.assumeTrue(false)
+            }
+        }
+    }
+
+    class TestWithIgnoredTestCase {
+        @org.junit.Test
+        @Ignore
+        fun alwaysIgnored() {
+        }
+    }
+
+    private class FakeSignalHandlers : SignalHandlers(null) {
+        var handlers: MutableList<sun.misc.SignalHandler?> = java.util.ArrayList<sun.misc.SignalHandler?>()
+
+        override fun installHandler(signal: sun.misc.Signal, signalHandler: sun.misc.SignalHandler?) {
+            if (signal.getName() == "TERM") {
+                handlers.add(signalHandler)
+            }
+        }
+    }
+
+
+    private interface TestSuiteModelSupplier : java.util.function.Supplier<TestSuiteModel?>
+    companion object {
+        private const val CHARSET = "UTF-8"
+    }
 }

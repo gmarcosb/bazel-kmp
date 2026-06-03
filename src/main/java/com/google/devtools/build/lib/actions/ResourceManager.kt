@@ -11,736 +11,765 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import static com.google.devtools.build.lib.profiler.AutoProfiler.profiled;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.profiler.AutoProfiler;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.worker.Worker;
-import com.google.devtools.build.lib.worker.WorkerKey;
-import com.google.devtools.build.lib.worker.WorkerPool;
-import com.google.devtools.build.lib.worker.WorkerProcessStatus.Status;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.profiler.AutoProfiler.profiled
 
 /**
  * Used to keep track of resources consumed by the Blaze action execution threads and throttle them
  * when necessary.
- *
- * <p>Threads which are known to consume a significant amount of resources should call {@link
- * #acquireResources} method. This method will check whether requested resources are available and
+ * 
+ * 
+ * Threads which are known to consume a significant amount of resources should call [ ][.acquireResources] method. This method will check whether requested resources are available and
  * will either mark them as used and allow the thread to proceed or will block the thread until
  * requested resources will become available. When the thread completes its task, it must release
- * allocated resources by calling {@link #releaseResources} method.
- *
- * <p>Available resources can be calculated using one of three ways:
- *
- * <ol>
- *   <li>They can be preset using {@link #setAvailableResources(ResourceSet)} method. This is used
- *       mainly by the unit tests (however it is possible to provide a future option that would
- *       artificially limit amount of CPU/RAM consumed by the Blaze).
- *   <li>They can be preset based on the /proc/cpuinfo and /proc/meminfo information. Blaze will
- *       calculate amount of available CPU cores (adjusting for hyperthreading logical cores) and
- *       amount of the total available memory and will limit itself to the number of effective cores
- *       and 2/3 of the available memory. For details, please look at the {@link
- *       LocalHostCapacity#getLocalHostCapacity} method.
- * </ol>
- *
- * <p>The resource manager also allows a slight overallocation of the resources to account for the
+ * allocated resources by calling [.releaseResources] method.
+ * 
+ * 
+ * Available resources can be calculated using one of three ways:
+ * 
+ * 
+ *  1. They can be preset using [.setAvailableResources] method. This is used
+ * mainly by the unit tests (however it is possible to provide a future option that would
+ * artificially limit amount of CPU/RAM consumed by the Blaze).
+ *  1. They can be preset based on the /proc/cpuinfo and /proc/meminfo information. Blaze will
+ * calculate amount of available CPU cores (adjusting for hyperthreading logical cores) and
+ * amount of the total available memory and will limit itself to the number of effective cores
+ * and 2/3 of the available memory. For details, please look at the [       ][LocalHostCapacity.getLocalHostCapacity] method.
+ * 
+ * 
+ * 
+ * The resource manager also allows a slight overallocation of the resources to account for the
  * fact that requested resources are usually estimated using a pessimistic approximation. It also
  * guarantees that at least one thread will always be able to acquire any amount of requested
  * resources (even if it is greater than amount of available resources). Therefore, assuming that
  * threads correctly release acquired resources, Blaze will never be fully blocked.
  */
 @ThreadSafe
-public class ResourceManager implements ResourceEstimator {
+class ResourceManager : ResourceEstimator {
+    private var allowOneActionOnResourceUnavailable = false
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+    /**
+     * A handle returned by [.acquireResources] that must be closed in order to free the resources again.
+     */
+    class ResourceHandle private constructor(
+        private val manager: ResourceManager,
+        request: ResourceRequest,
+        worker: Worker?
+    ) : java.lang.AutoCloseable {
+        private var worker: Worker?
+        private val request: ResourceRequest
+        private val resourceAcquiredTime: Long
 
-  private boolean allowOneActionOnResourceUnavailable;
-
-  /**
-   * A handle returned by {@link #acquireResources(ActionExecutionMetadata, ResourceSet,
-   * ResourcePriority)} that must be closed in order to free the resources again.
-   */
-  public static class ResourceHandle implements AutoCloseable {
-    private final ResourceManager manager;
-    private Worker worker;
-    private final ResourceRequest request;
-    private final long resourceAcquiredTime;
-
-    private ResourceHandle(ResourceManager manager, ResourceRequest request, Worker worker) {
-      this.manager = manager;
-      this.resourceAcquiredTime = BlazeClock.instance().nanoTime();
-      this.worker = worker;
-      this.request = request;
-    }
-
-    @Nullable
-    public Worker getWorker() {
-      return worker;
-    }
-
-    @VisibleForTesting
-    ResourceRequest getRequest() {
-      return request;
-    }
-
-    /** Closing the ResourceHandle releases the resources associated with it. */
-    @Override
-    public void close() throws IOException, InterruptedException, UserExecException {
-      manager.releaseResources(request, worker);
-      Profiler.instance()
-          .completeTask(
-              resourceAcquiredTime, ProfilerTask.LOCAL_ACTION_COUNTS, "Resources acquired");
-    }
-
-    public void invalidateAndClose(@Nullable Exception e)
-        throws IOException, InterruptedException, UserExecException {
-      // If there is an exception, we need to set the kill cause before invalidating the object.
-      // This ensures that the worker implementation updates their worker metrics accordingly
-      // if/when it destroys itself.
-      if (e != null) {
-        if (e instanceof InterruptedException) {
-          worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_INTERRUPTED_EXCEPTION);
-        } else if (e instanceof IOException) {
-          worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_IO_EXCEPTION);
-        } else if (e instanceof UserExecException userExecException) {
-          if (userExecException.getFailureDetail().hasWorker()) {
-            worker
-                .getStatus()
-                .maybeUpdateStatus(
-                    Status.PENDING_KILL_DUE_TO_USER_EXEC_EXCEPTION,
-                    userExecException.getFailureDetail().getWorker().getCode());
-          }
-        } else {
-          worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_USER_EXEC_EXCEPTION);
+        init {
+            this.resourceAcquiredTime = com.google.devtools.build.lib.clock.BlazeClock.instance().nanoTime()
+            this.worker = worker
+            this.request = request
         }
-      } else {
-        worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_UNKNOWN);
-      }
 
-      manager.workerPool.invalidateWorker(worker);
-      worker = null;
-      this.close();
-    }
-  }
-
-  private final ThreadLocal<Boolean> threadLocked =
-      new ThreadLocal<Boolean>() {
-        @Override
-        protected Boolean initialValue() {
-          return false;
+        fun getWorker(): Worker? {
+            return worker
         }
-      };
 
-  /**
-   * Defines the possible priorities of resources. The earlier elements in this enum will get first
-   * chance at grabbing resources.
-   */
-  public enum ResourcePriority {
-    LOCAL(), // Local execution not under dynamic execution
-    DYNAMIC_WORKER(),
-    DYNAMIC_STANDALONE();
-  }
-
-  public ResourceManager() {
-    this.allowOneActionOnResourceUnavailable = false;
-  }
-
-  public void setAllowOneActionOnResourceUnavailable(boolean allowOneActionOnResourceUnavailable) {
-    this.allowOneActionOnResourceUnavailable = allowOneActionOnResourceUnavailable;
-  }
-
-  /** Returns prediction of RAM in Mb used by registered actions. */
-  @Override
-  public double getUsedMemoryInMb() {
-    return usedResources.getOrDefault(ResourceSet.MEMORY, 0d);
-  }
-
-  /** Returns prediction of CPUs used by registered actions. */
-  @Override
-  public double getUsedCPU() {
-    return usedResources.getOrDefault(ResourceSet.CPU, 0d);
-  }
-
-  // Allocated resources are allowed to go "negative", but at least
-  // MIN_NECESSARY_RATIO portion of each resource should be available.
-  // Please note that this value is purely empirical - we assume that generally
-  // requested resources are somewhat pessimistic and thread would end up
-  // using less than requested amount.
-  private static final Double DEFAULT_MIN_NECESSARY_RATIO = 1.0;
-  private static final ImmutableMap<String, Double> MIN_NECESSARY_RATIO =
-      ImmutableMap.of(ResourceSet.CPU, 0.6);
-  private static final int MAX_ACTIONS_PER_CPU = 3;
-
-  // Pair of requested resources and latch represented it for waiting.
-  record WaitingRequest(ResourceRequest getResourceRequest, ResourceLatch getResourceLatch) {}
-  ;
-
-  // Lists of blocked threads. Associated CountDownLatch object will always
-  // be initialized to 1 during creation in the acquire() method.
-  // We use LinkedList because we will need to remove elements from the middle frequently in the
-  // middle of iterating through the list.
-  @SuppressWarnings("JdkObsolete")
-  private final Deque<WaitingRequest> localRequests = new LinkedList<>();
-
-  @SuppressWarnings("JdkObsolete")
-  private final Deque<WaitingRequest> dynamicWorkerRequests = new LinkedList<>();
-
-  @SuppressWarnings("JdkObsolete")
-  private final Deque<WaitingRequest> dynamicStandaloneRequests = new LinkedList<>();
-
-  private WorkerPool workerPool;
-
-  // The total amount of available for Bazel resources on the local host. Must be set by
-  // an explicit call to setAvailableResources(), often using
-  // LocalHostCapacity.getLocalHostCapacity() as an argument.
-  @VisibleForTesting public ResourceSet availableResources = null;
-
-  // Used amount of resources. Corresponds to the resource
-  // definition in the ResourceSet class.
-  private Map<String, Double> usedResources = new HashMap<>();
-
-  // Used local test count. Corresponds to the local test count definition in the ResourceSet class.
-  private int usedLocalTestCount;
-
-  // The following flags are responsible for experimental action scheduling based on load of the
-  // machine.
-  //
-  // With this functionality the whole timeline is splitted on the window of the same duration.
-  // In this case the CPU usage by blaze is defined by the formula:
-  // CPU usage = System CPU load + Window estimation.
-  // System CPU load defined by information about system running blaze process.
-  // Window estimation is an sum of ResourceSets defined for all action started to run during this
-  // window. This term added to compensate the pressure by actions which are started to run during
-  // the window but not represented on CPU load yet.
-
-  // Experimental scheduling have showed the large benefit on a large local builds on a powerful
-  // machines with the large number of cores.
-  // The known issue with this flag that it cannot distinguish the load of Bazel and load of
-  // different process on the machine, so it tries to load machine no more than defined in flag
-  // local_resources, so for better utilization it's recommended to set
-  // --local_resources=cpu=HOST_CPUS.
-
-  // Enables experimental action scheduling using CPU load of a machine.
-  private boolean cpuLoadScheduling;
-  // The size of window for running actions.
-  private Duration windowSize = Duration.ofSeconds(5);
-  // Estimation of CPU usage by actions started during the window.
-  private double windowEstimationCpu;
-  // Set of request ids which resource acquiring started during the window.
-  private final Set<Integer> windowRequestIds = new HashSet<>();
-  // Executor for periodic window update.
-  ScheduledExecutorService windowUpdateExecutor = Executors.newScheduledThreadPool(1);
-  // Future for periodic window update.
-  ScheduledFuture<?> windowUpdateFuture = null;
-  // Total number of actions running locally.
-  private int runningActions = 0;
-  // Collects the information about the load of a machine.
-  private MachineLoadProvider machineLoadProvider;
-
-  public void initializeCpuLoadFunctionality(
-      MachineLoadProvider machineLoadProvider, boolean cpuLoadScheduling, Duration windowSize) {
-    this.machineLoadProvider = machineLoadProvider;
-    this.cpuLoadScheduling = cpuLoadScheduling;
-    this.windowSize = windowSize;
-  }
-
-  class WindowUpdateRunner extends Thread {
-    public WindowUpdateRunner(String name) {
-      super(name);
-    }
-
-    @Override
-    public void run() {
-      try {
-        windowUpdate();
-      } catch (IOException | InterruptedException | UserExecException e) {
-        logger.atWarning().withCause(e).log(
-            "Exception while updating window of locally scheduled action: %s", e);
-      }
-    }
-  }
-
-  synchronized void windowUpdate() throws IOException, InterruptedException, UserExecException {
-    windowRequestIds.clear();
-    windowEstimationCpu = 0.0;
-    processAllWaitingRequests();
-  }
-
-  /**
-   * Resets resource manager state and releases all thread locks.
-   *
-   * <p>Note - it does not reset available resources. Use separate call to setAvailableResources().
-   */
-  public synchronized void resetResourceUsage() {
-    usedResources = new HashMap<>();
-    usedLocalTestCount = 0;
-    for (WaitingRequest request : localRequests) {
-      request.getResourceLatch().getLatch().countDown();
-    }
-    for (WaitingRequest request : dynamicWorkerRequests) {
-      request.getResourceLatch().getLatch().countDown();
-    }
-    for (WaitingRequest request : dynamicStandaloneRequests) {
-      request.getResourceLatch().getLatch().countDown();
-    }
-    localRequests.clear();
-    dynamicWorkerRequests.clear();
-    dynamicStandaloneRequests.clear();
-
-    windowRequestIds.clear();
-    windowEstimationCpu = 0.0;
-    runningActions = 0;
-  }
-
-  /**
-   * Sets available resources using given resource set.
-   *
-   * <p>Must be called at least once before using resource manager.
-   */
-  public synchronized void setAvailableResources(ResourceSet resources) {
-    Preconditions.checkNotNull(resources);
-    resetResourceUsage();
-    availableResources = resources;
-    logger.atInfo().log("Set available resources: %s", resources);
-  }
-
-  public synchronized void scheduleCpuLoadWindowUpdate() {
-    if (windowUpdateFuture != null) {
-      windowUpdateFuture.cancel(true);
-    }
-
-    if (cpuLoadScheduling) {
-      windowUpdateFuture =
-          windowUpdateExecutor.scheduleAtFixedRate(
-              new WindowUpdateRunner("window-update"), 0, windowSize.toMillis(), MILLISECONDS);
-    }
-  }
-
-  /** Sets worker pool for taking the workers. Must be called before requesting the workers. */
-  public void setWorkerPool(WorkerPool workerPool) {
-    this.workerPool = workerPool;
-  }
-
-  /** Generates the ids for requests */
-  private static final AtomicInteger requestIdGenerator = new AtomicInteger(0);
-
-  /** Request with the information of resource acquiring. */
-  record ResourceRequest(
-      ActionExecutionMetadata getOwner,
-      ResourceSet getResourceSet,
-      ResourcePriority getPriority,
-      int getId) {}
-  ;
-
-  /**
-   * Acquires requested resource set. Will block if resource is not available. NB! This method must
-   * be thread-safe!
-   */
-  public ResourceHandle acquireResources(
-      ActionExecutionMetadata owner, ResourceSet resources, ResourcePriority priority)
-      throws InterruptedException, IOException, ExecException {
-    Preconditions.checkNotNull(
-        resources, "acquireResources called with resources == NULL during %s", owner);
-    Preconditions.checkState(
-        !threadHasResources(), "acquireResources with existing resource lock during %s", owner);
-
-    ResourceLatch resourceLatch = null;
-
-    // Validate requested resources exist before creating a request.
-    assertResourcesTracked(resources);
-    ResourceRequest request =
-        new ResourceRequest(owner, resources, priority, requestIdGenerator.getAndIncrement());
-
-    AutoProfiler p =
-        profiled("Acquiring resources for: " + owner.describe(), ProfilerTask.ACTION_LOCK);
-    try {
-      resourceLatch = acquire(request);
-      if (resourceLatch.getLatch() != null) {
-        resourceLatch.getLatch().await();
-      }
-    } catch (InterruptedException e) {
-      // Synchronize on this to avoid any racing with #processWaitingRequests
-      synchronized (this) {
-        if (resourceLatch != null) {
-          if (resourceLatch.getLatch() == null || resourceLatch.getLatch().getCount() == 0) {
-            // Resources already acquired by other side. Release them, but not inside this
-            // synchronized block to avoid deadlock.
-            release(request, resourceLatch.getWorker());
-          } else {
-            // Inform other side that resources shouldn't be acquired.
-            resourceLatch.getLatch().countDown();
-          }
+        @com.google.common.annotations.VisibleForTesting
+        fun getRequest(): ResourceRequest {
+            return request
         }
-      }
-      throw e;
-    }
 
-    threadLocked.set(true);
-
-    CountDownLatch latch;
-    Worker worker;
-    synchronized (this) {
-      latch = resourceLatch.getLatch();
-      worker = resourceLatch.getWorker();
-    }
-
-    // Profile acquisition only if it waited for resource to become available.
-    if (latch != null) {
-      p.complete();
-    }
-
-    return new ResourceHandle(this, request, worker);
-  }
-
-  @Nullable
-  private synchronized Worker incrementResources(ResourceRequest request)
-      throws IOException, InterruptedException {
-    ResourceSet resources = request.getResourceSet();
-
-    resources
-        .getResources()
-        .forEach(
-            (key, value) -> {
-              if (usedResources.containsKey(key)) {
-                value += usedResources.get(key);
-              }
-              usedResources.put(key, value);
-            });
-
-    windowRequestIds.add(request.getId());
-    windowEstimationCpu += resources.getResources().getOrDefault(ResourceSet.CPU, 0.0);
-    usedLocalTestCount += resources.getLocalTestCount();
-    if (resources.getWorkerKey() != null) {
-      return this.workerPool.borrowWorker(resources.getWorkerKey());
-    }
-
-    runningActions++;
-    return null;
-  }
-
-  /** Return true if any resources have been claimed through this manager. */
-  public synchronized boolean inUse() {
-    return !usedResources.isEmpty()
-        || usedLocalTestCount != 0
-        || !localRequests.isEmpty()
-        || !dynamicWorkerRequests.isEmpty()
-        || !dynamicStandaloneRequests.isEmpty();
-  }
-
-  /** Return true iff this thread has a lock on non-zero resources. */
-  public boolean threadHasResources() {
-    return threadLocked.get();
-  }
-
-  /**
-   * Releases previously requested resource.
-   *
-   * <p>NB! This method must be thread-safe!
-   *
-   * @param request initial request of resource acquiring
-   * @param worker the worker, which used during execution
-   * @throws java.io.IOException if could not return worker to the workerPool
-   */
-  void releaseResources(ResourceRequest request, @Nullable Worker worker)
-      throws IOException, InterruptedException, UserExecException {
-    Preconditions.checkNotNull(
-        request.getResourceSet(),
-        "releaseResources called with resources == NULL during %s",
-        request.getOwner());
-
-    Preconditions.checkState(
-        threadHasResources(),
-        "releaseResources without resource lock during %s",
-        request.getOwner());
-
-    try {
-      release(request, worker);
-    } finally {
-      threadLocked.set(false);
-    }
-  }
-
-  public void releaseResourceOwnership() {
-    threadLocked.set(false);
-  }
-
-  public void acquireResourceOwnership() {
-    threadLocked.set(true);
-  }
-
-  /**
-   * Returns the pair of worker and latch. Worker should be null if there is no workerKey in
-   * resources. The latch isn't null if we could not acquire the resources right now and need to
-   * wait.
-   */
-  private synchronized ResourceLatch acquire(ResourceRequest request)
-      throws IOException, InterruptedException, UserExecException {
-    if (areResourcesAvailable(request.getResourceSet())) {
-      Worker worker = incrementResources(request);
-      return new ResourceLatch(/* latch= */ null, worker);
-    }
-    WaitingRequest waitingRequest =
-        new WaitingRequest(request, new ResourceLatch(new CountDownLatch(1), /* worker= */ null));
-    switch (request.getPriority()) {
-      case LOCAL -> localRequests.addLast(waitingRequest);
-      case DYNAMIC_WORKER ->
-          // Dynamic requests should be LIFO, because we are more likely to win the race on newer
-          // actions.
-          dynamicWorkerRequests.addFirst(waitingRequest);
-      case DYNAMIC_STANDALONE ->
-          // Dynamic requests should be LIFO, because we are more likely to win the race on newer
-          // actions.
-          dynamicStandaloneRequests.addFirst(waitingRequest);
-    }
-    return waitingRequest.getResourceLatch();
-  }
-
-  /** Release resources and process the queues of waiting threads. */
-  private synchronized void release(ResourceRequest request, @Nullable Worker worker)
-      throws IOException, InterruptedException, UserExecException {
-    if (worker != null) {
-      this.workerPool.returnWorker(worker.getWorkerKey(), worker);
-    }
-
-    ResourceSet resources = request.getResourceSet();
-    usedLocalTestCount -= resources.getLocalTestCount();
-    // TODO(bazel-team): (2010) rounding error can accumulate and value below can end up being
-    // e.g. 1E-15. So if it is small enough, we set it to 0. But maybe there is a better solution.
-    double epsilon = 0.0001;
-    Set<String> toRemove = new HashSet<>();
-    for (Map.Entry<String, Double> resource : resources.getResources().entrySet()) {
-      String key = resource.getKey();
-      double value = usedResources.getOrDefault(key, 0.0) - resource.getValue();
-      usedResources.put(key, value);
-      if (value < epsilon) {
-        toRemove.add(key);
-      }
-    }
-    usedResources.keySet().removeAll(toRemove);
-    for (String key : toRemove) {
-      usedResources.remove(key);
-    }
-
-    if (windowRequestIds.remove(request.getId())) {
-      windowEstimationCpu -= resources.getResources().getOrDefault(ResourceSet.CPU, 0.0);
-    }
-    runningActions--;
-
-    processAllWaitingRequests();
-  }
-
-  private synchronized void processAllWaitingRequests()
-      throws IOException, InterruptedException, UserExecException {
-    processWaitingRequests(localRequests);
-    processWaitingRequests(dynamicWorkerRequests);
-    processWaitingRequests(dynamicStandaloneRequests);
-  }
-
-  private synchronized void processWaitingRequests(Deque<WaitingRequest> requests)
-      throws IOException, InterruptedException, UserExecException {
-    if (requests.isEmpty()) {
-      return;
-    }
-
-    Iterator<WaitingRequest> iterator = requests.iterator();
-    while (iterator.hasNext()) {
-      WaitingRequest request = iterator.next();
-      if (request.getResourceLatch().getLatch().getCount() != 0) {
-        if (areResourcesAvailable(request.getResourceRequest().getResourceSet())) {
-          Worker worker = incrementResources(request.getResourceRequest());
-          request.getResourceLatch().setWorker(worker);
-          request.getResourceLatch().getLatch().countDown();
-          iterator.remove();
+        /** Closing the ResourceHandle releases the resources associated with it.  */
+        @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+        override fun close() {
+            manager.releaseResources(request, worker)
+            Profiler.instance()
+                .completeTask(
+                    resourceAcquiredTime, ProfilerTask.LOCAL_ACTION_COUNTS, "Resources acquired"
+                )
         }
-      } else {
-        // Cancelled by other side.
-        iterator.remove();
-      }
-    }
-  }
 
-  /** Throws an exception if requested extra resource isn't being tracked */
-  private void assertResourcesTracked(ResourceSet resources) throws ExecException {
-    for (Map.Entry<String, Double> resource : resources.getResources().entrySet()) {
-      String key = resource.getKey();
-      if (!availableResources.getResources().containsKey(key)) {
-        StringBuilder message = new StringBuilder();
-        message.append("Resource ");
-        message.append(key);
-        message.append(" is not being tracked by the resource manager.");
-        message.append(" Available resources are: ");
-        message.append(String.join(", ", availableResources.getResources().keySet()));
-        throw new UserExecException(
-            FailureDetails.FailureDetail.newBuilder()
-                .setMessage(message.toString())
-                .setLocalExecution(
-                    FailureDetails.LocalExecution.newBuilder()
-                        .setCode(FailureDetails.LocalExecution.Code.UNTRACKED_RESOURCE)
-                        .build())
-                .build());
-      }
-    }
-  }
+        @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+        fun invalidateAndClose(e: java.lang.Exception?) {
+            // If there is an exception, we need to set the kill cause before invalidating the object.
+            // This ensures that the worker implementation updates their worker metrics accordingly
+            // if/when it destroys itself.
+            if (e != null) {
+                if (e is java.lang.InterruptedException) {
+                    worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_INTERRUPTED_EXCEPTION)
+                } else if (e is IOException) {
+                    worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_IO_EXCEPTION)
+                } else if (e is UserExecException) {
+                    if (e.getFailureDetail().hasWorker()) {
+                        worker
+                            .getStatus()
+                            .maybeUpdateStatus(
+                                Status.PENDING_KILL_DUE_TO_USER_EXEC_EXCEPTION,
+                                e.getFailureDetail().getWorker().getCode()
+                            )
+                    }
+                } else {
+                    worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_USER_EXEC_EXCEPTION)
+                }
+            } else {
+                worker.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_UNKNOWN)
+            }
 
-  private <T extends Number> boolean isAvailable(
-      T available, T used, T requested, String resourceName) throws UserExecException {
-    if (!allowOneActionOnResourceUnavailable
-        && available.doubleValue() + used.doubleValue() < requested.doubleValue()) {
-      throw new UserExecException(
-          FailureDetails.FailureDetail.newBuilder()
-              .setMessage(
-                  String.format(
-                      "The `%s` resources are not enough to fulfill the request. To allow Bazel to"
-                          + " bypass this limitation, please adjust the --local_resources flag or"
-                          + " specify --allow_one_action_on_resource_unavailable in your Bazel"
-                          + " command.",
-                      resourceName))
-              .setLocalExecution(
-                  FailureDetails.LocalExecution.newBuilder()
-                      .setCode(FailureDetails.LocalExecution.Code.NOT_ENOUGH_LOCAL_RESOURCE)
-                      .build())
-              .build());
-    }
-    // Resources are considered available if any one of the conditions below is true:
-    // 1) If resource is not requested at all, it is available.
-    // 2) If resource is not used at the moment and the flag
-    // "allow_one_action_on_resource_unavailable" is enabled, it is considered to be
-    // available regardless of how much is requested. This is necessary to
-    // ensure that at any given time, at least one thread is able to acquire
-    // resources even if it requests more than available.
-    // 3) If used resource amount is less than total available resource amount.
-    return requested.doubleValue() == 0
-        || (allowOneActionOnResourceUnavailable && used.doubleValue() == 0)
-        || used.doubleValue() + requested.doubleValue() <= available.doubleValue();
-  }
-
-  // Method will return true if all requested resources are considered to be available.
-  @VisibleForTesting
-  synchronized boolean areResourcesAvailable(ResourceSet resources) throws UserExecException {
-    Preconditions.checkNotNull(availableResources);
-    // Comparison below is robust, since any calculation errors will be fixed
-    // by the release() method.
-
-    WorkerKey workerKey = resources.getWorkerKey();
-    if (workerKey != null && !this.workerPool.hasAvailableQuota(workerKey)) {
-      return false;
-    }
-
-    if (allowOneActionOnResourceUnavailable
-        && usedResources.isEmpty()
-        && usedLocalTestCount == 0
-        && resources.getLocalTestCount() > 0) {
-      return true;
-    }
-
-    int availableLocalTestCount = availableResources.getLocalTestCount();
-    if (!isAvailable(
-        availableLocalTestCount,
-        usedLocalTestCount,
-        resources.getLocalTestCount(),
-        "local_test_count")) {
-      return false;
-    }
-
-    for (Map.Entry<String, Double> resource : resources.getResources().entrySet()) {
-      String key = resource.getKey();
-
-      if (key.equals(ResourceSet.CPU)) {
-        if (!isCpuAvailable(resource)) {
-          return false;
+            manager.workerPool.invalidateWorker(worker)
+            worker = null
+            this.close()
         }
-        continue;
-      }
-      // Use only MIN_NECESSARY_RATIO of the resource value to check for
-      // allocation. This is necessary to account for the fact that most of the
-      // requested resource sets use pessimistic estimations. Note that this
-      // ratio is used only during comparison - for tracking we will actually
-      // mark whole requested amount as used.
-      double requested =
-          resource.getValue() * MIN_NECESSARY_RATIO.getOrDefault(key, DEFAULT_MIN_NECESSARY_RATIO);
-      double used = usedResources.getOrDefault(key, 0.0);
-      double available = availableResources.get(key);
-      if (!isAvailable(available, used, requested, key)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  synchronized boolean isCpuAvailable(Map.Entry<String, Double> resource) throws UserExecException {
-    String key = resource.getKey();
-
-    double requested =
-        resource.getValue() * MIN_NECESSARY_RATIO.getOrDefault(key, DEFAULT_MIN_NECESSARY_RATIO);
-    double available = availableResources.get(key);
-    double used = usedResources.getOrDefault(key, 0.0);
-
-    if (cpuLoadScheduling) {
-      double currentUsage = machineLoadProvider.getCurrentCpuUsage();
-      double windowEstimation = windowEstimationCpu;
-      // Don't allow to run more than x3 of number cores actions simultaneously.
-      if (runningActions >= MAX_ACTIONS_PER_CPU * availableResources.get(ResourceSet.CPU)) {
-        return false;
-      }
-      return isAvailable(available, windowEstimation + currentUsage, requested, key);
     }
 
-    return isAvailable(available, used, requested, key);
-  }
-
-  @VisibleForTesting
-  synchronized int getWaitCount() {
-    return localRequests.size() + dynamicStandaloneRequests.size() + dynamicWorkerRequests.size();
-  }
-
-  // Latch which indicates the availability of resources. Also via this latch worker could be passed
-  // when it's ready.
-  private static class ResourceLatch {
-    private final CountDownLatch latch;
-    private Worker worker;
-
-    public ResourceLatch(CountDownLatch latch, Worker worker) {
-      this.latch = latch;
-      this.worker = worker;
+    private val threadLocked: java.lang.ThreadLocal<Boolean?> = object : java.lang.ThreadLocal<Boolean?>() {
+        override fun initialValue(): Boolean {
+            return false
+        }
     }
 
-    public CountDownLatch getLatch() {
-      return latch;
+    /**
+     * Defines the possible priorities of resources. The earlier elements in this enum will get first
+     * chance at grabbing resources.
+     */
+    enum class ResourcePriority {
+        LOCAL,  // Local execution not under dynamic execution
+        DYNAMIC_WORKER,
+        DYNAMIC_STANDALONE
     }
 
-    public Worker getWorker() {
-      return worker;
+    fun setAllowOneActionOnResourceUnavailable(allowOneActionOnResourceUnavailable: Boolean) {
+        this.allowOneActionOnResourceUnavailable = allowOneActionOnResourceUnavailable
     }
 
-    public void setWorker(Worker worker) {
-      this.worker = worker;
+    /** Returns prediction of RAM in Mb used by registered actions.  */
+    public override fun getUsedMemoryInMb(): Double {
+        return usedResources.getOrDefault(ResourceSet.Companion.MEMORY, 0.0)!!
     }
-  }
+
+    /** Returns prediction of CPUs used by registered actions.  */
+    public override fun getUsedCPU(): Double {
+        return usedResources.getOrDefault(ResourceSet.Companion.CPU, 0.0)!!
+    }
+
+    // Pair of requested resources and latch represented it for waiting.
+    @kotlin.jvm.JvmRecord
+    internal data class WaitingRequest(val getResourceRequest: ResourceRequest?, val getResourceLatch: ResourceLatch?)
+
+    // Lists of blocked threads. Associated CountDownLatch object will always
+    // be initialized to 1 during creation in the acquire() method.
+    // We use LinkedList because we will need to remove elements from the middle frequently in the
+    // middle of iterating through the list.
+    private val localRequests: Deque<WaitingRequest> = LinkedList<WaitingRequest>()
+
+    private val dynamicWorkerRequests: Deque<WaitingRequest> = LinkedList<WaitingRequest>()
+
+    private val dynamicStandaloneRequests: Deque<WaitingRequest> = LinkedList<WaitingRequest>()
+
+    private var workerPool: WorkerPool? = null
+
+    // The total amount of available for Bazel resources on the local host. Must be set by
+    // an explicit call to setAvailableResources(), often using
+    // LocalHostCapacity.getLocalHostCapacity() as an argument.
+    @com.google.common.annotations.VisibleForTesting
+    var availableResources: ResourceSet? = null
+
+    // Used amount of resources. Corresponds to the resource
+    // definition in the ResourceSet class.
+    private var usedResources: MutableMap<String?, Double?> = HashMap<String?, Double?>()
+
+    // Used local test count. Corresponds to the local test count definition in the ResourceSet class.
+    private var usedLocalTestCount = 0
+
+    // The following flags are responsible for experimental action scheduling based on load of the
+    // machine.
+    //
+    // With this functionality the whole timeline is splitted on the window of the same duration.
+    // In this case the CPU usage by blaze is defined by the formula:
+    // CPU usage = System CPU load + Window estimation.
+    // System CPU load defined by information about system running blaze process.
+    // Window estimation is an sum of ResourceSets defined for all action started to run during this
+    // window. This term added to compensate the pressure by actions which are started to run during
+    // the window but not represented on CPU load yet.
+    // Experimental scheduling have showed the large benefit on a large local builds on a powerful
+    // machines with the large number of cores.
+    // The known issue with this flag that it cannot distinguish the load of Bazel and load of
+    // different process on the machine, so it tries to load machine no more than defined in flag
+    // local_resources, so for better utilization it's recommended to set
+    // --local_resources=cpu=HOST_CPUS.
+    // Enables experimental action scheduling using CPU load of a machine.
+    private var cpuLoadScheduling = false
+
+    // The size of window for running actions.
+    private var windowSize: java.time.Duration = java.time.Duration.ofSeconds(5)
+
+    // Estimation of CPU usage by actions started during the window.
+    private var windowEstimationCpu = 0.0
+
+    // Set of request ids which resource acquiring started during the window.
+    private val windowRequestIds: MutableSet<Int?> = HashSet<Int?>()
+
+    // Executor for periodic window update.
+    var windowUpdateExecutor: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
+
+    // Future for periodic window update.
+    var windowUpdateFuture: java.util.concurrent.ScheduledFuture<*>? = null
+
+    // Total number of actions running locally.
+    private var runningActions = 0
+
+    // Collects the information about the load of a machine.
+    private var machineLoadProvider: MachineLoadProvider? = null
+
+    fun initializeCpuLoadFunctionality(
+        machineLoadProvider: MachineLoadProvider, cpuLoadScheduling: Boolean, windowSize: java.time.Duration
+    ) {
+        this.machineLoadProvider = machineLoadProvider
+        this.cpuLoadScheduling = cpuLoadScheduling
+        this.windowSize = windowSize
+    }
+
+    internal inner class WindowUpdateRunner(name: String) : java.lang.Thread(name) {
+        override fun run() {
+            try {
+                windowUpdate()
+            } catch (e: IOException) {
+                com.google.devtools.build.lib.actions.ResourceManager.Companion.logger.atWarning().withCause(e).log(
+                    "Exception while updating window of locally scheduled action: %s", e
+                )
+            } catch (e: java.lang.InterruptedException) {
+                com.google.devtools.build.lib.actions.ResourceManager.Companion.logger.atWarning().withCause(e).log(
+                    "Exception while updating window of locally scheduled action: %s", e
+                )
+            } catch (e: UserExecException) {
+                com.google.devtools.build.lib.actions.ResourceManager.Companion.logger.atWarning().withCause(e).log(
+                    "Exception while updating window of locally scheduled action: %s", e
+                )
+            }
+        }
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    fun windowUpdate() {
+        windowRequestIds.clear()
+        windowEstimationCpu = 0.0
+        processAllWaitingRequests()
+    }
+
+    /**
+     * Resets resource manager state and releases all thread locks.
+     * 
+     * 
+     * Note - it does not reset available resources. Use separate call to setAvailableResources().
+     */
+    @kotlin.jvm.Synchronized
+    fun resetResourceUsage() {
+        usedResources = HashMap<String?, Double?>()
+        usedLocalTestCount = 0
+        for (request in localRequests) {
+            request.getResourceLatch.getLatch().countDown()
+        }
+        for (request in dynamicWorkerRequests) {
+            request.getResourceLatch.getLatch().countDown()
+        }
+        for (request in dynamicStandaloneRequests) {
+            request.getResourceLatch.getLatch().countDown()
+        }
+        localRequests.clear()
+        dynamicWorkerRequests.clear()
+        dynamicStandaloneRequests.clear()
+
+        windowRequestIds.clear()
+        windowEstimationCpu = 0.0
+        runningActions = 0
+    }
+
+    /**
+     * Sets available resources using given resource set.
+     * 
+     * 
+     * Must be called at least once before using resource manager.
+     */
+    @kotlin.jvm.Synchronized
+    fun setAvailableResources(resources: ResourceSet?) {
+        com.google.common.base.Preconditions.checkNotNull<ResourceSet?>(resources)
+        resetResourceUsage()
+        availableResources = resources
+        com.google.devtools.build.lib.actions.ResourceManager.Companion.logger.atInfo()
+            .log("Set available resources: %s", resources)
+    }
+
+    @kotlin.jvm.Synchronized
+    fun scheduleCpuLoadWindowUpdate() {
+        if (windowUpdateFuture != null) {
+            windowUpdateFuture.cancel(true)
+        }
+
+        if (cpuLoadScheduling) {
+            windowUpdateFuture =
+                windowUpdateExecutor.scheduleAtFixedRate(
+                    WindowUpdateRunner("window-update"), 0, windowSize.toMillis(), TimeUnit.MILLISECONDS
+                )
+        }
+    }
+
+    /** Sets worker pool for taking the workers. Must be called before requesting the workers.  */
+    fun setWorkerPool(workerPool: WorkerPool) {
+        this.workerPool = workerPool
+    }
+
+    /** Request with the information of resource acquiring.  */
+    internal class ResourceRequest(
+        getOwner: ActionExecutionMetadata?,
+        getResourceSet: ResourceSet,
+        getPriority: ResourcePriority?,
+        getId: Int
+    ) {
+        val getOwner: ActionExecutionMetadata?
+        val getResourceSet: ResourceSet
+        val getPriority: ResourcePriority?
+        val getId: Int
+
+        init {
+            this.getOwner = getOwner
+            this.getResourceSet = getResourceSet
+            this.getPriority = getPriority
+            this.getId = getId
+        }
+    }
+
+    /**
+     * Acquires requested resource set. Will block if resource is not available. NB! This method must
+     * be thread-safe!
+     */
+    @Throws(java.lang.InterruptedException::class, IOException::class, ExecException::class)
+    fun acquireResources(
+        owner: ActionExecutionMetadata, resources: ResourceSet?, priority: ResourcePriority?
+    ): ResourceHandle {
+        com.google.common.base.Preconditions.checkNotNull<ResourceSet?>(
+            resources, "acquireResources called with resources == NULL during %s", owner
+        )
+        com.google.common.base.Preconditions.checkState(
+            !threadHasResources(), "acquireResources with existing resource lock during %s", owner
+        )
+
+        var resourceLatch: ResourceLatch? = null
+
+        // Validate requested resources exist before creating a request.
+        assertResourcesTracked(resources)
+        val request =
+            ResourceRequest(
+                owner,
+                resources,
+                priority,
+                com.google.devtools.build.lib.actions.ResourceManager.Companion.requestIdGenerator.getAndIncrement()
+            )
+
+        val p: AutoProfiler =
+            profiled("Acquiring resources for: " + owner.describe(), ProfilerTask.ACTION_LOCK)
+        try {
+            resourceLatch = acquire(request)
+            if (resourceLatch!!.getLatch() != null) {
+                resourceLatch.getLatch().await()
+            }
+        } catch (e: java.lang.InterruptedException) {
+            // Synchronize on this to avoid any racing with #processWaitingRequests
+            synchronized(this) {
+                if (resourceLatch != null) {
+                    if (resourceLatch.getLatch() == null || resourceLatch.getLatch().getCount() == 0L) {
+                        // Resources already acquired by other side. Release them, but not inside this
+                        // synchronized block to avoid deadlock.
+                        release(request, resourceLatch.getWorker())
+                    } else {
+                        // Inform other side that resources shouldn't be acquired.
+                        resourceLatch.getLatch().countDown()
+                    }
+                }
+            }
+            throw e
+        }
+
+        threadLocked.set(true)
+
+        val latch: CountDownLatch?
+        val worker: Worker?
+        synchronized(this) {
+            latch = resourceLatch.getLatch()
+            worker = resourceLatch.getWorker()
+        }
+
+        // Profile acquisition only if it waited for resource to become available.
+        if (latch != null) {
+            p.complete()
+        }
+
+        return ResourceHandle(this, request, worker)
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    private fun incrementResources(request: ResourceRequest): Worker? {
+        val resources: ResourceSet = request.getResourceSet
+
+        resources
+            .getResources()
+            .forEach { (key: String?, value: Double?) ->
+                var value = value
+                if (usedResources.containsKey(key)) {
+                    this.value += usedResources.get(key)!!
+                }
+                usedResources.put(key, value)
+            }
+
+        windowRequestIds.add(request.getId)
+        windowEstimationCpu += resources.getResources().getOrDefault(ResourceSet.Companion.CPU, 0.0)
+        usedLocalTestCount += resources.getLocalTestCount()
+        if (resources.getWorkerKey() != null) {
+            return this.workerPool.borrowWorker(resources.getWorkerKey())
+        }
+
+        runningActions++
+        return null
+    }
+
+    /** Return true if any resources have been claimed through this manager.  */
+    @kotlin.jvm.Synchronized
+    fun inUse(): Boolean {
+        return !usedResources.isEmpty() || usedLocalTestCount != 0 || !localRequests.isEmpty() || !dynamicWorkerRequests.isEmpty() || !dynamicStandaloneRequests.isEmpty()
+    }
+
+    /** Return true iff this thread has a lock on non-zero resources.  */
+    fun threadHasResources(): Boolean {
+        return threadLocked.get()
+    }
+
+    /**
+     * Releases previously requested resource.
+     * 
+     * 
+     * NB! This method must be thread-safe!
+     * 
+     * @param request initial request of resource acquiring
+     * @param worker the worker, which used during execution
+     * @throws java.io.IOException if could not return worker to the workerPool
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    fun releaseResources(request: ResourceRequest, worker: Worker?) {
+        com.google.common.base.Preconditions.checkNotNull<ResourceSet?>(
+            request.getResourceSet,
+            "releaseResources called with resources == NULL during %s",
+            request.getOwner
+        )
+
+        com.google.common.base.Preconditions.checkState(
+            threadHasResources(),
+            "releaseResources without resource lock during %s",
+            request.getOwner
+        )
+
+        try {
+            release(request, worker)
+        } finally {
+            threadLocked.set(false)
+        }
+    }
+
+    fun releaseResourceOwnership() {
+        threadLocked.set(false)
+    }
+
+    fun acquireResourceOwnership() {
+        threadLocked.set(true)
+    }
+
+    /**
+     * Returns the pair of worker and latch. Worker should be null if there is no workerKey in
+     * resources. The latch isn't null if we could not acquire the resources right now and need to
+     * wait.
+     */
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    private fun acquire(request: ResourceRequest): ResourceLatch? {
+        if (areResourcesAvailable(request.getResourceSet)) {
+            val worker: Worker? = incrementResources(request)
+            return ResourceLatch( /* latch= */null, worker)
+        }
+        val waitingRequest =
+            WaitingRequest(request, ResourceLatch(CountDownLatch(1),  /* worker= */null))
+        when (request.getPriority) {
+            ResourcePriority.LOCAL -> localRequests.addLast(waitingRequest)
+            ResourcePriority.DYNAMIC_WORKER ->  // Dynamic requests should be LIFO, because we are more likely to win the race on newer
+                // actions.
+                dynamicWorkerRequests.addFirst(waitingRequest)
+
+            ResourcePriority.DYNAMIC_STANDALONE ->  // Dynamic requests should be LIFO, because we are more likely to win the race on newer
+                // actions.
+                dynamicStandaloneRequests.addFirst(waitingRequest)
+        }
+        return waitingRequest.getResourceLatch
+    }
+
+    /** Release resources and process the queues of waiting threads.  */
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    private fun release(request: ResourceRequest, worker: Worker?) {
+        if (worker != null) {
+            this.workerPool.returnWorker(worker.getWorkerKey(), worker)
+        }
+
+        val resources: ResourceSet = request.getResourceSet
+        usedLocalTestCount -= resources.getLocalTestCount()
+        // TODO(bazel-team): (2010) rounding error can accumulate and value below can end up being
+        // e.g. 1E-15. So if it is small enough, we set it to 0. But maybe there is a better solution.
+        val epsilon = 0.0001
+        val toRemove: MutableSet<String?> = HashSet<String?>()
+        for (resource in resources.getResources().entries) {
+            val key: String? = resource.key
+            val value: Double = usedResources.getOrDefault(key, 0.0) - resource.value
+            usedResources.put(key, value)
+            if (value < epsilon) {
+                toRemove.add(key)
+            }
+        }
+        usedResources.keys.removeAll(toRemove)
+        for (key in toRemove) {
+            usedResources.remove(key)
+        }
+
+        if (windowRequestIds.remove(request.getId)) {
+            windowEstimationCpu -= resources.getResources().getOrDefault(ResourceSet.Companion.CPU, 0.0)
+        }
+        runningActions--
+
+        processAllWaitingRequests()
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    private fun processAllWaitingRequests() {
+        processWaitingRequests(localRequests)
+        processWaitingRequests(dynamicWorkerRequests)
+        processWaitingRequests(dynamicStandaloneRequests)
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    private fun processWaitingRequests(requests: Deque<WaitingRequest>) {
+        if (requests.isEmpty()) {
+            return
+        }
+
+        val iterator: MutableIterator<WaitingRequest> = requests.iterator()
+        while (iterator.hasNext()) {
+            val request = iterator.next()
+            if (request.getResourceLatch!!.getLatch().getCount() != 0L) {
+                if (areResourcesAvailable(request.getResourceRequest!!.getResourceSet)) {
+                    val worker: Worker? = incrementResources(request.getResourceRequest)
+                    request.getResourceLatch.setWorker(worker)
+                    request.getResourceLatch.getLatch().countDown()
+                    iterator.remove()
+                }
+            } else {
+                // Cancelled by other side.
+                iterator.remove()
+            }
+        }
+    }
+
+    /** Throws an exception if requested extra resource isn't being tracked  */
+    @Throws(ExecException::class)
+    private fun assertResourcesTracked(resources: ResourceSet) {
+        for (resource in resources.getResources().entries) {
+            val key: String? = resource.key
+            if (!availableResources.getResources().containsKey(key)) {
+                val message: java.lang.StringBuilder = java.lang.StringBuilder()
+                message.append("Resource ")
+                message.append(key)
+                message.append(" is not being tracked by the resource manager.")
+                message.append(" Available resources are: ")
+                message.append(java.lang.String.join(", ", availableResources.getResources().keys))
+                throw UserExecException(
+                    FailureDetails.FailureDetail.newBuilder()
+                        .setMessage(message.toString())
+                        .setLocalExecution(
+                            FailureDetails.LocalExecution.newBuilder()
+                                .setCode(FailureDetails.LocalExecution.Code.UNTRACKED_RESOURCE)
+                                .build()
+                        )
+                        .build()
+                )
+            }
+        }
+    }
+
+    @Throws(UserExecException::class)
+    private fun <T : Number?> isAvailable(
+        available: T?, used: T?, requested: T?, resourceName: String?
+    ): Boolean {
+        if (!allowOneActionOnResourceUnavailable
+            && available!!.toDouble() + used!!.toDouble() < requested!!.toDouble()
+        ) {
+            throw UserExecException(
+                FailureDetails.FailureDetail.newBuilder()
+                    .setMessage(
+                        String.format(
+                            ("The `%s` resources are not enough to fulfill the request. To allow Bazel to"
+                                    + " bypass this limitation, please adjust the --local_resources flag or"
+                                    + " specify --allow_one_action_on_resource_unavailable in your Bazel"
+                                    + " command."),
+                            resourceName
+                        )
+                    )
+                    .setLocalExecution(
+                        FailureDetails.LocalExecution.newBuilder()
+                            .setCode(FailureDetails.LocalExecution.Code.NOT_ENOUGH_LOCAL_RESOURCE)
+                            .build()
+                    )
+                    .build()
+            )
+        }
+        // Resources are considered available if any one of the conditions below is true:
+        // 1) If resource is not requested at all, it is available.
+        // 2) If resource is not used at the moment and the flag
+        // "allow_one_action_on_resource_unavailable" is enabled, it is considered to be
+        // available regardless of how much is requested. This is necessary to
+        // ensure that at any given time, at least one thread is able to acquire
+        // resources even if it requests more than available.
+        // 3) If used resource amount is less than total available resource amount.
+        return requested!!.toDouble() == 0.0 || (allowOneActionOnResourceUnavailable && used!!.toDouble() == 0.0)
+                || used!!.toDouble() + requested.toDouble() <= available!!.toDouble()
+    }
+
+    // Method will return true if all requested resources are considered to be available.
+    @com.google.common.annotations.VisibleForTesting
+    @kotlin.jvm.Synchronized
+    @Throws(UserExecException::class)
+    fun areResourcesAvailable(resources: ResourceSet): Boolean {
+        com.google.common.base.Preconditions.checkNotNull<ResourceSet?>(availableResources)
+
+        // Comparison below is robust, since any calculation errors will be fixed
+        // by the release() method.
+        val workerKey: WorkerKey? = resources.getWorkerKey()
+        if (workerKey != null && !this.workerPool.hasAvailableQuota(workerKey)) {
+            return false
+        }
+
+        if (allowOneActionOnResourceUnavailable
+            && usedResources.isEmpty()
+            && usedLocalTestCount == 0 && resources.getLocalTestCount() > 0
+        ) {
+            return true
+        }
+
+        val availableLocalTestCount: Int = availableResources.getLocalTestCount()
+        if (!isAvailable<Int?>(
+                availableLocalTestCount,
+                usedLocalTestCount,
+                resources.getLocalTestCount(),
+                "local_test_count"
+            )
+        ) {
+            return false
+        }
+
+        for (resource in resources.getResources().entries) {
+            val key: String = resource.key
+
+            if (key == ResourceSet.Companion.CPU) {
+                if (!isCpuAvailable(resource)) {
+                    return false
+                }
+                continue
+            }
+            // Use only MIN_NECESSARY_RATIO of the resource value to check for
+            // allocation. This is necessary to account for the fact that most of the
+            // requested resource sets use pessimistic estimations. Note that this
+            // ratio is used only during comparison - for tracking we will actually
+            // mark whole requested amount as used.
+            val requested: Double =
+                resource.value * com.google.devtools.build.lib.actions.ResourceManager.Companion.MIN_NECESSARY_RATIO.getOrDefault(
+                    key,
+                    com.google.devtools.build.lib.actions.ResourceManager.Companion.DEFAULT_MIN_NECESSARY_RATIO
+                )
+            val used: Double = usedResources.getOrDefault(key, 0.0)!!
+            val available: Double = availableResources.get(key)
+            if (!isAvailable<Double?>(available, used, requested, key)) {
+                return false
+            }
+        }
+        return true
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(UserExecException::class)
+    fun isCpuAvailable(resource: MutableMap.MutableEntry<String, Double?>): Boolean {
+        val key: String? = resource.key
+
+        val requested: Double =
+            resource.value * com.google.devtools.build.lib.actions.ResourceManager.Companion.MIN_NECESSARY_RATIO.getOrDefault(
+                key,
+                com.google.devtools.build.lib.actions.ResourceManager.Companion.DEFAULT_MIN_NECESSARY_RATIO
+            )
+        val available: Double = availableResources.get(key)
+        val used: Double = usedResources.getOrDefault(key, 0.0)!!
+
+        if (cpuLoadScheduling) {
+            val currentUsage: Double = machineLoadProvider.getCurrentCpuUsage()
+            val windowEstimation = windowEstimationCpu
+            // Don't allow to run more than x3 of number cores actions simultaneously.
+            if (runningActions >= com.google.devtools.build.lib.actions.ResourceManager.Companion.MAX_ACTIONS_PER_CPU * availableResources.get(
+                    ResourceSet.Companion.CPU
+                )
+            ) {
+                return false
+            }
+            return isAvailable<Double?>(available, windowEstimation + currentUsage, requested, key)
+        }
+
+        return isAvailable<Double?>(available, used, requested, key)
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    @kotlin.jvm.Synchronized
+    fun getWaitCount(): Int {
+        return localRequests.size + dynamicStandaloneRequests.size + dynamicWorkerRequests.size
+    }
+
+    // Latch which indicates the availability of resources. Also via this latch worker could be passed
+    // when it's ready.
+    private class ResourceLatch(latch: CountDownLatch?, worker: Worker?) {
+        private val latch: CountDownLatch?
+        private var worker: Worker?
+
+        init {
+            this.latch = latch
+            this.worker = worker
+        }
+
+        fun getLatch(): CountDownLatch? {
+            return latch
+        }
+
+        fun getWorker(): Worker? {
+            return worker
+        }
+
+        fun setWorker(worker: Worker?) {
+            this.worker = worker
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        // Allocated resources are allowed to go "negative", but at least
+        // MIN_NECESSARY_RATIO portion of each resource should be available.
+        // Please note that this value is purely empirical - we assume that generally
+        // requested resources are somewhat pessimistic and thread would end up
+        // using less than requested amount.
+        private const val DEFAULT_MIN_NECESSARY_RATIO = 1.0
+        private val MIN_NECESSARY_RATIO: com.google.common.collect.ImmutableMap<String?, Double?> =
+            com.google.common.collect.ImmutableMap.of<String?, Double?>(ResourceSet.Companion.CPU, 0.6)
+        private const val MAX_ACTIONS_PER_CPU = 3
+
+        /** Generates the ids for requests  */
+        private val requestIdGenerator: AtomicInteger = AtomicInteger(0)
+    }
 }

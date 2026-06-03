@@ -11,52 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen
 
-package com.google.devtools.build.docgen;
+import com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule.Builder.build
+import com.google.devtools.build.buildjar.javac.plugins.processing.AnnotationProcessingModule.Builder.build
+import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics.Builder.build
+import com.google.devtools.build.docgen.BuildDocCollector
+import com.google.devtools.build.docgen.BuildEncyclopediaDocException
+import com.google.devtools.build.docgen.BuildEncyclopediaProcessor
+import com.google.devtools.build.docgen.BuildEncyclopediaProcessor.RuleFamilies
+import com.google.devtools.build.docgen.RuleDocumentation
+import com.google.devtools.build.docgen.RuleLinkExpander
+import com.google.devtools.build.docgen.SourceUrlMapper
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.Builder.build
+import java.io.IOException
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+/** Assembles a list of native rules that can be exported to a builtin.proto file.  */
+class ProtoFileBuildEncyclopediaProcessor(
+    linkExpander: RuleLinkExpander?,
+    urlMapper: SourceUrlMapper?,
+    ruleClassProvider: ConfiguredRuleClassProvider?
+) : BuildEncyclopediaProcessor(linkExpander, urlMapper, ruleClassProvider) {
+    private var nativeRules: com.google.common.collect.ImmutableList<RuleDocumentation?>? = null
 
-/** Assembles a list of native rules that can be exported to a builtin.proto file. */
-public class ProtoFileBuildEncyclopediaProcessor extends BuildEncyclopediaProcessor {
-  private ImmutableList<RuleDocumentation> nativeRules = null;
-
-  public ProtoFileBuildEncyclopediaProcessor(
-      RuleLinkExpander linkExpander,
-      SourceUrlMapper urlMapper,
-      ConfiguredRuleClassProvider ruleClassProvider) {
-    super(linkExpander, urlMapper, ruleClassProvider);
-  }
-
-  /*
+    /*
    * Collects and processes all rule and attribute documentation in inputJavaDirs and generates a
    * list of RuleDocumentation objects.
    */
-  @Override
-  public void generateDocumentation(
-      List<String> inputJavaDirs,
-      List<String> buildEncyclopediaStardocProtos,
-      String outputFile,
-      String denyList)
-      throws BuildEncyclopediaDocException, IOException {
-    BuildDocCollector collector = new BuildDocCollector(linkExpander, urlMapper, ruleClassProvider);
-    Map<String, RuleDocumentation> ruleDocEntries =
-        collector.collect(inputJavaDirs, buildEncyclopediaStardocProtos, denyList);
-    RuleFamilies ruleFamilies = assembleRuleFamilies(ruleDocEntries.values());
-    ImmutableList.Builder<RuleDocumentation> ruleDocsBuilder = new ImmutableList.Builder<>();
+    @Throws(BuildEncyclopediaDocException::class, IOException::class)
+    override fun generateDocumentation(
+        inputJavaDirs: MutableList<String?>,
+        buildEncyclopediaStardocProtos: MutableList<String?>?,
+        outputFile: String?,
+        denyList: String?
+    ) {
+        val collector: BuildDocCollector = BuildDocCollector(linkExpander, urlMapper, ruleClassProvider)
+        val ruleDocEntries: MutableMap<String?, RuleDocumentation?> =
+            collector.collect(inputJavaDirs, buildEncyclopediaStardocProtos, denyList)
+        val ruleFamilies: RuleFamilies = assembleRuleFamilies(ruleDocEntries.values)
+        val ruleDocsBuilder: com.google.common.collect.ImmutableList.Builder<RuleDocumentation?> =
+            com.google.common.collect.ImmutableList.Builder<RuleDocumentation?>()
 
-    for (RuleFamily entry : ruleFamilies.all) {
-      for (RuleDocumentation doc : entry.getRules()) {
-        ruleDocsBuilder.add(doc);
-      }
+        for (entry in ruleFamilies.all) {
+            for (doc in entry.getRules()) {
+                ruleDocsBuilder.add(doc)
+            }
+        }
+        nativeRules = ruleDocsBuilder.build()
     }
-    nativeRules = ruleDocsBuilder.build();
-  }
 
-  public ImmutableList<RuleDocumentation> getNativeRules() {
-    return nativeRules;
-  }
+    fun getNativeRules(): com.google.common.collect.ImmutableList<RuleDocumentation?>? {
+        return nativeRules
+    }
 }

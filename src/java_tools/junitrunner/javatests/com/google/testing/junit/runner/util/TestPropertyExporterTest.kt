@@ -11,57 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import static org.mockito.Mockito.verify;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import com.google.testing.junit.runner.util.TestPropertyExporter
+import com.google.testing.junit.runner.util.TestPropertyRunnerIntegration
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.mockito.Mock
+import org.mockito.Mockito
+import org.mockito.junit.MockitoJUnitRunner
 
 /**
- * Tests for {@link TestPropertyExporter}.
+ * Tests for [TestPropertyExporter].
  */
-@RunWith(MockitoJUnitRunner.class)
-public class TestPropertyExporterTest {
-  @Mock private TestPropertyExporter.Callback mockCallback;
-  private TestPropertyExporter.Callback previousCallback;
+@RunWith(MockitoJUnitRunner::class)
+class TestPropertyExporterTest {
+    @Mock
+    private val mockCallback: com.google.testing.junit.runner.util.TestPropertyExporter.Callback? = null
+    private var previousCallback: com.google.testing.junit.runner.util.TestPropertyExporter.Callback? = null
 
-  @Before
-  public void setThreadCallback() throws Exception {
-    previousCallback = TestPropertyRunnerIntegration.setTestCaseForThread(mockCallback);
-  }
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setThreadCallback() {
+        previousCallback = TestPropertyRunnerIntegration.setTestCaseForThread(mockCallback)
+    }
 
-  @After
-  public void restorePreviousThreadCallback() throws Exception {
-    TestPropertyRunnerIntegration.setTestCaseForThread(previousCallback);
-  }
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun restorePreviousThreadCallback() {
+        TestPropertyRunnerIntegration.setTestCaseForThread(previousCallback)
+    }
 
-  @Test
-  public void testExportProperty() {
-    TestPropertyExporter.INSTANCE.exportProperty("propertyName", "value");
-    verify(mockCallback).exportProperty("propertyName", "value");
-  }
+    @org.junit.Test
+    fun testExportProperty() {
+        TestPropertyExporter.Companion.INSTANCE.exportProperty("propertyName", "value")
+        Mockito.verify<com.google.testing.junit.runner.util.TestPropertyExporter.Callback?>(mockCallback)
+            .exportProperty("propertyName", "value")
+    }
 
-  @Test
-  public void testExportRepeatedProperty() {
-    TestPropertyExporter.INSTANCE.exportRepeatedProperty("propertyName", "value");
-    verify(mockCallback).exportRepeatedProperty("propertyName", "value");
-  }
+    @org.junit.Test
+    fun testExportRepeatedProperty() {
+        TestPropertyExporter.Companion.INSTANCE.exportRepeatedProperty("propertyName", "value")
+        Mockito.verify<com.google.testing.junit.runner.util.TestPropertyExporter.Callback?>(mockCallback)
+            .exportRepeatedProperty("propertyName", "value")
+    }
 
-  @Test
-  public void testExportProperty_emptyNameIsValid() {
-    TestPropertyExporter.INSTANCE.exportProperty(" ", "value");
-    verify(mockCallback).exportProperty(" ", "value");
-  }
+    @org.junit.Test
+    fun testExportProperty_emptyNameIsValid() {
+        TestPropertyExporter.Companion.INSTANCE.exportProperty(" ", "value")
+        Mockito.verify<com.google.testing.junit.runner.util.TestPropertyExporter.Callback?>(mockCallback)
+            .exportProperty(" ", "value")
+    }
 
-  @Test
-  public void testExportRepeatedProperty_emptyNameIsValid() {
-    TestPropertyExporter.INSTANCE.exportRepeatedProperty(" ", "value");
-    verify(mockCallback).exportRepeatedProperty(" ", "value");
-  }
+    @org.junit.Test
+    fun testExportRepeatedProperty_emptyNameIsValid() {
+        TestPropertyExporter.Companion.INSTANCE.exportRepeatedProperty(" ", "value")
+        Mockito.verify<com.google.testing.junit.runner.util.TestPropertyExporter.Callback?>(mockCallback)
+            .exportRepeatedProperty(" ", "value")
+    }
 }

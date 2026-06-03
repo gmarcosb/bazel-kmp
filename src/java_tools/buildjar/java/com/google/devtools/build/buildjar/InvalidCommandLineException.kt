@@ -11,17 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar
 
-package com.google.devtools.build.buildjar;
+/** Exception to be thrown on command line parsing errors  */
+class InvalidCommandLineException : java.lang.Exception {
+    constructor(message: String?) : super(message)
 
-/** Exception to be thrown on command line parsing errors */
-public class InvalidCommandLineException extends Exception {
-
-  public InvalidCommandLineException(String message) {
-    super(message);
-  }
-
-  public InvalidCommandLineException(String message, Throwable cause) {
-    super(message, cause);
-  }
+    constructor(message: String?, cause: Throwable?) : super(message, cause)
 }

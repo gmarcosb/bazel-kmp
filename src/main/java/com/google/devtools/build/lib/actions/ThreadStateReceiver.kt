@@ -11,20 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.errorprone.annotations.CheckReturnValue;
+import com.google.devtools.build.lib.profiler.SilentCloseable
 
 /**
- * Interface to be used by threads doing work that should be tracked. {@link #started} is called at
- * the beginning of the thread's work. When not tracking work, the {@link #NULL_INSTANCE} should be
+ * Interface to be used by threads doing work that should be tracked. [.started] is called at
+ * the beginning of the thread's work. When not tracking work, the [.NULL_INSTANCE] should be
  * used to avoid memory and process overhead.
  */
-public interface ThreadStateReceiver {
-  ThreadStateReceiver NULL_INSTANCE = () -> () -> {};
+interface ThreadStateReceiver {
+    @com.google.errorprone.annotations.CheckReturnValue
+    fun started(): SilentCloseable?
 
-  @CheckReturnValue
-  SilentCloseable started();
+    companion object {
+        val NULL_INSTANCE: ThreadStateReceiver = ThreadStateReceiver { SilentCloseable {} }
+    }
 }

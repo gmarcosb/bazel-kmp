@@ -11,13 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac
 
-package com.google.devtools.build.buildjar.javac;
+import com.google.devtools.build.buildjar.javac.BlazeJavacArguments
+import com.google.devtools.build.buildjar.javac.BlazeJavacResult
 
 /**
  * The JavacRunner is a type that can be used to invoke javac and provides a convenient hook for
  * modifications.
  */
-public interface JavacRunner {
-  BlazeJavacResult invokeJavac(BlazeJavacArguments arguments);
+interface JavacRunner {
+    fun invokeJavac(arguments: BlazeJavacArguments?): BlazeJavacResult?
 }

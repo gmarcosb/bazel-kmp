@@ -11,88 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Collection;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue
 
-/** A {@link InputMetadataProvider} backed by static data */
-public final class StaticInputMetadataProvider implements InputMetadataProvider {
+/** A [InputMetadataProvider] backed by static data  */
+class StaticInputMetadataProvider(inputToMetadata: MutableMap<out ActionInput?, FileArtifactValue?>) :
+    InputMetadataProvider {
+    private val inputToMetadata: com.google.common.collect.ImmutableMap<ActionInput?, FileArtifactValue?>
+    private val execPathToInput: com.google.common.collect.ImmutableMap<PathFragment?, ActionInput?>
 
-  private static final StaticInputMetadataProvider EMPTY =
-      new StaticInputMetadataProvider(ImmutableMap.of());
-
-  public static StaticInputMetadataProvider empty() {
-    return EMPTY;
-  }
-
-  private final ImmutableMap<ActionInput, FileArtifactValue> inputToMetadata;
-  private final ImmutableMap<PathFragment, ActionInput> execPathToInput;
-
-  public StaticInputMetadataProvider(
-      Map<? extends ActionInput, FileArtifactValue> inputToMetadata) {
-    this.inputToMetadata = ImmutableMap.copyOf(inputToMetadata);
-    this.execPathToInput = constructExecPathToInputMap(inputToMetadata.keySet());
-  }
-
-  private static ImmutableMap<PathFragment, ActionInput> constructExecPathToInputMap(
-      Collection<? extends ActionInput> inputs) {
-    ImmutableMap.Builder<PathFragment, ActionInput> builder =
-        ImmutableMap.builderWithExpectedSize(inputs.size());
-    for (ActionInput input : inputs) {
-      builder.put(input.getExecPath(), input);
+    init {
+        this.inputToMetadata =
+            com.google.common.collect.ImmutableMap.copyOf<ActionInput?, FileArtifactValue?>(inputToMetadata)
+        this.execPathToInput = constructExecPathToInputMap(inputToMetadata.keys)
     }
-    return builder.buildOrThrow();
-  }
 
-  @Nullable
-  @Override
-  public FileArtifactValue getInputMetadataChecked(ActionInput input) {
-    return inputToMetadata.get(input);
-  }
+    override fun getInputMetadataChecked(input: ActionInput?): FileArtifactValue? {
+        return inputToMetadata.get(input)
+    }
 
-  @Nullable
-  @Override
-  public TreeArtifactValue getTreeMetadata(ActionInput actionInput) {
-    return null;
-  }
+    override fun getTreeMetadata(actionInput: ActionInput?): TreeArtifactValue? {
+        return null
+    }
 
-  @Nullable
-  @Override
-  public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-    return null;
-  }
+    override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+        return null
+    }
 
-  @Override
-  @Nullable
-  public FilesetOutputTree getFileset(ActionInput input) {
-    return null;
-  }
+    override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+        return null
+    }
 
-  @Override
-  public ImmutableMap<Artifact, FilesetOutputTree> getFilesets() {
-    return ImmutableMap.of();
-  }
+    override fun getFilesets(): com.google.common.collect.ImmutableMap<Artifact?, FilesetOutputTree?> {
+        return com.google.common.collect.ImmutableMap.of<Artifact?, FilesetOutputTree?>()
+    }
 
-  @Override
-  @Nullable
-  public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-    return null;
-  }
+    override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+        return null
+    }
 
-  @Override
-  public ImmutableList<RunfilesTree> getRunfilesTrees() {
-    return ImmutableList.of();
-  }
+    override fun getRunfilesTrees(): com.google.common.collect.ImmutableList<RunfilesTree?> {
+        return com.google.common.collect.ImmutableList.of<RunfilesTree?>()
+    }
 
-  @Nullable
-  @Override
-  public ActionInput getInput(PathFragment execPath) {
-    return execPathToInput.get(execPath);
-  }
+    override fun getInput(execPath: PathFragment?): ActionInput? {
+        return execPathToInput.get(execPath)
+    }
+
+    companion object {
+        private val EMPTY =
+            StaticInputMetadataProvider(com.google.common.collect.ImmutableMap.of<ActionInput?, FileArtifactValue?>())
+
+        fun empty(): StaticInputMetadataProvider {
+            return EMPTY
+        }
+
+        private fun constructExecPathToInputMap(
+            inputs: MutableCollection<out ActionInput>
+        ): com.google.common.collect.ImmutableMap<PathFragment?, ActionInput?> {
+            val builder: com.google.common.collect.ImmutableMap.Builder<PathFragment?, ActionInput?> =
+                com.google.common.collect.ImmutableMap.builderWithExpectedSize<PathFragment?, ActionInput?>(inputs.size)
+            for (input in inputs) {
+                builder.put(input.getExecPath(), input)
+            }
+            return builder.buildOrThrow()
+        }
+    }
 }

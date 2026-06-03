@@ -11,38 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * An interface for {@code ActionLookupKey}, or at least for a {@link Label}. Only tests and
- * internal {@link Artifact}-generators should implement this interface -- otherwise, {@code
- * ActionLookupKey} and its subclasses should be the only implementation.
+ * An interface for `ActionLookupKey`, or at least for a [Label]. Only tests and
+ * internal [Artifact]-generators should implement this interface -- otherwise, `ActionLookupKey` and its subclasses should be the only implementation.
  */
-public interface ArtifactOwner {
+interface ArtifactOwner {
+    fun getLabel(): Label?
 
-  @Nullable
-  Label getLabel();
+    companion object {
+        /**
+         * An [ArtifactOwner] that just returns null for its label. Only for use with resolved
+         * source artifacts and tests.
+         */
+        @SerializationConstant
+        val NULL_OWNER: ArtifactOwner = object : ArtifactOwner {
+            override fun getLabel(): Label? {
+                return null
+            }
 
-  /**
-   * An {@link ArtifactOwner} that just returns null for its label. Only for use with resolved
-   * source artifacts and tests.
-   */
-  @SerializationConstant
-  ArtifactOwner NULL_OWNER =
-      new ArtifactOwner() {
-        @Nullable
-        @Override
-        public Label getLabel() {
-          return null;
+            override fun toString(): String {
+                return "NULL_OWNER"
+            }
         }
-
-        @Override
-        public String toString() {
-          return "NULL_OWNER";
-        }
-      };
+    }
 }

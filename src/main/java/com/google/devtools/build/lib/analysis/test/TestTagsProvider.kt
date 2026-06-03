@@ -11,28 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
+import com.google.devtools.build.lib.analysis.TransitiveInfoProvider
 
 /**
- * A {@link TransitiveInfoProvider} for configured targets to remember tags for test rules.
- *
- * <p>Temporary hack to allow dependencies on test_suite targets to continue to work for the time
+ * A [TransitiveInfoProvider] for configured targets to remember tags for test rules.
+ * 
+ * 
+ * Temporary hack to allow dependencies on test_suite targets to continue to work for the time
  * being.
  */
-@Immutable
-public final class TestTagsProvider implements TransitiveInfoProvider {
-  private final ImmutableList<String> testTags;
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class TestTagsProvider(testTags: com.google.common.collect.ImmutableList<String?>?) : TransitiveInfoProvider {
+    private val testTags: com.google.common.collect.ImmutableList<String?>?
 
-  public TestTagsProvider(ImmutableList<String> testTags) {
-    this.testTags = testTags;
-  }
+    init {
+        this.testTags = testTags
+    }
 
-  public ImmutableList<String> getTestTags() {
-    return testTags;
-  }
+    fun getTestTags(): com.google.common.collect.ImmutableList<String?>? {
+        return testTags
+    }
 }

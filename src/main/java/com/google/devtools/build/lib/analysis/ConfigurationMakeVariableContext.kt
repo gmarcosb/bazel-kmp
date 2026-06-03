@@ -11,79 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.MakeVariableSupplier.MapBackedMakeVariableSupplier;
-import com.google.devtools.build.lib.analysis.MakeVariableSupplier.TemplateVariableInfoBackedMakeVariableSupplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.stringtemplate.ExpansionException;
-import com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext;
-import com.google.devtools.build.lib.packages.Package;
-import net.starlark.java.eval.Dict;
+import com.google.devtools.build.lib.analysis.MakeVariableSupplier.MapBackedMakeVariableSupplier
 
 /**
  * Implements make variable expansion for make variables that depend on the configuration and the
- * target (not on behavior of the {@link ConfiguredTarget} implementation). Retrieved Make variable
- * value can be modified using {@link MakeVariableSupplier}
+ * target (not on behavior of the [ConfiguredTarget] implementation). Retrieved Make variable
+ * value can be modified using [MakeVariableSupplier]
  */
-public class ConfigurationMakeVariableContext implements TemplateContext {
+open class ConfigurationMakeVariableContext(
+    pkgDeclarations: Package.Declarations,
+    configuration: BuildConfigurationValue,
+    ruleTemplateVariableProviders: com.google.common.collect.ImmutableList<TemplateVariableInfo?>?,
+    extraMakeVariableSuppliers: Iterable<out MakeVariableSupplier?>?
+) : com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext {
+    private val allMakeVariableSuppliers: com.google.common.collect.ImmutableList<out MakeVariableSupplier>
 
-  private final ImmutableList<? extends MakeVariableSupplier> allMakeVariableSuppliers;
+    constructor(
+        pkgDeclarations: Package.Declarations,
+        configuration: BuildConfigurationValue,
+        ruleTemplateVariableProviders: com.google.common.collect.ImmutableList<TemplateVariableInfo?>?
+    ) : this(
+        pkgDeclarations,
+        configuration,
+        ruleTemplateVariableProviders,
+        com.google.common.collect.ImmutableList.of<MakeVariableSupplier?>()
+    )
 
-  public ConfigurationMakeVariableContext(
-      Package.Declarations pkgDeclarations,
-      BuildConfigurationValue configuration,
-      ImmutableList<TemplateVariableInfo> ruleTemplateVariableProviders) {
-    this(pkgDeclarations, configuration, ruleTemplateVariableProviders, ImmutableList.of());
-  }
-
-  public ConfigurationMakeVariableContext(
-      Package.Declarations pkgDeclarations,
-      BuildConfigurationValue configuration,
-      ImmutableList<TemplateVariableInfo> ruleTemplateVariableProviders,
-      Iterable<? extends MakeVariableSupplier> extraMakeVariableSuppliers) {
-    this.allMakeVariableSuppliers =
-        ImmutableList.<MakeVariableSupplier>builder()
-            // These should be in priority order:
-            // 1) extra suppliers passed in (assume the caller knows what they are doing)
-            // 2) variables from the command-line
-            // 3) package-level overrides (ie, vardef)
-            // 4) variables from the rule (including from resolved toolchains)
-            // 5) variables from the global configuration
-            .addAll(Preconditions.checkNotNull(extraMakeVariableSuppliers))
-            .add(new MapBackedMakeVariableSupplier(configuration.getCommandLineBuildVariables()))
-            .add(new MapBackedMakeVariableSupplier(pkgDeclarations.getMakeEnvironment()))
-            .add(new TemplateVariableInfoBackedMakeVariableSupplier(ruleTemplateVariableProviders))
-            .add(new MapBackedMakeVariableSupplier(configuration.getGlobalMakeEnvironment()))
-            .build();
-  }
-
-  @Override
-  public String lookupVariable(String name) throws ExpansionException {
-    for (MakeVariableSupplier supplier : allMakeVariableSuppliers) {
-      String variableValue = supplier.getMakeVariable(name);
-      if (variableValue != null) {
-        return variableValue;
-      }
+    init {
+        this.allMakeVariableSuppliers =
+            com.google.common.collect.ImmutableList.builder<MakeVariableSupplier>() // These should be in priority order:
+                // 1) extra suppliers passed in (assume the caller knows what they are doing)
+                // 2) variables from the command-line
+                // 3) package-level overrides (ie, vardef)
+                // 4) variables from the rule (including from resolved toolchains)
+                // 5) variables from the global configuration
+                .addAll(com.google.common.base.Preconditions.checkNotNull(extraMakeVariableSuppliers))
+                .add(MapBackedMakeVariableSupplier(configuration.getCommandLineBuildVariables()))
+                .add(MapBackedMakeVariableSupplier(pkgDeclarations.getMakeEnvironment()))
+                .add(TemplateVariableInfoBackedMakeVariableSupplier(ruleTemplateVariableProviders))
+                .add(MapBackedMakeVariableSupplier(configuration.getGlobalMakeEnvironment()))
+                .build()
     }
-    throw new ExpansionException(String.format("$(%s) not defined", name));
-  }
 
-  public Dict.Builder<String, String> collectMakeVariables() throws ExpansionException {
-    Dict.Builder<String, String> map = Dict.builder();
-    // Collect variables in the reverse order as in lookupMakeVariable
-    // because each update is overwriting.
-    for (MakeVariableSupplier supplier : allMakeVariableSuppliers.reverse()) {
-      map.putAll(supplier.getAllMakeVariables());
+    @Throws(ExpansionException::class)
+    override fun lookupVariable(name: String?): String? {
+        for (supplier in allMakeVariableSuppliers) {
+            val variableValue: String? = supplier.getMakeVariable(name)
+            if (variableValue != null) {
+                return variableValue
+            }
+        }
+        throw ExpansionException(java.lang.String.format("$(%s) not defined", name))
     }
-    return map;
-  }
 
-  @Override
-  public String lookupFunction(String name, String param) throws ExpansionException {
-    throw new ExpansionException(String.format("$(%s) not defined", name));
-  }
+    @Throws(ExpansionException::class)
+    fun collectMakeVariables(): net.starlark.java.eval.Dict.Builder<String?, String?> {
+        val map: net.starlark.java.eval.Dict.Builder<String?, String?> = Dict.builder<String?, String?>()
+        // Collect variables in the reverse order as in lookupMakeVariable
+        // because each update is overwriting.
+        for (supplier in allMakeVariableSuppliers.reverse()) {
+            map.putAll(supplier.getAllMakeVariables())
+        }
+        return map
+    }
+
+    @Throws(ExpansionException::class)
+    override fun lookupFunction(name: String?, param: String?): String? {
+        throw ExpansionException(java.lang.String.format("$(%s) not defined", name))
+    }
 }

@@ -11,116 +11,128 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen.starlark;
+package com.google.devtools.build.docgen.starlark
 
-import com.google.common.collect.ImmutableList;
-import java.lang.reflect.Method;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
+import com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule.Builder.build
+import com.google.devtools.build.buildjar.javac.plugins.processing.AnnotationProcessingModule.Builder.build
+import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics.Builder.build
+import com.google.devtools.build.docgen.starlark.AnnotParamDoc
+import com.google.devtools.build.docgen.starlark.MemberDoc
+import com.google.devtools.build.docgen.starlark.ParamDoc
+import com.google.devtools.build.docgen.starlark.StarlarkDocExpander
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.Builder.build
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
 /**
- * An abstract class containing documentation for a {@link StarlarkMethod}-annotated Java method
+ * An abstract class containing documentation for a [StarlarkMethod]-annotated Java method
  * callable from Starlark.
  */
-public abstract class AnnotStarlarkMethodDoc extends MemberDoc {
-  protected final Method javaMethod;
-  protected final StarlarkMethod annotation;
-  protected final ImmutableList<AnnotParamDoc> params;
+abstract class AnnotStarlarkMethodDoc(
+    method: java.lang.reflect.Method,
+    annotation: StarlarkMethod,
+    expander: StarlarkDocExpander?
+) : MemberDoc(expander) {
+    protected val javaMethod: java.lang.reflect.Method
+    protected val annotation: StarlarkMethod
+    protected val params: com.google.common.collect.ImmutableList<AnnotParamDoc?>
 
-  public AnnotStarlarkMethodDoc(
-      Method method, StarlarkMethod annotation, StarlarkDocExpander expander) {
-    super(expander);
-    this.javaMethod = method;
-    this.annotation = annotation;
-    this.params = determineParams();
-  }
-
-  @Override
-  public final boolean documented() {
-    return annotation.documented();
-  }
-
-  @Override
-  public final String getReturnTypeExtraMessage() {
-    if (annotation.allowReturnNones()) {
-      return " May return <code>None</code>.\n";
+    init {
+        this.javaMethod = method
+        this.annotation = annotation
+        this.params = determineParams()
     }
-    return "";
-  }
 
-  /** Returns the annotated Java method. */
-  public final Method getMethod() {
-    return javaMethod;
-  }
+    override fun documented(): Boolean {
+        return annotation.documented
+    }
 
-  @Override
-  public final boolean isCallable() {
-    return !annotation.structField();
-  }
-
-  /** Returns a list containing the documentation for each of the method's parameters. */
-  @Override
-  public final ImmutableList<AnnotParamDoc> getParams() {
-    return params;
-  }
-
-  private ImmutableList<AnnotParamDoc> determineParams() {
-    ImmutableList.Builder<AnnotParamDoc> paramsBuilder = ImmutableList.builder();
-    for (int i = getStartIndexForParams(); i < annotation.parameters().length; i++) {
-      Param param = annotation.parameters()[i];
-      if (param.documented()) {
-        ParamDoc.Kind kind = ParamDoc.Kind.ORDINARY;
-        if (!param.named()) {
-          kind = ParamDoc.Kind.POSITIONAL_ONLY;
-        } else if (!param.positional()) {
-          kind = ParamDoc.Kind.KEYWORD_ONLY;
+    val returnTypeExtraMessage: String
+        get() {
+            if (annotation.allowReturnNones) {
+                return " May return <code>None</code>.\n"
+            }
+            return ""
         }
-        paramsBuilder.add(new AnnotParamDoc(this, param, expander, kind, i));
-      }
-    }
-    if (!annotation.extraPositionals().name().isEmpty()) {
-      paramsBuilder.add(
-          new AnnotParamDoc(
-              this,
-              annotation.extraPositionals(),
-              expander,
-              ParamDoc.Kind.VARARGS,
-              /* paramIndex= */ -1));
-    }
-    if (!annotation.extraKeywords().name().isEmpty()) {
-      paramsBuilder.add(
-          new AnnotParamDoc(
-              this,
-              annotation.extraKeywords(),
-              expander,
-              ParamDoc.Kind.KWARGS,
-              /* paramIndex= */ -1));
-    }
-    return paramsBuilder.build();
-  }
 
-  protected String getSignature(String fullyQualifiedMethodName) {
-    String args = isCallable() ? "(" + getParameterString() + ")" : "";
+    val method: java.lang.reflect.Method
+        /** Returns the annotated Java method.  */
+        get() = javaMethod
 
-    return String.format(
-        "%s %s%s", getTypeAnchor(javaMethod.getReturnType()), fullyQualifiedMethodName, args);
-  }
+    val isCallable: Boolean
+        get() = !annotation.structField
 
-  /**
-   * Returns the index to start at when iterating through the parameters of the method annotation.
-   * This is not always 0 because of the "self" param for the "string" module.
-   */
-  private int getStartIndexForParams() {
-    Param[] params = annotation.parameters();
-    if (params.length > 0) {
-      StarlarkBuiltin module = javaMethod.getDeclaringClass().getAnnotation(StarlarkBuiltin.class);
-      if (module != null && module.name().equals("string")) {
-        // Skip the self parameter, which is the first mandatory
-        // positional parameter in each method of the "string" module.
-        return 1;
-      }
+    /** Returns a list containing the documentation for each of the method's parameters.  */
+    override fun getParams(): com.google.common.collect.ImmutableList<AnnotParamDoc?> {
+        return params
     }
-    return 0;
-  }
+
+    private fun determineParams(): com.google.common.collect.ImmutableList<AnnotParamDoc?> {
+        val paramsBuilder: com.google.common.collect.ImmutableList.Builder<AnnotParamDoc?> =
+            com.google.common.collect.ImmutableList.builder<AnnotParamDoc?>()
+        for (i in this.startIndexForParams..<annotation.parameters.size) {
+            val param: net.starlark.java.annot.Param = annotation.parameters[i]
+            if (param.documented) {
+                var kind: com.google.devtools.build.docgen.starlark.ParamDoc.Kind =
+                    com.google.devtools.build.docgen.starlark.ParamDoc.Kind.ORDINARY
+                if (!param.named) {
+                    kind = com.google.devtools.build.docgen.starlark.ParamDoc.Kind.POSITIONAL_ONLY
+                } else if (!param.positional) {
+                    kind = com.google.devtools.build.docgen.starlark.ParamDoc.Kind.KEYWORD_ONLY
+                }
+                paramsBuilder.add(AnnotParamDoc(this, param, expander, kind, i))
+            }
+        }
+        if (!annotation.extraPositionals.name.isEmpty()) {
+            paramsBuilder.add(
+                AnnotParamDoc(
+                    this,
+                    annotation.extraPositionals,
+                    expander,
+                    com.google.devtools.build.docgen.starlark.ParamDoc.Kind.VARARGS,  /* paramIndex= */
+                    -1
+                )
+            )
+        }
+        if (!annotation.extraKeywords.name.isEmpty()) {
+            paramsBuilder.add(
+                AnnotParamDoc(
+                    this,
+                    annotation.extraKeywords,
+                    expander,
+                    com.google.devtools.build.docgen.starlark.ParamDoc.Kind.KWARGS,  /* paramIndex= */
+                    -1
+                )
+            )
+        }
+        return paramsBuilder.build()
+    }
+
+    protected fun getSignature(fullyQualifiedMethodName: String?): String? {
+        val args = if (this.isCallable) "(" + getParameterString() + ")" else ""
+
+        return String.format(
+            "%s %s%s", getTypeAnchor(javaMethod.getReturnType()), fullyQualifiedMethodName, args
+        )
+    }
+
+    private val startIndexForParams: Int
+        /**
+         * Returns the index to start at when iterating through the parameters of the method annotation.
+         * This is not always 0 because of the "self" param for the "string" module.
+         */
+        get() {
+            val params: Array<net.starlark.java.annot.Param> = annotation.parameters
+            if (params.size > 0) {
+                val module: StarlarkBuiltin? =
+                    javaMethod.getDeclaringClass().getAnnotation<StarlarkBuiltin?>(StarlarkBuiltin::class.java)
+                if (module != null && module.name == "string") {
+                    // Skip the self parameter, which is the first mandatory
+                    // positional parameter in each method of the "string" module.
+                    return 1
+                }
+            }
+            return 0
+        }
 }

@@ -11,20 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+/** Posted when a [BuildConfigurationValue] is created.  */
+class ConfigurationValueEvent(configuration: BuildConfigurationValue?) : Postable {
+    val configuration: BuildConfigurationValue?
 
-/** Posted when a {@link BuildConfigurationValue} is created. */
-public record ConfigurationValueEvent(BuildConfigurationValue configuration) implements Postable {
-  public ConfigurationValueEvent {
-    requireNonNull(configuration, "configuration");
-  }
+    init {
+        this.configuration = configuration
+        java.util.Objects.requireNonNull<BuildConfigurationValue?>(configuration, "configuration")
+    }
 
-  public static ConfigurationValueEvent create(BuildConfigurationValue configuration) {
-    return new ConfigurationValueEvent(configuration);
-  }
-
+    companion object {
+        fun create(configuration: BuildConfigurationValue?): ConfigurationValueEvent {
+            return ConfigurationValueEvent(configuration)
+        }
+    }
 }

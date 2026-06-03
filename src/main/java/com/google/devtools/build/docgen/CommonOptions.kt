@@ -11,54 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** Command line options shared by Build Encyclopedia and Starlark and BUILD language API docgen. */
+/** Command line options shared by Build Encyclopedia and Starlark and BUILD language API docgen.  */
 @OptionsClass
-public abstract class CommonOptions extends OptionsBase {
-  @Option(
-      name = "link_map_path",
-      abbrev = 'm',
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Path to a JSON file that specifies link mappings (page name to URL and input file/label"
-              + " to source code repository URL). Must be specified.")
-  public abstract String getLinkMapPath();
+abstract class CommonOptions : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "link_map_path",
+        abbrev = 'm',
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Path to a JSON file that specifies link mappings (page name to URL and input file/label"
+                + " to source code repository URL). Must be specified.")
+    )
+    abstract val linkMapPath: String?
 
-  @Option(
-      name = "api_stardoc_proto",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "A stardoc_output.ModuleInfo binary proto file generated from a Starlark and BUILD"
-              + " language API entry point .bzl file")
-  public abstract List<String> getApiStardocProtos();
+    @get:com.google.devtools.common.options.Option(
+        name = "api_stardoc_proto",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("A stardoc_output.ModuleInfo binary proto file generated from a Starlark and BUILD"
+                + " language API entry point .bzl file")
+    )
+    abstract val apiStardocProtos: MutableList<String?>?
 
-  @Option(
-      name = "create_toc",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Whether to output a table of contents.")
-  public abstract boolean getCreateToc();
+    @get:com.google.devtools.common.options.Option(
+        name = "create_toc",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Whether to output a table of contents."
+    )
+    abstract val createToc: Boolean
 
-  @Option(
-      name = "help",
-      abbrev = 'h',
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Prints the help string.")
-  public abstract boolean getHelp();
+    @get:com.google.devtools.common.options.Option(
+        name = "help",
+        abbrev = 'h',
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Prints the help string."
+    )
+    abstract val help: Boolean
 }

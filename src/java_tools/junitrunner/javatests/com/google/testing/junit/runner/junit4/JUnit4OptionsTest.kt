@@ -11,118 +11,144 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.junit4.JUnit4Options
+import com.google.testing.junit.runner.junit4.JUnit4Options.testExcludeFilter
+import com.google.testing.junit.runner.junit4.JUnit4Options.testIncludeFilter
+import com.google.testing.junit.runner.junit4.JUnit4Options.unparsedArgs
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.HashMap
 
 /**
- * Tests for {@link JUnit4Options}
+ * Tests for [JUnit4Options]
  */
-@RunWith(JUnit4.class)
-public class JUnit4OptionsTest {
+@RunWith(JUnit4::class)
+class JUnit4OptionsTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_noArgs() {
+        val options: JUnit4Options =
+            JUnit4Options.parse(EMPTY_ENV, com.google.common.collect.ImmutableList.of<String?>())
+        Truth.assertThat(options.testIncludeFilter).isNull()
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  private static final Map<String, String> EMPTY_ENV = Collections.emptyMap();
+    @org.junit.Test
+    fun testParse_onlyUnparsedArgs() {
+        val options: JUnit4Options =
+            JUnit4Options.parse(EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--bar", "baz"))
+        Truth.assertThat(options.testIncludeFilter).isNull()
+        Truth.assertThat<String?>(options.unparsedArgs).isEqualTo(arrayOf<String>("--bar", "baz"))
+    }
 
-  @Test
-  public void testParse_noArgs() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(EMPTY_ENV, ImmutableList.<String>of());
-    assertThat(options.getTestIncludeFilter()).isNull();
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_withTwoArgTestFilter() {
+        val options: JUnit4Options = JUnit4Options.parse(
+            EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--test_filter", "foo")
+        )
+        Truth.assertThat(options.testIncludeFilter).isEqualTo("foo")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_onlyUnparsedArgs() {
-    JUnit4Options options = JUnit4Options.parse(EMPTY_ENV, ImmutableList.of("--bar", "baz"));
-    assertThat(options.getTestIncludeFilter()).isNull();
-    assertThat(options.getUnparsedArgs()).isEqualTo(new String[] {"--bar", "baz"});
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_withOneArgTestFilter() {
+        val options: JUnit4Options =
+            JUnit4Options.parse(EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--test_filter=foo"))
+        Truth.assertThat(options.testIncludeFilter).isEqualTo("foo")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_withTwoArgTestFilter() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(
-        EMPTY_ENV, ImmutableList.of("--test_filter", "foo"));
-    assertThat(options.getTestIncludeFilter()).isEqualTo("foo");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_testFilterAndUnparsedArgs() {
+        val options: JUnit4Options = JUnit4Options.parse(
+            EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--bar", "--test_filter=foo", "--baz")
+        )
+        Truth.assertThat(options.testIncludeFilter).isEqualTo("foo")
+        Truth.assertThat<String?>(options.unparsedArgs).isEqualTo(arrayOf<String>("--bar", "--baz"))
+    }
 
-  @Test
-  public void testParse_withOneArgTestFilter() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(EMPTY_ENV, ImmutableList.of("--test_filter=foo"));
-    assertThat(options.getTestIncludeFilter()).isEqualTo("foo");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_testLastTestFilterWins() {
+        val options: JUnit4Options =
+            JUnit4Options.parse(
+                EMPTY_ENV,
+                com.google.common.collect.ImmutableList.of<E?>("--test_filter=foo", "--test_filter=bar")
+            )
+        Truth.assertThat(options.testIncludeFilter).isEqualTo("bar")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_testFilterAndUnparsedArgs() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(
-        EMPTY_ENV, ImmutableList.of("--bar", "--test_filter=foo", "--baz"));
-    assertThat(options.getTestIncludeFilter()).isEqualTo("foo");
-    assertThat(options.getUnparsedArgs()).isEqualTo(new String[] {"--bar", "--baz"});
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_testFilterMissingSecondArg() {
+        org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable {
+                JUnit4Options.parse(
+                    EMPTY_ENV,
+                    com.google.common.collect.ImmutableList.of<E?>("--test_filter")
+                )
+            })
+    }
 
-  @Test
-  public void testParse_testLastTestFilterWins() throws Exception {
-    JUnit4Options options =
-        JUnit4Options.parse(EMPTY_ENV, ImmutableList.of("--test_filter=foo", "--test_filter=bar"));
-    assertThat(options.getTestIncludeFilter()).isEqualTo("bar");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_testFilterExcludeWithTwoArgTestFilter() {
+        val options: JUnit4Options = JUnit4Options.parse(
+            EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--test_exclude_filter", "foo")
+        )
+        Truth.assertThat(options.testExcludeFilter).isEqualTo("foo")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_testFilterMissingSecondArg() throws Exception {
-    assertThrows(
-        RuntimeException.class,
-        () -> JUnit4Options.parse(EMPTY_ENV, ImmutableList.of("--test_filter")));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_testFilterExcludewithOneArgTestFilter() {
+        val options: JUnit4Options = JUnit4Options.parse(
+            EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--test_exclude_filter=foo")
+        )
+        Truth.assertThat(options.testExcludeFilter).isEqualTo("foo")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_testFilterExcludeWithTwoArgTestFilter() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(
-        EMPTY_ENV, ImmutableList.of("--test_exclude_filter", "foo"));
-    assertThat(options.getTestExcludeFilter()).isEqualTo("foo");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_unknownOptionName() {
+        val options: JUnit4Options = JUnit4Options.parse(
+            EMPTY_ENV, com.google.common.collect.ImmutableList.of<E?>("--unknown=foo")
+        )
+        Truth.assertThat<String?>(options.unparsedArgs).isEqualTo(arrayOf<String>("--unknown=foo"))
+    }
 
-  @Test
-  public void testParse_testFilterExcludewithOneArgTestFilter() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(
-        EMPTY_ENV, ImmutableList.of("--test_exclude_filter=foo"));
-    assertThat(options.getTestExcludeFilter()).isEqualTo("foo");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_withTestFilterFromEnv() {
+        val env: MutableMap<String?, String?> = HashMap<String?, String?>()
+        env.put("TESTBRIDGE_TEST_ONLY", "foo")
+        val options: JUnit4Options = JUnit4Options.parse(env, com.google.common.collect.ImmutableList.of<String?>())
+        Truth.assertThat(options.testIncludeFilter).isEqualTo("foo")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_unknownOptionName() throws Exception {
-    JUnit4Options options = JUnit4Options.parse(
-        EMPTY_ENV, ImmutableList.of("--unknown=foo"));
-    assertThat(options.getUnparsedArgs()).isEqualTo(new String[] {"--unknown=foo"});
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse_testFilterArgOverridesEnv() {
+        val env: MutableMap<String?, String?> = HashMap<String?, String?>()
+        env.put("TESTBRIDGE_TEST_ONLY", "foo")
+        val options: JUnit4Options =
+            JUnit4Options.parse(env, com.google.common.collect.ImmutableList.of<E?>("--test_filter=bar"))
+        Truth.assertThat(options.testIncludeFilter).isEqualTo("bar")
+        Truth.assertThat<String?>(options.unparsedArgs).isEmpty()
+    }
 
-  @Test
-  public void testParse_withTestFilterFromEnv() throws Exception {
-    Map<String, String> env = new HashMap<>();
-    env.put("TESTBRIDGE_TEST_ONLY", "foo");
-    JUnit4Options options = JUnit4Options.parse(env, ImmutableList.<String>of());
-    assertThat(options.getTestIncludeFilter()).isEqualTo("foo");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
-
-  @Test
-  public void testParse_testFilterArgOverridesEnv() throws Exception {
-    Map<String, String> env = new HashMap<>();
-    env.put("TESTBRIDGE_TEST_ONLY", "foo");
-    JUnit4Options options = JUnit4Options.parse(env, ImmutableList.of("--test_filter=bar"));
-    assertThat(options.getTestIncludeFilter()).isEqualTo("bar");
-    assertThat(options.getUnparsedArgs()).isEmpty();
-  }
+    companion object {
+        private val EMPTY_ENV: MutableMap<String?, String?> = mutableMapOf<String?, String?>()
+    }
 }

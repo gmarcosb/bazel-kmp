@@ -11,78 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.model.TestInstantUtil
+import com.google.testing.junit.runner.model.TestInterval
+import com.google.testing.junit.runner.model.TestInterval.endMillis
+import com.google.testing.junit.runner.model.TestInterval.startInstantToString
+import com.google.testing.junit.runner.model.TestInterval.startMillis
+import com.google.testing.junit.runner.model.TestInterval.toDurationMillis
+import com.google.testing.junit.runner.util.TestClock.TestInstant
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.time.Instant
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.testing.junit.runner.model.TestInstantUtil.testInstant;
+@RunWith(JUnit4::class)
+class TestIntervalTest {
+    @org.junit.Rule
+    var thrown: org.junit.rules.ExpectedException = org.junit.rules.ExpectedException.none()
 
-import com.google.testing.junit.runner.util.TestClock.TestInstant;
-import java.time.Duration;
-import java.time.Instant;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    fun testCreation() {
+        val start: Instant = Instant.ofEpochMilli(123456)
+        val end: Instant = Instant.ofEpochMilli(234567)
+        var interval: TestInterval = TestInterval(TestInstantUtil.testInstant(start), TestInstantUtil.testInstant(end))
+        Truth.assertThat(interval.startMillis).isEqualTo(123456)
+        Truth.assertThat(interval.endMillis).isEqualTo(234567)
 
-@RunWith(JUnit4.class)
-public class TestIntervalTest {
-  @Rule public ExpectedException thrown = ExpectedException.none();
+        interval = TestInterval(TestInstantUtil.testInstant(start), TestInstantUtil.testInstant(start))
+        Truth.assertThat(interval.startMillis).isEqualTo(123456)
+        Truth.assertThat(interval.endMillis).isEqualTo(123456)
+    }
 
-  @Test
-  public void testCreation() {
-    Instant start = Instant.ofEpochMilli(123456);
-    Instant end = Instant.ofEpochMilli(234567);
-    TestInterval interval = new TestInterval(testInstant(start), testInstant(end));
-    assertThat(interval.getStartMillis()).isEqualTo(123456);
-    assertThat(interval.getEndMillis()).isEqualTo(234567);
+    @org.junit.Test
+    fun testCreationFailure() {
+        thrown.expect(java.lang.IllegalArgumentException::class.java)
+        thrown.expectMessage("Start must be before end")
+        TestInterval(
+            TestInstantUtil.testInstant(Instant.ofEpochMilli(35)),
+            TestInstantUtil.testInstant(Instant.ofEpochMilli(23))
+        )
+    }
 
-    interval = new TestInterval(testInstant(start), testInstant(start));
-    assertThat(interval.getStartMillis()).isEqualTo(123456);
-    assertThat(interval.getEndMillis()).isEqualTo(123456);
-  }
+    @org.junit.Test
+    fun testToDuration() {
+        Truth.assertThat(
+            TestInterval(
+                TestInstantUtil.testInstant(Instant.ofEpochMilli(50)),
+                TestInstantUtil.testInstant(Instant.ofEpochMilli(150))
+            )
+                .toDurationMillis()
+        )
+            .isEqualTo(100)
+        Truth.assertThat(
+            TestInterval(
+                TestInstantUtil.testInstant(Instant.ofEpochMilli(100)),
+                TestInstantUtil.testInstant(Instant.ofEpochMilli(100))
+            )
+                .toDurationMillis()
+        )
+            .isEqualTo(0)
+    }
 
-  @Test
-  public void testCreationFailure() {
-    thrown.expect(IllegalArgumentException.class);
-    thrown.expectMessage("Start must be before end");
-    new TestInterval(testInstant(Instant.ofEpochMilli(35)), testInstant(Instant.ofEpochMilli(23)));
-  }
+    @org.junit.Test
+    fun testToDurationOnNonMonotonicWallTime() {
+        val start: Instant = Instant.ofEpochMilli(123456)
+        val end: Instant = Instant.ofEpochMilli(123456)
+        val monotonicStart: java.time.Duration? = java.time.Duration.ofMillis(50)
+        val monotonicEnd: java.time.Duration? = java.time.Duration.ofMillis(150)
+        val interval: TestInterval =
+            TestInterval(
+                TestInstant(start, monotonicStart), TestInstant(end, monotonicEnd)
+            )
+        Truth.assertThat(interval.startMillis).isEqualTo(123456)
+        Truth.assertThat(interval.endMillis).isEqualTo(123456)
+        Truth.assertThat(interval.toDurationMillis()).isEqualTo(100)
+    }
 
-  @Test
-  public void testToDuration() {
-    assertThat(
-            new TestInterval(
-                    testInstant(Instant.ofEpochMilli(50)), testInstant(Instant.ofEpochMilli(150)))
-                .toDurationMillis())
-        .isEqualTo(100);
-    assertThat(
-            new TestInterval(
-                    testInstant(Instant.ofEpochMilli(100)), testInstant(Instant.ofEpochMilli(100)))
-                .toDurationMillis())
-        .isEqualTo(0);
-  }
-
-  @Test
-  public void testToDurationOnNonMonotonicWallTime() {
-    Instant start = Instant.ofEpochMilli(123456);
-    Instant end = Instant.ofEpochMilli(123456);
-    Duration monotonicStart = Duration.ofMillis(50);
-    Duration monotonicEnd = Duration.ofMillis(150);
-    TestInterval interval =
-        new TestInterval(
-            new TestInstant(start, monotonicStart), new TestInstant(end, monotonicEnd));
-    assertThat(interval.getStartMillis()).isEqualTo(123456);
-    assertThat(interval.getEndMillis()).isEqualTo(123456);
-    assertThat(interval.toDurationMillis()).isEqualTo(100);
-  }
-
-  @Test
-  public void testDateFormat() {
-    Instant start = Instant.ofEpochMilli(1471709734000L);
-    Instant end = start.plusMillis(100);
-    TestInterval interval = new TestInterval(testInstant(start), testInstant(end));
-    assertThat(interval.startInstantToString()).isEqualTo("2016-08-20T16:15:34.000Z");
-  }
+    @org.junit.Test
+    fun testDateFormat() {
+        val start: Instant = Instant.ofEpochMilli(1471709734000L)
+        val end: Instant? = start.plusMillis(100)
+        val interval: TestInterval = TestInterval(TestInstantUtil.testInstant(start), TestInstantUtil.testInstant(end))
+        Truth.assertThat(interval.startInstantToString()).isEqualTo("2016-08-20T16:15:34.000Z")
+    }
 }

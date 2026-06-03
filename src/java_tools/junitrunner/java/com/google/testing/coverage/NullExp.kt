@@ -11,18 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.coverage
 
-package com.google.testing.coverage;
+import com.google.testing.coverage.CovExp
 
-/** An expression that always evaluates to false. */
-public final class NullExp implements CovExp {
+/** An expression that always evaluates to false.  */
+class NullExp private constructor() : CovExp {
+    override fun eval(probes: BooleanArray?): Boolean {
+        return false
+    }
 
-  public static final NullExp NULL_EXP = new NullExp();
-
-  private NullExp() {}
-
-  @Override
-  public boolean eval(final boolean[] probes) {
-    return false;
-  }
+    companion object {
+        val NULL_EXP: NullExp = NullExp()
+    }
 }

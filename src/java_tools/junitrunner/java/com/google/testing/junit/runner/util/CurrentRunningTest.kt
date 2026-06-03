@@ -11,28 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import org.junit.runner.Description;
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import com.google.testing.junit.runner.util.TestNameProvider
 
 /**
  * Utility class for recording and retrieving information about what test
  * is running in the current thread. This class is currently compatible
  * with JUnit 3 and JUnit4.
  */
-public class CurrentRunningTest {
-  protected static TestNameProvider testNameProvider;
+open class CurrentRunningTest {
+    companion object {
+        protected var testNameProvider: TestNameProvider? = null
 
-  /**
-   * If called during a JUnit test run with our test runner, returns the test running in the current
-   * thread. Otherwise (for example, when the test is run directly in an IDE), returns {@code null}.
-   *
-   * <p>Our test runner is special only in that it installs {@link #testNameProvider} to listen for
-   * test start/stop events using
-   * {@link org.junit.runner.JUnitCore#addListener(org.junit.runner.notification.RunListener)}.
-   */
-  public static Description get() {
-    return testNameProvider != null ? testNameProvider.get() : null;
-  }
+        /**
+         * If called during a JUnit test run with our test runner, returns the test running in the current
+         * thread. Otherwise (for example, when the test is run directly in an IDE), returns `null`.
+         * 
+         * 
+         * Our test runner is special only in that it installs [.testNameProvider] to listen for
+         * test start/stop events using
+         * [org.junit.runner.JUnitCore.addListener].
+         */
+        fun get(): org.junit.runner.Description? {
+            return if (testNameProvider != null) testNameProvider.get() else null
+        }
+    }
 }

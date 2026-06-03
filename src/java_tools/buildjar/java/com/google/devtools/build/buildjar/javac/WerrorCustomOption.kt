@@ -11,117 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac
 
-package com.google.devtools.build.buildjar.javac;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import com.google.devtools.build.buildjar.javac.WerrorCustomOption
+import com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule.Builder.build
+import com.google.devtools.build.buildjar.javac.plugins.processing.AnnotationProcessingModule.Builder.build
+import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics.Builder.build
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.Builder.build
+import java.util.LinkedHashMap
 
 /**
- * Logic for handling non-standard javac flag {@code -Werror:}, which allows failing the compilation
+ * Logic for handling non-standard javac flag `-Werror:`, which allows failing the compilation
  * for individual xlint warnings.
  */
-public class WerrorCustomOption {
+class WerrorCustomOption(werrors: com.google.common.collect.ImmutableMap<String?, Boolean?>) {
+    private val werrors: com.google.common.collect.ImmutableMap<String?, Boolean?>
 
-  private static final String WERROR = "-Werror:";
-
-  private final ImmutableMap<String, Boolean> werrors;
-
-  public WerrorCustomOption(ImmutableMap<String, Boolean> werrors) {
-    this.werrors = werrors;
-  }
-
-  /** Returns true if the given lint category should be promoted to an error. */
-  public boolean isEnabled(String lintCategory) {
-    boolean all = werrors.containsKey("all");
-    return werrors.getOrDefault(lintCategory, all);
-  }
-
-  static WerrorCustomOption create(String arg) {
-    return new WerrorCustomOption.Builder(/* warningsAsErrorsDefault= */ ImmutableList.of())
-        .process(arg)
-        .build();
-  }
-
-  /** A builder for {@link WerrorCustomOption}s. */
-  static class Builder {
-
-    private final ImmutableList<String> warningsAsErrorsDefault;
-
-    private final Map<String, Boolean> werrors = new LinkedHashMap<>();
-
-    Builder(ImmutableList<String> warningsAsErrorsDefault) {
-      this.warningsAsErrorsDefault = warningsAsErrorsDefault;
-      // initialize list of werrors with the ones we want on by default
-      for (String errorWarning : warningsAsErrorsDefault) {
-        werrors.put(errorWarning, true);
-      }
+    init {
+        this.werrors = werrors
     }
 
-    @CanIgnoreReturnValue
-    Builder all() {
-      werrors.clear();
-      werrors.put("all", true);
-      return this;
+    /** Returns true if the given lint category should be promoted to an error.  */
+    fun isEnabled(lintCategory: String?): Boolean {
+        val all: Boolean = werrors.containsKey("all")
+        return werrors.getOrDefault(lintCategory, all)
     }
 
-    @CanIgnoreReturnValue
-    Builder process(String flag) {
-      checkArgument(flag.startsWith(WERROR), flag);
-      for (String arg : Splitter.on(',').split(flag.substring(WERROR.length()))) {
-        // Warnings with a '+' or '-' have an implicit '+'.
-        if (arg.equals("+all") || arg.equals("all")) {
-          werrors.clear();
-          werrors.put("all", true);
-        } else if (arg.equals("-all") || arg.equals("none")) {
-          werrors.clear();
-          werrors.put("none", true);
-          for (String errorWarning : warningsAsErrorsDefault) {
-            werrors.put(errorWarning, true);
-          }
-        } else if (arg.startsWith("-")) {
-          String warning = arg.substring(1);
-          if (!warningsAsErrorsDefault.contains(warning)) {
-            werrors.put(warning, false);
-          }
-        } else {
-          // '+' or raw warning category (implicit '+')
-          String warning = arg.startsWith("+") ? arg.substring(1) : arg;
-          werrors.put(warning, true);
+    /** A builder for [WerrorCustomOption]s.  */
+    internal class Builder(warningsAsErrorsDefault: com.google.common.collect.ImmutableList<String?>) {
+        private val warningsAsErrorsDefault: com.google.common.collect.ImmutableList<String?>
+
+        private val werrors: MutableMap<String?, Boolean?> = LinkedHashMap<String?, Boolean?>()
+
+        init {
+            this.warningsAsErrorsDefault = warningsAsErrorsDefault
+            // initialize list of werrors with the ones we want on by default
+            for (errorWarning in warningsAsErrorsDefault) {
+                werrors.put(errorWarning, true)
+            }
         }
-      }
-      return this;
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun all(): Builder {
+            werrors.clear()
+            werrors.put("all", true)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun process(flag: String): Builder {
+            com.google.common.base.Preconditions.checkArgument(flag.startsWith(WERROR), flag)
+            for (arg in com.google.common.base.Splitter.on(',').split(flag.substring(WERROR.length))) {
+                // Warnings with a '+' or '-' have an implicit '+'.
+                if (arg == "+all" || arg == "all") {
+                    werrors.clear()
+                    werrors.put("all", true)
+                } else if (arg == "-all" || arg == "none") {
+                    werrors.clear()
+                    werrors.put("none", true)
+                    for (errorWarning in warningsAsErrorsDefault) {
+                        werrors.put(errorWarning, true)
+                    }
+                } else if (arg.startsWith("-")) {
+                    val warning: String = arg.substring(1)
+                    if (!warningsAsErrorsDefault.contains(warning)) {
+                        werrors.put(warning, false)
+                    }
+                } else {
+                    // '+' or raw warning category (implicit '+')
+                    val warning: String = if (arg.startsWith("+")) arg.substring(1) else arg
+                    werrors.put(warning, true)
+                }
+            }
+            return this
+        }
+
+        fun build(): WerrorCustomOption {
+            return WerrorCustomOption(com.google.common.collect.ImmutableMap.copyOf<String?, Boolean?>(werrors))
+        }
     }
 
-    WerrorCustomOption build() {
-      return new WerrorCustomOption(ImmutableMap.copyOf(werrors));
+    /** Returns a normalized `-Werror:` flag.  */
+    override fun toString(): String {
+        if (this.werrors.isEmpty()) {
+            return ""
+        }
+        val werrors: MutableMap<String?, Boolean?> = LinkedHashMap<String?, Boolean?>(this.werrors)
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder("-Werror:")
+        if (werrors.containsKey("all")) {
+            val b: Boolean = werrors.remove("all")!!
+            sb.append(if (b) "" else "-").append("all,")
+        }
+        for (warning in werrors.keys) {
+            val b: Boolean = werrors.get(warning)!!
+            sb.append(if (b) "" else "-").append(warning).append(",")
+        }
+        // delete trailing ","
+        sb.deleteCharAt(sb.length - 1)
+        return sb.toString()
     }
-  }
 
-  /** Returns a normalized {@code -Werror:} flag. */
-  @Override
-  public String toString() {
-    if (this.werrors.isEmpty()) {
-      return "";
+    companion object {
+        private const val WERROR = "-Werror:"
+
+        fun create(arg: String): WerrorCustomOption {
+            return com.google.devtools.build.buildjar.javac.WerrorCustomOption.Builder( /* warningsAsErrorsDefault= */
+                com.google.common.collect.ImmutableList.of<String?>()
+            )
+                .process(arg)
+                .build()
+        }
     }
-    Map<String, Boolean> werrors = new LinkedHashMap<>(this.werrors);
-    StringBuilder sb = new StringBuilder("-Werror:");
-    if (werrors.containsKey("all")) {
-      boolean b = werrors.remove("all");
-      sb.append(b ? "" : "-").append("all,");
-    }
-    for (String warning : werrors.keySet()) {
-      boolean b = werrors.get(warning);
-      sb.append(b ? "" : "-").append(warning).append(",");
-    }
-    // delete trailing ","
-    sb.deleteCharAt(sb.length() - 1);
-    return sb.toString();
-  }
 }

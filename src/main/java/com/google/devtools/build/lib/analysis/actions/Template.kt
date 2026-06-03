@@ -11,148 +11,128 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
+import com.google.devtools.build.lib.actions.Artifact
 
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.util.ResourceFileLoader;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import javax.annotation.Nullable;
-
-/** A template that contains text content, or alternatively throws an {@link IOException}. */
+/** A template that contains text content, or alternatively throws an [IOException].  */
 @Immutable // all subclasses are immutable
-public abstract class Template {
+abstract class Template
+/** We only allow subclasses in this file.  */
+private constructor() {
+    /** Returns the text content of the template.  */
+    @Throws(IOException::class)
+    abstract fun getContent(resolver: ArtifactPathResolver?): String?
 
-  /** We only allow subclasses in this file. */
-  private Template() {}
-
-  /** Returns the text content of the template. */
-  public abstract String getContent(ArtifactPathResolver resolver) throws IOException;
-
-  @Nullable
-  public Artifact getTemplateArtifact() {
-    return null;
-  }
-
-  /**
-   * Returns a string that is used for the action key. This must change if the getContent method
-   * returns something different, but is not allowed to throw an exception.
-   */
-  protected abstract String getKey();
-
-  @Override
-  public String toString() {
-    return getKey();
-  }
-
-  private static final class ErrorTemplate extends Template {
-    private final IOException e;
-    private final String templateName;
-
-    ErrorTemplate(IOException e, String templateName) {
-      this.e = e;
-      this.templateName = templateName;
+    open fun getTemplateArtifact(): Artifact? {
+        return null
     }
 
-    @Override
-    public String getContent(ArtifactPathResolver resolver) throws IOException {
-      throw new IOException(
-          "failed to load resource file '" + templateName + "' due to I/O error: " + e.getMessage(),
-          e);
+    /**
+     * Returns a string that is used for the action key. This must change if the getContent method
+     * returns something different, but is not allowed to throw an exception.
+     */
+    abstract fun getKey(): String?
+
+    override fun toString(): String {
+        return getKey()!!
     }
 
-    @Override
-    protected String getKey() {
-      return "ERROR: " + e.getMessage();
-    }
-  }
+    private class ErrorTemplate(e: IOException, templateName: String?) : Template() {
+        private val e: IOException
+        private val templateName: String?
 
-  private static final class StringTemplate extends Template {
-    private final String templateText;
+        init {
+            this.e = e
+            this.templateName = templateName
+        }
 
-    StringTemplate(String templateText) {
-      this.templateText = templateText;
-    }
+        @Throws(IOException::class)
+        override fun getContent(resolver: ArtifactPathResolver?): String? {
+            throw IOException(
+                "failed to load resource file '" + templateName + "' due to I/O error: " + e.message,
+                e
+            )
+        }
 
-    @Override
-    public String getContent(ArtifactPathResolver resolver) {
-      return templateText;
-    }
-
-    @Override
-    protected String getKey() {
-      return templateText;
-    }
-  }
-
-  private static final class ArtifactTemplate extends Template {
-    private final Artifact templateArtifact;
-
-    ArtifactTemplate(Artifact templateArtifact) {
-      this.templateArtifact = templateArtifact;
+        protected override fun getKey(): String {
+            return "ERROR: " + e.message
+        }
     }
 
-    @Override
-    public String getContent(ArtifactPathResolver resolver) throws IOException {
-      Path templatePath = resolver.toPath(templateArtifact);
-      try {
-        // Bazel's internal encoding for strings is raw bytes as Latin-1
-        return FileSystemUtils.readContent(templatePath, ISO_8859_1);
-      } catch (IOException e) {
-        throw new IOException(
-            "failed to load template file '"
-                + templatePath.getPathString()
-                + "' due to I/O error: "
-                + e.getMessage(),
-            e);
-      }
+    private class StringTemplate(private val templateText: String?) : Template() {
+        override fun getContent(resolver: ArtifactPathResolver?): String? {
+            return templateText
+        }
+
+        protected override fun getKey(): String? {
+            return templateText
+        }
     }
 
-    @Override
-    protected String getKey() {
-      // This isn't strictly necessary, because the action inputs are automatically considered.
-      return "ARTIFACT: " + templateArtifact.getExecPathString();
+    private class ArtifactTemplate(templateArtifact: Artifact) : Template() {
+        private val templateArtifact: Artifact
+
+        init {
+            this.templateArtifact = templateArtifact
+        }
+
+        @Throws(IOException::class)
+        override fun getContent(resolver: ArtifactPathResolver): String {
+            val templatePath: Path = resolver.toPath(templateArtifact)
+            try {
+                // Bazel's internal encoding for strings is raw bytes as Latin-1
+                return FileSystemUtils.readContent(templatePath, java.nio.charset.StandardCharsets.ISO_8859_1)
+            } catch (e: IOException) {
+                throw IOException(
+                    ("failed to load template file '"
+                            + templatePath.getPathString()
+                            + "' due to I/O error: "
+                            + e.message),
+                    e
+                )
+            }
+        }
+
+        protected override fun getKey(): String {
+            // This isn't strictly necessary, because the action inputs are automatically considered.
+            return "ARTIFACT: " + templateArtifact.getExecPathString()
+        }
+
+        override fun getTemplateArtifact(): Artifact {
+            return templateArtifact
+        }
     }
 
-    @Override
-    public Artifact getTemplateArtifact() {
-      return templateArtifact;
-    }
-  }
-  /**
-   * Loads a template from the given resource. The resource is looked up relative to the given
-   * class. If the resource cannot be loaded, the returned template throws an {@link IOException}
-   * when {@link #getContent} is called. This makes it safe to use this method in a constant
-   * initializer.
-   */
-  public static Template forResource(final Class<?> relativeToClass, final String templateName) {
-    try {
-      String content = ResourceFileLoader.loadResource(relativeToClass, templateName);
-      return forString(content);
-    } catch (final IOException e) {
-      return new ErrorTemplate(e, templateName);
-    }
-  }
+    companion object {
+        /**
+         * Loads a template from the given resource. The resource is looked up relative to the given
+         * class. If the resource cannot be loaded, the returned template throws an [IOException]
+         * when [.getContent] is called. This makes it safe to use this method in a constant
+         * initializer.
+         */
+        fun forResource(relativeToClass: java.lang.Class<*>?, templateName: String?): Template {
+            try {
+                val content: String? = ResourceFileLoader.loadResource(relativeToClass, templateName)
+                return com.google.devtools.build.lib.analysis.actions.Template.Companion.forString(content)
+            } catch (e: IOException) {
+                return ErrorTemplate(e, templateName)
+            }
+        }
 
-  /** Returns a template for the given text string. */
-  public static Template forString(final String templateText) {
-    return new StringTemplate(templateText);
-  }
+        /** Returns a template for the given text string.  */
+        fun forString(templateText: String?): Template {
+            return com.google.devtools.build.lib.analysis.actions.Template.StringTemplate(templateText)
+        }
 
-  /**
-   * Returns a template that loads the given artifact. It is important that the artifact is also an
-   * input for the action, or this won't work. Therefore this method is private, and you should use
-   * the corresponding {@link TemplateExpansionAction} constructor.
-   */
-  @VisibleForTesting
-  public static Template forArtifact(final Artifact templateArtifact) {
-    return new ArtifactTemplate(templateArtifact);
-  }
+        /**
+         * Returns a template that loads the given artifact. It is important that the artifact is also an
+         * input for the action, or this won't work. Therefore this method is private, and you should use
+         * the corresponding [TemplateExpansionAction] constructor.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun forArtifact(templateArtifact: Artifact): Template {
+            return ArtifactTemplate(templateArtifact)
+        }
+    }
 }

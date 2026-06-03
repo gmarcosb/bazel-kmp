@@ -11,37 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen.starlark
 
-package com.google.devtools.build.docgen.starlark;
+import com.google.devtools.build.docgen.annot.GlobalMethods.Environment.getDescription
+import com.google.devtools.build.docgen.annot.GlobalMethods.Environment.getPath
+import com.google.devtools.build.docgen.annot.GlobalMethods.Environment.getTitle
+import com.google.devtools.build.docgen.starlark.StarlarkDocExpander
+import com.google.devtools.build.docgen.starlark.StarlarkDocPage
 
-import com.google.devtools.build.docgen.annot.GlobalMethods.Environment;
+/** A documentation page for a list of Starlark global methods in the same environment.  */
+class StarlarkGlobalsDoc(
+    environment: com.google.devtools.build.docgen.annot.GlobalMethods.Environment,
+    expander: StarlarkDocExpander?
+) : StarlarkDocPage(expander) {
+    private val environment: com.google.devtools.build.docgen.annot.GlobalMethods.Environment
 
-/** A documentation page for a list of Starlark global methods in the same environment. */
-public final class StarlarkGlobalsDoc extends StarlarkDocPage {
-  private final Environment environment;
+    init {
+        this.environment = environment
+    }
 
-  public StarlarkGlobalsDoc(Environment environment, StarlarkDocExpander expander) {
-    super(expander);
-    this.environment = environment;
-  }
+    override fun getName(): String {
+        return environment.getPath()
+    }
 
-  @Override
-  public String getName() {
-    return environment.getPath();
-  }
+    override fun getRawDocumentation(): String? {
+        return environment.getDescription()
+    }
 
-  @Override
-  public String getRawDocumentation() {
-    return environment.getDescription();
-  }
+    override fun getTitle(): String? {
+        return environment.getTitle()
+    }
 
-  @Override
-  public String getTitle() {
-    return environment.getTitle();
-  }
-
-  @Override
-  public String getSourceFile() {
-    return "NONE";
-  }
+    override fun getSourceFile(): String {
+        return "NONE"
+    }
 }

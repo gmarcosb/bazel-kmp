@@ -11,74 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
 /**
  * An exception indication that the execution of an action has failed OR could not be attempted OR
  * could not be finished OR had something else wrong.
- *
- * <p>The six main kinds of failure are broadly defined as follows:
- *
- * <p>USER_INPUT which means it had something to do with what the user told us to do. This failure
+ * 
+ * 
+ * The six main kinds of failure are broadly defined as follows:
+ * 
+ * 
+ * USER_INPUT which means it had something to do with what the user told us to do. This failure
  * should satisfy the invariant that it would happen identically again if all other things are
  * equal.
- *
- * <p>ENVIRONMENT which is loosely defined as anything which is generally out of scope for a blaze
+ * 
+ * 
+ * ENVIRONMENT which is loosely defined as anything which is generally out of scope for a blaze
  * evaluation. As a rule of thumb, these are any errors would not necessarily happen again given
  * constant input.
- *
- * <p>INTERRUPTION conditions arise from being unable to complete an evaluation for whatever reason.
- *
- * <p>INTERNAL_ERROR would happen because of anything which arises from within blaze itself but is
+ * 
+ * 
+ * INTERRUPTION conditions arise from being unable to complete an evaluation for whatever reason.
+ * 
+ * 
+ * INTERNAL_ERROR would happen because of anything which arises from within blaze itself but is
  * generally unexpected to ever occur for any user input.
- *
- * <p>LOST_INPUT which means the failure occurred because the action expected to consume some input
+ * 
+ * 
+ * LOST_INPUT which means the failure occurred because the action expected to consume some input
  * that went missing. Although this seems similar to ENVIRONMENT, Blaze may know how to fix this
  * problem.
- *
- * <p>MISSING_DEP which means that a skyframe restart is necessary because a dependency was missing.
- *
- * <p>The class is a catch-all for both failures of actions and failures to evaluate actions
+ * 
+ * 
+ * MISSING_DEP which means that a skyframe restart is necessary because a dependency was missing.
+ * 
+ * 
+ * The class is a catch-all for both failures of actions and failures to evaluate actions
  * properly.
- *
- * <p>Invariably, all low level ExecExceptions are caught by various specific ConfigurationAction
+ * 
+ * 
+ * Invariably, all low level ExecExceptions are caught by various specific ConfigurationAction
  * classes and re-raised as ActionExecutionExceptions.
  */
-public abstract class ExecException extends Exception {
+abstract class ExecException : java.lang.Exception {
+    private val catastrophe: Boolean
 
-  private final boolean catastrophe;
+    @kotlin.jvm.JvmOverloads
+    constructor(message: String?, catastrophe: Boolean = false) : super(message) {
+        this.catastrophe = catastrophe
+    }
 
-  public ExecException(String message, boolean catastrophe) {
-    super(message);
-    this.catastrophe = catastrophe;
-  }
+    constructor(cause: Throwable?) : super(cause) {
+        this.catastrophe = false
+    }
 
-  public ExecException(String message) {
-    this(message, false);
-  }
+    constructor(
+        message: String?,
+        cause: Throwable?
+    ) : super(if (cause == null) message else message + ": " + cause.getMessage(), cause) {
+        this.catastrophe = false
+    }
 
-  public ExecException(Throwable cause) {
-    super(cause);
-    this.catastrophe = false;
-  }
+    /** Catastrophic exceptions should stop the build, even if --keep_going.  */
+    fun isCatastrophic(): Boolean {
+        return catastrophe
+    }
 
-  public ExecException(String message, @Nullable Throwable cause) {
-    super(cause == null ? message : message + ": " + cause.getMessage(), cause);
-    this.catastrophe = false;
-  }
+    fun getMessageForActionExecutionException(): String? {
+        return getMessage()
+    }
 
-  /** Catastrophic exceptions should stop the build, even if --keep_going. */
-  public boolean isCatastrophic() {
-    return catastrophe;
-  }
-
-  protected String getMessageForActionExecutionException() {
-    return getMessage();
-  }
-
-  protected abstract FailureDetail getFailureDetail(String message);
+    abstract fun getFailureDetail(message: String?): FailureDetail?
 }

@@ -11,19 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.coverage
 
-package com.google.testing.coverage;
+import com.google.testing.coverage.CovExp
 
-/** The branch coverage can be evaluated by looking up single probe value. */
-public class ProbeExp implements CovExp {
-  private final int probeId;
-
-  public ProbeExp(int id) {
-    probeId = id;
-  }
-
-  @Override
-  public boolean eval(final boolean[] probes) {
-    return probes != null && probes[probeId];
-  }
+/** The branch coverage can be evaluated by looking up single probe value.  */
+class ProbeExp(private val probeId: Int) : CovExp {
+    override fun eval(probes: BooleanArray?): Boolean {
+        return probes != null && probes[probeId]
+    }
 }

@@ -11,100 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.extra.ExtraActionInfo;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.protobuf.Extension;
-import com.google.protobuf.MessageLite;
-import java.util.Collection;
-import java.util.UUID;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.AbstractAction
 
 /**
  * An action that is inserted into the build graph only to provide info
  * about rules to extra_actions.
  */
-public class PseudoAction<InfoType extends MessageLite> extends AbstractAction {
-  @VisibleForSerialization protected final UUID uuid;
-  private final String mnemonic;
+class PseudoAction<InfoType : MessageLite?>(
+    uuid: UUID?,
+    owner: ActionOwner?,
+    inputs: NestedSet<Artifact?>?,
+    outputs: MutableCollection<Artifact?>?,
+    mnemonic: String?,
+    infoExtension: Extension<ExtraActionInfo?, InfoType?>?,
+    info: InfoType?
+) : AbstractAction(owner, inputs, outputs) {
+    @VisibleForSerialization
+    protected val uuid: UUID?
+    private val mnemonic: String?
 
-  @VisibleForSerialization protected final Extension<ExtraActionInfo, InfoType> infoExtension;
+    @VisibleForSerialization
+    protected val infoExtension: Extension<ExtraActionInfo?, InfoType?>?
 
-  private final InfoType info;
+    private val info: InfoType?
 
-  public PseudoAction(
-      UUID uuid,
-      ActionOwner owner,
-      NestedSet<Artifact> inputs,
-      Collection<Artifact> outputs,
-      String mnemonic,
-      Extension<ExtraActionInfo, InfoType> infoExtension,
-      InfoType info) {
-    super(owner, inputs, outputs);
-    this.uuid = uuid;
-    this.mnemonic = mnemonic;
-    this.infoExtension = infoExtension;
-    this.info = info;
-  }
+    init {
+        this.uuid = uuid
+        this.mnemonic = mnemonic
+        this.infoExtension = infoExtension
+        this.info = info
+    }
 
-  @Override
-  public ActionResult execute(ActionExecutionContext actionExecutionContext)
-      throws ActionExecutionException {
-    String message = mnemonic + "ExtraAction should not be executed.";
-    DetailedExitCode detailedCode =
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setMessage(message)
-                .setExecution(
-                    Execution.newBuilder().setCode(Code.PSEUDO_ACTION_EXECUTION_PROHIBITED))
-                .build());
-    throw new ActionExecutionException(message, this, false, detailedCode);
-  }
+    @Throws(ActionExecutionException::class)
+    public override fun execute(actionExecutionContext: ActionExecutionContext?): ActionResult? {
+        val message = mnemonic + "ExtraAction should not be executed."
+        val detailedCode: DetailedExitCode? =
+            DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setExecution(
+                        Execution.newBuilder().setCode(Code.PSEUDO_ACTION_EXECUTION_PROHIBITED)
+                    )
+                    .build()
+            )
+        throw ActionExecutionException(message, this, false, detailedCode)
+    }
 
-  @Override
-  public String getMnemonic() {
-    return mnemonic;
-  }
+    public override fun getMnemonic(): String? {
+        return mnemonic
+    }
 
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    fp.addUUID(uuid);
-    fp.addBytes(getInfo().toByteArray());
-  }
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addUUID(uuid)
+        fp.addBytes(getInfo().toByteArray())
+    }
 
-  protected InfoType getInfo() {
-    return this.info;
-  }
+    protected fun getInfo(): InfoType? {
+        return this.info
+    }
 
-  @Override
-  public ExtraActionInfo.Builder getExtraActionInfo(ActionKeyContext actionKeyContext)
-      throws CommandLineExpansionException, InterruptedException {
-    return super.getExtraActionInfo(actionKeyContext).setExtension(infoExtension, getInfo());
-  }
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    public override fun getExtraActionInfo(actionKeyContext: ActionKeyContext?): ExtraActionInfo.Builder {
+        return super.getExtraActionInfo(actionKeyContext).setExtension(infoExtension, getInfo())
+    }
 
-  public static Artifact getDummyOutput(RuleContext ruleContext) {
-    return ruleContext.getPackageRelativeArtifact(
-        ruleContext.getLabel().getName() + ".extra_action_dummy",
-        ruleContext.getGenfilesDirectory());
-  }
+    companion object {
+        fun getDummyOutput(ruleContext: RuleContext): Artifact? {
+            return ruleContext.getPackageRelativeArtifact(
+                ruleContext.getLabel().getName() + ".extra_action_dummy",
+                ruleContext.getGenfilesDirectory()
+            )
+        }
+    }
 }

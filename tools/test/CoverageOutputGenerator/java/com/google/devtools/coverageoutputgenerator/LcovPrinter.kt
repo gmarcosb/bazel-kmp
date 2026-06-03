@@ -11,209 +11,218 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.annotations.VisibleForTesting;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.util.Map.Entry;
+import com.google.devtools.coverageoutputgenerator.Coverage
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import java.io.BufferedWriter
+import java.io.IOException
+import java.io.OutputStreamWriter
 
 /**
- * Prints coverage data stored in a collection of {@link SourceFileCoverage} in a <a
- * href="http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php">lcov tracefile format</a>
+ * Prints coverage data stored in a collection of [SourceFileCoverage] in a [lcov tracefile format](http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php)
  */
-class LcovPrinter {
-  private final BufferedWriter bufferedWriter;
+internal class LcovPrinter private constructor(bufferedWriter: BufferedWriter, outputLegacyBranches: Boolean) {
+    private val bufferedWriter: BufferedWriter
 
-  private final boolean outputLegacyBranches;
+    private val outputLegacyBranches: Boolean
 
-  private LcovPrinter(BufferedWriter bufferedWriter, boolean outputLegacyBranches) {
-    this.bufferedWriter = bufferedWriter;
-    this.outputLegacyBranches = outputLegacyBranches;
-  }
-
-  static void print(OutputStream outputStream, Coverage coverage) throws IOException {
-    print(outputStream, coverage, false);
-  }
-
-  static void print(OutputStream outputStream, Coverage coverage, boolean outputLegacyBranches)
-      throws IOException {
-    // Emit consistent line endings across all platforms.
-    try (Writer fileWriter = new OutputStreamWriter(outputStream, UTF_8);
-        BufferedWriter bufferedWriter =
-            new BufferedWriter(fileWriter) {
-              @Override
-              public void newLine() throws IOException {
-                write('\n');
-              }
-            }) {
-      LcovPrinter lcovPrinter = new LcovPrinter(bufferedWriter, outputLegacyBranches);
-      lcovPrinter.print(coverage);
+    init {
+        this.bufferedWriter = bufferedWriter
+        this.outputLegacyBranches = outputLegacyBranches
     }
-  }
 
-  private void print(Coverage coverage) throws IOException {
-    for (SourceFileCoverage sourceFile : coverage.getAllSourceFiles()) {
-      print(sourceFile);
+    @Throws(IOException::class)
+    private fun print(coverage: Coverage) {
+        for (sourceFile in coverage.getAllSourceFiles()) {
+            print(sourceFile)
+        }
     }
-  }
 
-  /**
-   * Prints the given source data in an lcov tracefile format.
-   *
-   * <p>Assumes the file is opened and closed outside of this method.
-   */
-  @VisibleForTesting
-  void print(SourceFileCoverage sourceFile) throws IOException {
-    printSFLine(sourceFile);
-    printFNLines(sourceFile);
-    printFNDALines(sourceFile);
-    printFNFLine(sourceFile);
-    printFNHLine(sourceFile);
-    if (outputLegacyBranches) {
-      printBALines(sourceFile);
-    } else {
-      printBRDALines(sourceFile);
+    /**
+     * Prints the given source data in an lcov tracefile format.
+     * 
+     * 
+     * Assumes the file is opened and closed outside of this method.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(IOException::class)
+    fun print(sourceFile: SourceFileCoverage) {
+        printSFLine(sourceFile)
+        printFNLines(sourceFile)
+        printFNDALines(sourceFile)
+        printFNFLine(sourceFile)
+        printFNHLine(sourceFile)
+        if (outputLegacyBranches) {
+            printBALines(sourceFile)
+        } else {
+            printBRDALines(sourceFile)
+        }
+        printBRFLine(sourceFile)
+        printBRHLine(sourceFile)
+        printDALines(sourceFile)
+        printLHLine(sourceFile)
+        printLFLine(sourceFile)
+        printEndOfRecordLine()
     }
-    printBRFLine(sourceFile);
-    printBRHLine(sourceFile);
-    printDALines(sourceFile);
-    printLHLine(sourceFile);
-    printLFLine(sourceFile);
-    printEndOfRecordLine();
-  }
 
-  // SF:<absolute path to the source file>
-  private void printSFLine(SourceFileCoverage sourceFile) throws IOException {
-    bufferedWriter.write(Constants.SF_MARKER);
-    bufferedWriter.write(sourceFile.sourceFileName());
-    bufferedWriter.newLine();
-  }
-
-  // FN:<line number of function start>,<function name>
-  private void printFNLines(SourceFileCoverage sourceFile) throws IOException {
-    for (Entry<String, Integer> entry : sourceFile.getAllFunctionLineNumbers()) {
-      bufferedWriter.write(Constants.FN_MARKER);
-      bufferedWriter.write(Integer.toString(entry.getValue())); // line number of function start
-      bufferedWriter.write(Constants.DELIMITER);
-      bufferedWriter.write(entry.getKey()); // function name
-      bufferedWriter.newLine();
+    // SF:<absolute path to the source file>
+    @Throws(IOException::class)
+    private fun printSFLine(sourceFile: SourceFileCoverage) {
+        bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.SF_MARKER)
+        bufferedWriter.write(sourceFile.sourceFileName())
+        bufferedWriter.newLine()
     }
-  }
 
-  // FNDA:<execution count>,<function name>
-  private void printFNDALines(SourceFileCoverage sourceFile) throws IOException {
-    for (Entry<String, Long> entry : sourceFile.getAllExecutionCount()) {
-      bufferedWriter.write(Constants.FNDA_MARKER);
-      bufferedWriter.write(Long.toString(entry.getValue())); // execution count
-      bufferedWriter.write(Constants.DELIMITER);
-      bufferedWriter.write(entry.getKey()); // function name
-      bufferedWriter.newLine();
+    // FN:<line number of function start>,<function name>
+    @Throws(IOException::class)
+    private fun printFNLines(sourceFile: SourceFileCoverage) {
+        for (entry in sourceFile.getAllFunctionLineNumbers()) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.FN_MARKER)
+            bufferedWriter.write(java.lang.Integer.toString(entry.getValue())) // line number of function start
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            bufferedWriter.write(entry.getKey()) // function name
+            bufferedWriter.newLine()
+        }
     }
-  }
 
-  // FNF:<number of functions found>
-  private void printFNFLine(SourceFileCoverage sourceFile) throws IOException {
-    bufferedWriter.write(Constants.FNF_MARKER);
-    bufferedWriter.write(Integer.toString(sourceFile.nrFunctionsFound()));
-    bufferedWriter.newLine();
-  }
-
-  // FNH:<number of functions hit>
-  private void printFNHLine(SourceFileCoverage sourceFile) throws IOException {
-    bufferedWriter.write(Constants.FNH_MARKER);
-    bufferedWriter.write(Integer.toString(sourceFile.nrFunctionsHit()));
-    bufferedWriter.newLine();
-  }
-
-  // BRDA:<line number>,<block number>,<branch number>,<taken>
-  private void printBRDALines(SourceFileCoverage sourceFile) throws IOException {
-    for (BranchCoverageItem branch : sourceFile.getAllBranches()) {
-      bufferedWriter.write(Constants.BRDA_MARKER);
-      bufferedWriter.write(Integer.toString(branch.lineNumber()));
-      bufferedWriter.write(Constants.DELIMITER);
-      bufferedWriter.write(branch.blockNumber());
-      bufferedWriter.write(Constants.DELIMITER);
-      bufferedWriter.write(branch.branchNumber());
-      bufferedWriter.write(Constants.DELIMITER);
-      if (branch.evaluated()) {
-        bufferedWriter.write(Long.toString(branch.nrOfExecutions()));
-      } else {
-        bufferedWriter.write(Constants.NEVER_EVALUATED);
-      }
-      bufferedWriter.newLine();
+    // FNDA:<execution count>,<function name>
+    @Throws(IOException::class)
+    private fun printFNDALines(sourceFile: SourceFileCoverage) {
+        for (entry in sourceFile.getAllExecutionCount()) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.FNDA_MARKER)
+            bufferedWriter.write(java.lang.Long.toString(entry.getValue())) // execution count
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            bufferedWriter.write(entry.getKey()) // function name
+            bufferedWriter.newLine()
+        }
     }
-  }
 
-  // BA:<line number>,<taken>
-  private void printBALines(SourceFileCoverage sourceFile) throws IOException {
-    for (BranchCoverageItem branch : sourceFile.getAllBranches()) {
-      bufferedWriter.write(Constants.BA_MARKER);
-      bufferedWriter.write(Integer.toString(branch.lineNumber()));
-      bufferedWriter.write(Constants.DELIMITER);
-      if (branch.evaluated()) {
-        String value = branch.nrOfExecutions() > 0 ? "2" : "1";
-        bufferedWriter.write(value);
-      } else {
-        bufferedWriter.write("0");
-      }
-      bufferedWriter.newLine();
+    // FNF:<number of functions found>
+    @Throws(IOException::class)
+    private fun printFNFLine(sourceFile: SourceFileCoverage) {
+        bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.FNF_MARKER)
+        bufferedWriter.write(java.lang.Integer.toString(sourceFile.nrFunctionsFound()))
+        bufferedWriter.newLine()
     }
-  }
 
-  // BRF:<number of branches found>
-  private void printBRFLine(SourceFileCoverage sourceFile) throws IOException {
-    if (sourceFile.nrBranchesFound() > 0) {
-      bufferedWriter.write(Constants.BRF_MARKER);
-      bufferedWriter.write(Integer.toString(sourceFile.nrBranchesFound()));
-      bufferedWriter.newLine();
+    // FNH:<number of functions hit>
+    @Throws(IOException::class)
+    private fun printFNHLine(sourceFile: SourceFileCoverage) {
+        bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.FNH_MARKER)
+        bufferedWriter.write(java.lang.Integer.toString(sourceFile.nrFunctionsHit()))
+        bufferedWriter.newLine()
     }
-  }
 
-  // BRH:<number of branches hit>
-  private void printBRHLine(SourceFileCoverage sourceFile) throws IOException {
-    // Only print if there were any branches found.
-    if (sourceFile.nrBranchesFound() > 0) {
-      bufferedWriter.write(Constants.BRH_MARKER);
-      bufferedWriter.write(Integer.toString(sourceFile.nrBranchesHit()));
-      bufferedWriter.newLine();
+    // BRDA:<line number>,<block number>,<branch number>,<taken>
+    @Throws(IOException::class)
+    private fun printBRDALines(sourceFile: SourceFileCoverage) {
+        for (branch in sourceFile.getAllBranches()) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.BRDA_MARKER)
+            bufferedWriter.write(java.lang.Integer.toString(branch.lineNumber()))
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            bufferedWriter.write(branch.blockNumber())
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            bufferedWriter.write(branch.branchNumber())
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            if (branch.evaluated()) {
+                bufferedWriter.write(java.lang.Long.toString(branch.nrOfExecutions()))
+            } else {
+                bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.NEVER_EVALUATED)
+            }
+            bufferedWriter.newLine()
+        }
     }
-  }
 
-  // DA:<line number>,<execution count>[,<checksum>]
-  private void printDALines(SourceFileCoverage sourceFile) throws IOException {
-    for (Entry<Integer, Long> entry : sourceFile.getAllLines()) {
-      bufferedWriter.write(Constants.DA_MARKER);
-      bufferedWriter.write(Integer.toString(entry.getKey()));
-      bufferedWriter.write(Constants.DELIMITER);
-      bufferedWriter.write(Long.toString(entry.getValue()));
-      bufferedWriter.newLine();
+    // BA:<line number>,<taken>
+    @Throws(IOException::class)
+    private fun printBALines(sourceFile: SourceFileCoverage) {
+        for (branch in sourceFile.getAllBranches()) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.BA_MARKER)
+            bufferedWriter.write(java.lang.Integer.toString(branch.lineNumber()))
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            if (branch.evaluated()) {
+                val value = if (branch.nrOfExecutions() > 0) "2" else "1"
+                bufferedWriter.write(value)
+            } else {
+                bufferedWriter.write("0")
+            }
+            bufferedWriter.newLine()
+        }
     }
-  }
 
-  // LH:<number of lines with a non-zero execution count>
-  private void printLHLine(SourceFileCoverage sourceFile) throws IOException {
-    bufferedWriter.write(Constants.LH_MARKER);
-    bufferedWriter.write(Integer.toString(sourceFile.nrOfLinesWithNonZeroExecution()));
-    bufferedWriter.newLine();
-  }
+    // BRF:<number of branches found>
+    @Throws(IOException::class)
+    private fun printBRFLine(sourceFile: SourceFileCoverage) {
+        if (sourceFile.nrBranchesFound() > 0) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.BRF_MARKER)
+            bufferedWriter.write(java.lang.Integer.toString(sourceFile.nrBranchesFound()))
+            bufferedWriter.newLine()
+        }
+    }
 
-  // LF:<number of instrumented lines>
-  private void printLFLine(SourceFileCoverage sourceFile) throws IOException {
-    bufferedWriter.write(Constants.LF_MARKER);
-    bufferedWriter.write(Integer.toString(sourceFile.nrOfInstrumentedLines()));
-    bufferedWriter.newLine();
-  }
+    // BRH:<number of branches hit>
+    @Throws(IOException::class)
+    private fun printBRHLine(sourceFile: SourceFileCoverage) {
+        // Only print if there were any branches found.
+        if (sourceFile.nrBranchesFound() > 0) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.BRH_MARKER)
+            bufferedWriter.write(java.lang.Integer.toString(sourceFile.nrBranchesHit()))
+            bufferedWriter.newLine()
+        }
+    }
 
-  // end_of_record
-  private void printEndOfRecordLine() throws IOException {
-    bufferedWriter.write(Constants.END_OF_RECORD_MARKER);
-    bufferedWriter.newLine();
-  }
+    // DA:<line number>,<execution count>[,<checksum>]
+    @Throws(IOException::class)
+    private fun printDALines(sourceFile: SourceFileCoverage) {
+        for (entry in sourceFile.getAllLines()) {
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DA_MARKER)
+            bufferedWriter.write(java.lang.Integer.toString(entry.getKey()))
+            bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER)
+            bufferedWriter.write(java.lang.Long.toString(entry.getValue()))
+            bufferedWriter.newLine()
+        }
+    }
+
+    // LH:<number of lines with a non-zero execution count>
+    @Throws(IOException::class)
+    private fun printLHLine(sourceFile: SourceFileCoverage) {
+        bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.LH_MARKER)
+        bufferedWriter.write(java.lang.Integer.toString(sourceFile.nrOfLinesWithNonZeroExecution()))
+        bufferedWriter.newLine()
+    }
+
+    // LF:<number of instrumented lines>
+    @Throws(IOException::class)
+    private fun printLFLine(sourceFile: SourceFileCoverage) {
+        bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.LF_MARKER)
+        bufferedWriter.write(java.lang.Integer.toString(sourceFile.nrOfInstrumentedLines()))
+        bufferedWriter.newLine()
+    }
+
+    // end_of_record
+    @Throws(IOException::class)
+    private fun printEndOfRecordLine() {
+        bufferedWriter.write(com.google.devtools.coverageoutputgenerator.Constants.END_OF_RECORD_MARKER)
+        bufferedWriter.newLine()
+    }
+
+    companion object {
+        @kotlin.jvm.JvmOverloads
+        @Throws(IOException::class)
+        fun print(outputStream: java.io.OutputStream, coverage: Coverage, outputLegacyBranches: Boolean = false) {
+            // Emit consistent line endings across all platforms.
+            OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8).use { fileWriter ->
+                object : BufferedWriter(fileWriter) {
+                    @Throws(IOException::class)
+                    override fun newLine() {
+                        write('\n'.code)
+                    }
+                }.use { bufferedWriter ->
+                    val lcovPrinter = LcovPrinter(bufferedWriter, outputLegacyBranches)
+                    lcovPrinter.print(coverage)
+                }
+            }
+        }
+    }
 }

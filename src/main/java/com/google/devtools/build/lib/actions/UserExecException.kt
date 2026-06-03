@@ -11,35 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
 /**
  * An ExecException that is related to the failure of an Action and therefore very likely the user's
  * fault.
  */
-public class UserExecException extends ExecException {
+class UserExecException : ExecException {
+    private val failureDetail: FailureDetail
 
-  private final FailureDetail failureDetail;
+    constructor(failureDetail: FailureDetail) : super(failureDetail.getMessage()) {
+        this.failureDetail = failureDetail
+    }
 
-  public UserExecException(FailureDetail failureDetail) {
-    super(failureDetail.getMessage());
-    this.failureDetail = failureDetail;
-  }
+    constructor(cause: Throwable?, failureDetail: FailureDetail) : super(failureDetail.getMessage(), cause) {
+        this.failureDetail = failureDetail
+    }
 
-  public UserExecException(Throwable cause, FailureDetail failureDetail) {
-    super(failureDetail.getMessage(), cause);
-    this.failureDetail = failureDetail;
-  }
+    protected override fun getFailureDetail(message: String?): FailureDetail {
+        return failureDetail.toBuilder().setMessage(message).build()
+    }
 
-  @Override
-  protected FailureDetail getFailureDetail(String message) {
-    return failureDetail.toBuilder().setMessage(message).build();
-  }
-
-  public FailureDetail getFailureDetail() {
-    return failureDetail;
-  }
+    fun getFailureDetail(): FailureDetail {
+        return failureDetail
+    }
 }

@@ -11,65 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions.cache
 
-package com.google.devtools.build.lib.actions.cache;
+import com.google.devtools.build.lib.util.Fingerprint
 
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.VarInt;
-import com.google.devtools.build.lib.vfs.DigestUtils;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.util.Map;
-import javax.annotation.Nullable;
-
-/** Utility class for digests/metadata relating to the action cache. */
-public final class MetadataDigestUtils {
-  private MetadataDigestUtils() {}
-
-  /**
-   * @param source the byte buffer source.
-   * @return the digest from the given buffer.
-   */
-  public static byte[] read(ByteBuffer source) throws IOException {
-    int size = VarInt.getVarInt(source);
-    if (size < 0) {
-      throw new IOException("Negative digest size: " + size);
+/** Utility class for digests/metadata relating to the action cache.  */
+object MetadataDigestUtils {
+    /**
+     * @param source the byte buffer source.
+     * @return the digest from the given buffer.
+     */
+    @Throws(IOException::class)
+    fun read(source: java.nio.ByteBuffer): ByteArray {
+        val size: Int = VarInt.getVarInt(source)
+        if (size < 0) {
+            throw IOException("Negative digest size: " + size)
+        }
+        val bytes = ByteArray(size)
+        source.get(bytes)
+        return bytes
     }
-    byte[] bytes = new byte[size];
-    source.get(bytes);
-    return bytes;
-  }
 
-  /** Write the digest to the output stream. */
-  public static void write(byte[] digest, OutputStream sink) throws IOException {
-    VarInt.putVarInt(digest.length, sink);
-    sink.write(digest);
-  }
-
-  /**
-   * Computes an order-independent digest from the given (path, metadata) pairs.
-   *
-   * @param mdMap A collection of (execPath, FileArtifactValue) pairs. Values may be null.
-   */
-  public static byte[] fromMetadata(Map<String, FileArtifactValue> mdMap) {
-    byte[] result = new byte[1]; // reserve the empty string
-    // Profiling showed that MessageDigest engine instantiation was a hotspot, so create one
-    // instance for this computation to amortize its cost.
-    Fingerprint fp = new Fingerprint();
-    for (Map.Entry<String, FileArtifactValue> entry : mdMap.entrySet()) {
-      result =
-          DigestUtils.combineUnordered(result, getDigest(fp, entry.getKey(), entry.getValue()));
+    /** Write the digest to the output stream.  */
+    @Throws(IOException::class)
+    fun write(digest: ByteArray, sink: java.io.OutputStream) {
+        VarInt.putVarInt(digest.size, sink)
+        sink.write(digest)
     }
-    return result;
-  }
 
-  private static byte[] getDigest(Fingerprint fp, String execPath, @Nullable FileArtifactValue md) {
-    fp.addString(execPath);
-    if (md != null) {
-      md.addTo(fp);
+    /**
+     * Computes an order-independent digest from the given (path, metadata) pairs.
+     * 
+     * @param mdMap A collection of (execPath, FileArtifactValue) pairs. Values may be null.
+     */
+    fun fromMetadata(mdMap: MutableMap<String?, FileArtifactValue?>): ByteArray? {
+        var result: ByteArray? = ByteArray(1) // reserve the empty string
+        // Profiling showed that MessageDigest engine instantiation was a hotspot, so create one
+        // instance for this computation to amortize its cost.
+        val fp: Fingerprint = Fingerprint()
+        for (entry in mdMap.entries) {
+            result =
+                DigestUtils.combineUnordered(result, getDigest(fp, entry.key, entry.value))
+        }
+        return result
     }
-    return fp.digestAndReset();
-  }
+
+    private fun getDigest(fp: Fingerprint, execPath: String?, md: FileArtifactValue?): ByteArray {
+        fp.addString(execPath)
+        if (md != null) {
+            md.addTo(fp)
+        }
+        return fp.digestAndReset()
+    }
 }

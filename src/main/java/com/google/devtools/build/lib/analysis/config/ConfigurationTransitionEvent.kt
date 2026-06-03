@@ -11,30 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static java.util.Objects.requireNonNull;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-
-/** Posted when there is a configuration transition. */
-public record ConfigurationTransitionEvent(String parentChecksum, String childChecksum)
-    implements Comparable<ConfigurationTransitionEvent>, Postable {
-  public ConfigurationTransitionEvent {
-    requireNonNull(parentChecksum, "parentChecksum");
-    requireNonNull(childChecksum, "childChecksum");
-  }
-
-  public static ConfigurationTransitionEvent create(String parentChecksum, String childChecksum) {
-    return new ConfigurationTransitionEvent(parentChecksum, childChecksum);
-  }
-
-  @Override
-  public final int compareTo(ConfigurationTransitionEvent that) {
-    int result = parentChecksum().compareTo(that.parentChecksum());
-    if (result != 0) {
-      return result;
+/** Posted when there is a configuration transition.  */
+@kotlin.jvm.JvmRecord
+data class ConfigurationTransitionEvent(val parentChecksum: String?, val childChecksum: String?) :
+    Comparable<ConfigurationTransitionEvent?>, Postable {
+    override fun compareTo(that: ConfigurationTransitionEvent): Int {
+        val result = this.parentChecksum!!.compareTo(that.parentChecksum!!)
+        if (result != 0) {
+            return result
+        }
+        return this.childChecksum!!.compareTo(that.childChecksum!!)
     }
-    return childChecksum().compareTo(that.childChecksum());
-  }
+
+    init {
+        java.util.Objects.requireNonNull<String?>(parentChecksum, "parentChecksum")
+        java.util.Objects.requireNonNull<String?>(childChecksum, "childChecksum")
+    }
+
+    companion object {
+        fun create(parentChecksum: String?, childChecksum: String?): ConfigurationTransitionEvent {
+            return ConfigurationTransitionEvent(parentChecksum, childChecksum)
+        }
+    }
 }

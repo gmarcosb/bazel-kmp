@@ -11,24 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.util.DetailedExitCode
 
 /**
  * Thrown when an output provided by a top-level target could not be staged.
- *
- * <p>May occur when:
- *
- * <ul>
- *   <li>An output is lost and action rewinding was ineffective.
- *   <li>There was an error placing the output at its final location.
- * </ul>
- *
- * <p>It is the responsibility of the caller to report this error.
+ * 
+ * 
+ * May occur when:
+ * 
+ * 
+ *  * An output is lost and action rewinding was ineffective.
+ *  * There was an error placing the output at its final location.
+ * 
+ * 
+ * 
+ * It is the responsibility of the caller to report this error.
  */
-public final class TopLevelOutputException extends BuildFailedException {
-  public TopLevelOutputException(String message, DetailedExitCode detailedExitCode) {
-    super(message, /* catastrophic= */ false, /* errorAlreadyShown= */ true, detailedExitCode);
-  }
-}
+class TopLevelOutputException(message: String?, detailedExitCode: DetailedExitCode?) :
+    BuildFailedException(message,  /* catastrophic= */false,  /* errorAlreadyShown= */true, detailedExitCode)

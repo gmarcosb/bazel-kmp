@@ -11,79 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-/** An event that is fired after an action completes (either successfully or not). */
-public final class ActionCompletionEvent implements Postable {
+/** An event that is fired after an action completes (either successfully or not).  */
+class ActionCompletionEvent(
+    private val relativeActionStartTimeNanos: Long,
+    private val finishTimeNanos: Long,
+    action: com.google.devtools.build.lib.actions.Action?,
+    inputMetadataProvider: InputMetadataProvider?,
+    outputMetadataStore: OutputMetadataStore?,
+    actionLookupData: ActionLookupData?
+) : Postable {
+    private val action: com.google.devtools.build.lib.actions.Action?
+    private val inputMetadataProvider: InputMetadataProvider?
+    private val outputMetadataStore: OutputMetadataStore?
+    private val actionLookupData: ActionLookupData?
 
-  private final long relativeActionStartTimeNanos;
-  private final long finishTimeNanos;
-  private final Action action;
-  private final InputMetadataProvider inputMetadataProvider;
-  @Nullable private final OutputMetadataStore outputMetadataStore;
-  private final ActionLookupData actionLookupData;
+    init {
+        this.action = action
+        this.inputMetadataProvider = inputMetadataProvider
+        this.outputMetadataStore = outputMetadataStore
+        this.actionLookupData = actionLookupData
+    }
 
-  public ActionCompletionEvent(
-      long relativeActionStartTimeNanos,
-      long finishTimeNanos,
-      Action action,
-      InputMetadataProvider inputMetadataProvider,
-      @Nullable OutputMetadataStore outputMetadataStore,
-      ActionLookupData actionLookupData) {
-    this.relativeActionStartTimeNanos = relativeActionStartTimeNanos;
-    this.finishTimeNanos = finishTimeNanos;
-    this.action = action;
-    this.inputMetadataProvider = inputMetadataProvider;
-    this.outputMetadataStore = outputMetadataStore;
-    this.actionLookupData = actionLookupData;
-  }
+    /**
+     * Returns the action.
+     */
+    fun getAction(): com.google.devtools.build.lib.actions.Action? {
+        return action
+    }
 
-  /**
-   * Returns the action.
-   */
-  public Action getAction() {
-    return action;
-  }
+    /** Returns the metadata provider describing the inputs of the action.  */
+    fun getInputMetadataProvider(): InputMetadataProvider? {
+        return inputMetadataProvider
+    }
 
-  /** Returns the metadata provider describing the inputs of the action. */
-  public InputMetadataProvider getInputMetadataProvider() {
-    return inputMetadataProvider;
-  }
+    /**
+     * Returns the output metadata store describing the outputs of the action.
+     * 
+     * 
+     * May be null if the action did not complete successfully.
+     */
+    fun getOutputMetadataStore(): OutputMetadataStore? {
+        return outputMetadataStore
+    }
 
-  /**
-   * Returns the output metadata store describing the outputs of the action.
-   *
-   * <p>May be null if the action did not complete successfully.
-   */
-  @Nullable
-  public OutputMetadataStore getOutputMetadataStore() {
-    return outputMetadataStore;
-  }
+    fun getRelativeActionStartTimeNanos(): Long {
+        return relativeActionStartTimeNanos
+    }
 
-  public long getRelativeActionStartTimeNanos() {
-    return relativeActionStartTimeNanos;
-  }
+    fun getFinishTimeNanos(): Long {
+        return finishTimeNanos
+    }
 
-  public long getFinishTimeNanos() {
-    return finishTimeNanos;
-  }
+    fun getActionLookupData(): ActionLookupData? {
+        return actionLookupData
+    }
 
-  public ActionLookupData getActionLookupData() {
-    return actionLookupData;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper("ActionCompletionEvent")
-        .add("relativeActionStartTimeNanos", relativeActionStartTimeNanos)
-        .add("finishTimeNanos", finishTimeNanos)
-        .add("action", action)
-        .add("actionLookupData", actionLookupData)
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper("ActionCompletionEvent")
+            .add("relativeActionStartTimeNanos", relativeActionStartTimeNanos)
+            .add("finishTimeNanos", finishTimeNanos)
+            .add("action", action)
+            .add("actionLookupData", actionLookupData)
+            .toString()
+    }
 }

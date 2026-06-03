@@ -11,29 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * Notifies that an in-flight action is checking the cache.
- *
+ * 
  * @param action Gets the metadata associated with the action.
  * @param strategy Gets the name of the strategy on which the action is caching.
  */
-public record CachingActionEvent(ActionExecutionMetadata action, String strategy)
-    implements Postable {
-  public CachingActionEvent {
-    requireNonNull(action, "action");
-    requireNonNull(strategy, "strategy");
-  }
+class CachingActionEvent(action: ActionExecutionMetadata?, val strategy: String?) : Postable {
+    val action: ActionExecutionMetadata?
 
-  public static CachingActionEvent create(ActionExecutionMetadata action, String strategy) {
-    return new CachingActionEvent(
-        action, checkNotNull(strategy, "Strategy names are not optional"));
-  }
+    init {
+        this.action = action
+        java.util.Objects.requireNonNull<ActionExecutionMetadata?>(action, "action")
+        java.util.Objects.requireNonNull<String?>(strategy, "strategy")
+    }
 
+    companion object {
+        fun create(action: ActionExecutionMetadata?, strategy: String?): CachingActionEvent {
+            return CachingActionEvent(
+                action,
+                com.google.common.base.Preconditions.checkNotNull<String?>(strategy, "Strategy names are not optional")
+            )
+        }
+    }
 }

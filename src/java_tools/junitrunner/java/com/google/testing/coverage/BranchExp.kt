@@ -11,131 +11,135 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.coverage
 
-package com.google.testing.coverage;
+import com.google.testing.coverage.CovExp
+import com.google.testing.coverage.NullExp
+import java.util.Collections
+import java.util.stream.Collectors
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
+/** A branch coverage that must be evaluated as a combination of probes.  */
+class BranchExp : CovExp {
+    private val branches: MutableList<CovExp>
 
-/** A branch coverage that must be evaluated as a combination of probes. */
-public class BranchExp implements CovExp {
-  private final List<CovExp> branches;
+    // Cache the evaluation result to avoid reevaluating the expression with the same probes.
+    private var probesUsed: BooleanArray?
+    private var value = false
 
-  // Cache the evaluation result to avoid reevaluating the expression with the same probes.
-  private boolean[] probesUsed;
-  private boolean value = false;
-
-  /** Create a BranchExp for a known number of branches but with no expression data. */
-  public static BranchExp initializeEmptyBranches() {
-    return new BranchExp(new ArrayList<>());
-  }
-
-  public BranchExp(List<CovExp> branches) {
-    this.branches = branches;
-  }
-
-  /** Create a new BranchExp using this CovExp as the only branch. */
-  public BranchExp(CovExp exp) {
-    branches = new ArrayList<CovExp>();
-    branches.add(exp);
-  }
-
-  /** Returns true if any branches been set for this BranchExp. */
-  public boolean hasBranches() {
-    return branches.stream().anyMatch(exp -> !exp.equals(NullExp.NULL_EXP));
-  }
-
-  /**
-   * Returns the expressions for the logical branches.
-   *
-   * <p>Expressions that have not been set are omitted.
-   */
-  public List<CovExp> getBranches() {
-    return branches.stream()
-        .filter(exp -> !exp.equals(NullExp.NULL_EXP))
-        .collect(Collectors.toList());
-  }
-
-  /** Set the expression at a given index for this branch. */
-  public void setBranchAtIndex(int index, CovExp exp) {
-    extendBranches(index + 1);
-    branches.set(index, exp);
-    invalidateEvalCache();
-  }
-
-  /** Returns the expression at a given index for this branch. */
-  public CovExp getBranchAtIndex(int index) {
-    return branches.get(index);
-  }
-
-  /** Expands the current branch set to the new size */
-  private void extendBranches(int size) {
-    if (branches.size() < size) {
-      // This preserves the cached eval value so no need to invalidate.
-      branches.addAll(Collections.nCopies(size - branches.size(), NullExp.NULL_EXP));
+    constructor(branches: MutableList<CovExp>) {
+        this.branches = branches
     }
-  }
 
-  /**
-   * Add an expression to a branch expression.
-   *
-   * @return the index of the newly added branch.
-   */
-  public int add(CovExp exp) {
-    branches.add(exp);
-    invalidateEvalCache();
-    return branches.size() - 1;
-  }
-
-  /** Make a new BranchExp representing the concatenation of branches in inputs. */
-  public static BranchExp concatenate(BranchExp first, BranchExp second) {
-    List<CovExp> branches = new ArrayList<>(first.branches);
-    branches.addAll(second.branches);
-    return new BranchExp(branches);
-  }
-
-  /** Make a new BranchExp representing the pairwise union of branches in inputs */
-  public static BranchExp zip(BranchExp left, BranchExp right) {
-    List<CovExp> zippedBranches = new ArrayList<>();
-    int leftSize = left.branches.size();
-    int rightSize = right.branches.size();
-    int i;
-    for (i = 0; i < leftSize && i < rightSize; i++) {
-      List<CovExp> branches = Arrays.asList(left.branches.get(i), right.branches.get(i));
-      zippedBranches.add(new BranchExp(branches));
+    /** Create a new BranchExp using this CovExp as the only branch.  */
+    constructor(exp: CovExp?) {
+        branches = java.util.ArrayList<CovExp>()
+        branches.add(exp)
     }
-    List<CovExp> remainder = leftSize < rightSize ? right.branches : left.branches;
-    for (; i < remainder.size(); i++) {
-      zippedBranches.add(new BranchExp(remainder.get(i)));
-    }
-    return new BranchExp(zippedBranches);
-  }
 
-  /** Wraps a CovExp in a BranchExp if it isn't one already. */
-  public static BranchExp ensureIsBranchExp(CovExp exp) {
-    return exp instanceof BranchExp ? (BranchExp) exp : new BranchExp(exp);
-  }
-
-  private void invalidateEvalCache() {
-    probesUsed = null;
-  }
-
-  @Override
-  public boolean eval(final boolean[] probes) {
-    if (probes == probesUsed) {
-      return value;
+    /** Returns true if any branches been set for this BranchExp.  */
+    fun hasBranches(): Boolean {
+        return branches.stream().anyMatch { exp: CovExp? -> exp != NullExp.Companion.NULL_EXP }
     }
-    value = false;
-    for (CovExp exp : branches) {
-      value = exp.eval(probes);
-      if (value) {
-        break;
-      }
+
+    /**
+     * Returns the expressions for the logical branches.
+     * 
+     * 
+     * Expressions that have not been set are omitted.
+     */
+    fun getBranches(): MutableList<CovExp?> {
+        return branches.stream()
+            .filter { exp: CovExp? -> exp != NullExp.Companion.NULL_EXP }
+            .collect(Collectors.toList())
     }
-    probesUsed = probes;
-    return value;
-  }
+
+    /** Set the expression at a given index for this branch.  */
+    fun setBranchAtIndex(index: Int, exp: CovExp?) {
+        extendBranches(index + 1)
+        branches.set(index, exp)
+        invalidateEvalCache()
+    }
+
+    /** Returns the expression at a given index for this branch.  */
+    fun getBranchAtIndex(index: Int): CovExp? {
+        return branches.get(index)
+    }
+
+    /** Expands the current branch set to the new size  */
+    private fun extendBranches(size: Int) {
+        if (branches.size < size) {
+            // This preserves the cached eval value so no need to invalidate.
+            branches.addAll(Collections.nCopies<NullExp?>(size - branches.size, NullExp.Companion.NULL_EXP))
+        }
+    }
+
+    /**
+     * Add an expression to a branch expression.
+     * 
+     * @return the index of the newly added branch.
+     */
+    fun add(exp: CovExp?): Int {
+        branches.add(exp)
+        invalidateEvalCache()
+        return branches.size - 1
+    }
+
+    private fun invalidateEvalCache() {
+        probesUsed = null
+    }
+
+    override fun eval(probes: BooleanArray?): Boolean {
+        if (probes == probesUsed) {
+            return value
+        }
+        value = false
+        for (exp in branches) {
+            value = exp.eval(probes)
+            if (value) {
+                break
+            }
+        }
+        probesUsed = probes
+        return value
+    }
+
+    companion object {
+        /** Create a BranchExp for a known number of branches but with no expression data.  */
+        fun initializeEmptyBranches(): BranchExp {
+            return BranchExp(java.util.ArrayList<CovExp?>())
+        }
+
+        /** Make a new BranchExp representing the concatenation of branches in inputs.  */
+        fun concatenate(first: BranchExp, second: BranchExp): BranchExp {
+            val branches: MutableList<CovExp> = java.util.ArrayList<CovExp>(first.branches)
+            branches.addAll(second.branches)
+            return BranchExp(branches)
+        }
+
+        /** Make a new BranchExp representing the pairwise union of branches in inputs  */
+        fun zip(left: BranchExp, right: BranchExp): BranchExp {
+            val zippedBranches: MutableList<CovExp> = java.util.ArrayList<CovExp>()
+            val leftSize = left.branches.size
+            val rightSize = right.branches.size
+            var i: Int
+            i = 0
+            while (i < leftSize && i < rightSize) {
+                val branches: MutableList<CovExp> =
+                    java.util.Arrays.asList<CovExp?>(left.branches.get(i), right.branches.get(i))
+                zippedBranches.add(BranchExp(branches))
+                i++
+            }
+            val remainder: MutableList<CovExp?> = if (leftSize < rightSize) right.branches else left.branches
+            while (i < remainder.size) {
+                zippedBranches.add(BranchExp(remainder.get(i)))
+                i++
+            }
+            return BranchExp(zippedBranches)
+        }
+
+        /** Wraps a CovExp in a BranchExp if it isn't one already.  */
+        fun ensureIsBranchExp(exp: CovExp): BranchExp {
+            return if (exp is BranchExp) exp else BranchExp(exp)
+        }
+    }
 }

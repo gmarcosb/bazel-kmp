@@ -11,44 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.actions.cache.ActionCache;
-import java.util.AbstractMap.SimpleEntry;
-import java.util.Map.Entry;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.cache.ActionCache
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import java.util.AbstractMap
 
-/** Utility functions for {@link ActionCache}. */
-public class ActionCacheUtils {
-  private ActionCacheUtils() {}
-
-  @Nullable
-  public static Entry<String, ActionCache.Entry> getCacheEntryWithKey(
-      ActionCache actionCache, Action action) {
-    for (Artifact output : action.getOutputs()) {
-      ActionCache.Entry entry = actionCache.get(output.getExecPathString());
-      if (entry != null) {
-        return new SimpleEntry<>(output.getExecPathString(), entry);
-      }
+/** Utility functions for [ActionCache].  */
+object ActionCacheUtils {
+    fun getCacheEntryWithKey(
+        actionCache: ActionCache, action: com.google.devtools.build.lib.actions.Action
+    ): MutableMap.MutableEntry<String?, com.google.devtools.build.lib.actions.cache.ActionCache.Entry?>? {
+        for (output in action.getOutputs()) {
+            val entry: com.google.devtools.build.lib.actions.cache.ActionCache.Entry? =
+                actionCache.get(output.getExecPathString())
+            if (entry != null) {
+                return AbstractMap.SimpleEntry<String?, com.google.devtools.build.lib.actions.cache.ActionCache.Entry?>(
+                    output.getExecPathString(),
+                    entry
+                )
+            }
+        }
+        return null
     }
-    return null;
-  }
 
-  /** Checks whether one of existing output paths is already used as a key. */
-  @Nullable
-  public static ActionCache.Entry getCacheEntry(ActionCache actionCache, Action action) {
-    for (Artifact output : action.getOutputs()) {
-      ActionCache.Entry entry = actionCache.get(output.getExecPathString());
-      if (entry != null) {
-        return entry;
-      }
+    /** Checks whether one of existing output paths is already used as a key.  */
+    fun getCacheEntry(
+        actionCache: ActionCache,
+        action: com.google.devtools.build.lib.actions.Action
+    ): com.google.devtools.build.lib.actions.cache.ActionCache.Entry? {
+        for (output in action.getOutputs()) {
+            val entry: com.google.devtools.build.lib.actions.cache.ActionCache.Entry? =
+                actionCache.get(output.getExecPathString())
+            if (entry != null) {
+                return entry
+            }
+        }
+        return null
     }
-    return null;
-  }
 
-  public static void removeCacheEntry(ActionCache actionCache, Action action) {
-    for (Artifact output : action.getOutputs()) {
-      actionCache.remove(output.getExecPathString());
+    fun removeCacheEntry(actionCache: ActionCache, action: com.google.devtools.build.lib.actions.Action) {
+        for (output in action.getOutputs()) {
+            actionCache.remove(output.getExecPathString())
+        }
     }
-  }
 }

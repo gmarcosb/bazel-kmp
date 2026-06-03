@@ -11,20 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionExecutionException
+import com.google.devtools.build.lib.actions.InputMetadataProvider
+import com.google.devtools.build.lib.actions.RichArtifactData
 
 /**
  * An action that emits rich data.
- *
- * <p>This needs to be a concept because when such an action is an action cache hit, the rich data
+ * 
+ * 
+ * This needs to be a concept because when such an action is an action cache hit, the rich data
  * is currently not reconstructed from the action cache (it's theoretically possible, it's just that
  * it's not done). So the action must reconstruct this data itself.
  */
 // TODO(lberki): Maybe merge this with NotifyOnActionCacheHit?
-public interface RichDataProducingAction {
-  @Nullable
-  RichArtifactData reconstructRichDataOnActionCacheHit(InputMetadataProvider inputMetadataProvider)
-      throws ActionExecutionException;
+interface RichDataProducingAction {
+    @Throws(ActionExecutionException::class)
+    fun reconstructRichDataOnActionCacheHit(inputMetadataProvider: InputMetadataProvider?): RichArtifactData?
 }

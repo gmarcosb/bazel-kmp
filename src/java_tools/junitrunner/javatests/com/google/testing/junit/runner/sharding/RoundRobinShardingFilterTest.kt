@@ -11,49 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding
 
-package com.google.testing.junit.runner.sharding;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory
+import com.google.testing.junit.runner.sharding.testing.RoundRobinShardingFilterFactory
+import com.google.testing.junit.runner.sharding.testing.ShardingFilterTestCase
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for the [RoundRobinShardingFilter].  */
+class RoundRobinShardingFilterTest : ShardingFilterTestCase() {
+    fun testShardingIsBalanced() {
+        val run1: MutableMap<org.junit.runner.manipulation.Filter?, MutableList<org.junit.runner.Description?>?> =
+            simulateTestRun(
+                FILTERS_1, GENERIC_TEST_DESCRIPTIONS
+            )
+        Truth.assertThat(run1.get(FILTERS_1.get(0))).hasSize(2)
+        Truth.assertThat(run1.get(FILTERS_1.get(1))).hasSize(2)
+        Truth.assertThat(run1.get(FILTERS_1.get(2))).hasSize(2)
 
-import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory;
-import com.google.testing.junit.runner.sharding.testing.RoundRobinShardingFilterFactory;
-import com.google.testing.junit.runner.sharding.testing.ShardingFilterTestCase;
-import java.util.List;
-import java.util.Map;
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+        val run2: MutableMap<org.junit.runner.manipulation.Filter?, MutableList<org.junit.runner.Description?>?> =
+            simulateTestRun(
+                FILTERS_2, GENERIC_TEST_DESCRIPTIONS
+            )
+        Truth.assertThat(run2.get(FILTERS_2.get(0))).hasSize(2)
+        Truth.assertThat(run2.get(FILTERS_2.get(1))).hasSize(2)
+        Truth.assertThat(run2.get(FILTERS_2.get(2))).hasSize(1)
+        Truth.assertThat(run2.get(FILTERS_2.get(3))).hasSize(1)
+    }
 
-/** Tests for the {@link RoundRobinShardingFilter}. */
-public class RoundRobinShardingFilterTest extends ShardingFilterTestCase {
+    fun testShouldRun_throwsExceptionForUnknownDescription() {
+        assertThrowsExceptionForUnknownDescription(FILTERS_1.get(0))
+    }
 
-  private static final List<Description> GENERIC_TEST_DESCRIPTIONS =
-      ShardingFilterTestCase.createGenericTestCaseDescriptions(6);
+    override fun createShardingFilterFactory(): ShardingFilterFactory? {
+        return RoundRobinShardingFilterFactory()
+    }
 
-  private static final List<Filter> FILTERS_1 =
-      createFilters(GENERIC_TEST_DESCRIPTIONS, 3, new RoundRobinShardingFilterFactory());
-  private static final List<Filter> FILTERS_2 =
-      createFilters(GENERIC_TEST_DESCRIPTIONS, 4, new RoundRobinShardingFilterFactory());
+    companion object {
+        private val GENERIC_TEST_DESCRIPTIONS: MutableList<org.junit.runner.Description?>? =
+            ShardingFilterTestCase.createGenericTestCaseDescriptions(6)
 
-  public void testShardingIsBalanced() {
-    Map<Filter, List<Description>> run1 = simulateTestRun(FILTERS_1, GENERIC_TEST_DESCRIPTIONS);
-    assertThat(run1.get(FILTERS_1.get(0))).hasSize(2);
-    assertThat(run1.get(FILTERS_1.get(1))).hasSize(2);
-    assertThat(run1.get(FILTERS_1.get(2))).hasSize(2);
-
-    Map<Filter, List<Description>> run2 = simulateTestRun(FILTERS_2, GENERIC_TEST_DESCRIPTIONS);
-    assertThat(run2.get(FILTERS_2.get(0))).hasSize(2);
-    assertThat(run2.get(FILTERS_2.get(1))).hasSize(2);
-    assertThat(run2.get(FILTERS_2.get(2))).hasSize(1);
-    assertThat(run2.get(FILTERS_2.get(3))).hasSize(1);
-  }
-
-  public void testShouldRun_throwsExceptionForUnknownDescription() {
-    assertThrowsExceptionForUnknownDescription(FILTERS_1.get(0));
-  }
-
-  @Override
-  protected ShardingFilterFactory createShardingFilterFactory() {
-    return new RoundRobinShardingFilterFactory();
-  }
+        private val FILTERS_1: MutableList<org.junit.runner.manipulation.Filter?> = createFilters(
+            GENERIC_TEST_DESCRIPTIONS, 3, RoundRobinShardingFilterFactory()
+        )
+        private val FILTERS_2: MutableList<org.junit.runner.manipulation.Filter?> = createFilters(
+            GENERIC_TEST_DESCRIPTIONS, 4, RoundRobinShardingFilterFactory()
+        )
+    }
 }

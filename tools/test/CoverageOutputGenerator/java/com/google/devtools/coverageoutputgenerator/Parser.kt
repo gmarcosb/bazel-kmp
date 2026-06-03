@@ -11,13 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import java.io.IOException
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.List;
-
-interface Parser {
-  List<SourceFileCoverage> parse(InputStream inputStream) throws IOException;
+internal interface Parser {
+    @Throws(IOException::class)
+    fun parse(inputStream: java.io.InputStream?): MutableList<SourceFileCoverage?>?
 }

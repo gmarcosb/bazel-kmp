@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * The interface to construct command line for different shells (Bash, Batch, Powershell). Used in
- * {@link com.google.devtools.build.lib.analysis.CommandHelper}
+ * [com.google.devtools.build.lib.analysis.CommandHelper]
  */
-public interface CommandConstructor {
+interface CommandConstructor {
+    /**
+     * Given a string of command, return the arguments to run the command. eg. For Bash command,
+     * asExecArgv("foo bar") -> ["/bin/bash", "-c", "foo bar"]
+     */
+    fun asExecArgv(command: String?): com.google.common.collect.ImmutableList<String?>?
 
-  /**
-   * Given a string of command, return the arguments to run the command. eg. For Bash command,
-   * asExecArgv("foo bar") -> ["/bin/bash", "-c", "foo bar"]
-   */
-  ImmutableList<String> asExecArgv(String command);
+    /** Given an artifact of a script, return the arguments to run this command.  */
+    fun asExecArgv(scriptFileArtifact: Artifact?): com.google.common.collect.ImmutableList<String?>?
 
-  /** Given an artifact of a script, return the arguments to run this command. */
-  ImmutableList<String> asExecArgv(Artifact scriptFileArtifact);
-
-  /** Write the command to a script and return the artifact of the script. */
-  Artifact commandAsScript(RuleContext ruleContext, String command);
+    /** Write the command to a script and return the artifact of the script.  */
+    fun commandAsScript(ruleContext: RuleContext?, command: String?): Artifact?
 }

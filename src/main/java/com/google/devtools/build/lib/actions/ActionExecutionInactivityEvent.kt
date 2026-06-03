@@ -11,13 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import java.time.Instant;
+import java.time.Instant
 
 /**
  * An event that is fired when no actions are getting completed in a timely manner.
- *
+ * 
  * @param lastActionCompletedAt the last time an action completed
  */
-public record ActionExecutionInactivityEvent(Instant lastActionCompletedAt) {}
+class ActionExecutionInactivityEvent(lastActionCompletedAt: Instant?) {
+    val lastActionCompletedAt: Instant?
+
+    init {
+        this.lastActionCompletedAt = lastActionCompletedAt
+    }
+}

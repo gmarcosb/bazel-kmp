@@ -11,61 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
- * Return value for {@link com.google.devtools.build.lib.buildtool.AnalysisAndExecutionPhaseRunner}.
+ * Return value for [com.google.devtools.build.lib.buildtool.AnalysisAndExecutionPhaseRunner].
  * This is meant to be the drop-in replacement for AnalysisResult later on. This is part of
  * https://github.com/bazelbuild/bazel/issues/14057. Internal: b/147350683.
  */
-public final class AnalysisAndExecutionResult extends AnalysisResult {
-  private final DetailedExitCode executionDetailedExitCode;
+class AnalysisAndExecutionResult internal constructor(
+    configuration: BuildConfigurationValue?,
+    targetsToBuild: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    aspects: com.google.common.collect.ImmutableMap<AspectKey?, ConfiguredAspect?>?,
+    targetsToTest: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    targetsToSkip: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    analysisFailureDetail: FailureDetail?,
+    executionDetailedExitCode: DetailedExitCode?,
+    artifactsToBuild: com.google.common.collect.ImmutableSet<Artifact?>?,
+    parallelTests: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    exclusiveTests: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    exclusiveIfLocalTests: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+    topLevelContext: TopLevelArtifactContext?,
+    topLevelTargetsWithConfigs: MutableCollection<TargetAndConfiguration?>?
+) : com.google.devtools.build.lib.analysis.AnalysisResult(
+    configuration,
+    targetsToBuild,
+    aspects,
+    targetsToTest,
+    targetsToSkip,
+    analysisFailureDetail,  /* actionGraph= */
+    null,
+    artifactsToBuild,
+    parallelTests,
+    exclusiveTests,
+    exclusiveIfLocalTests,
+    topLevelContext,  /* packageRoots= */
+    null,
+    topLevelTargetsWithConfigs
+) {
+    private val executionDetailedExitCode: DetailedExitCode?
 
-  AnalysisAndExecutionResult(
-      BuildConfigurationValue configuration,
-      ImmutableSet<ConfiguredTarget> targetsToBuild,
-      ImmutableMap<AspectKey, ConfiguredAspect> aspects,
-      @Nullable ImmutableSet<ConfiguredTarget> targetsToTest,
-      ImmutableSet<ConfiguredTarget> targetsToSkip,
-      @Nullable FailureDetail analysisFailureDetail,
-      @Nullable DetailedExitCode executionDetailedExitCode,
-      ImmutableSet<Artifact> artifactsToBuild,
-      ImmutableSet<ConfiguredTarget> parallelTests,
-      ImmutableSet<ConfiguredTarget> exclusiveTests,
-      ImmutableSet<ConfiguredTarget> exclusiveIfLocalTests,
-      TopLevelArtifactContext topLevelContext,
-      Collection<TargetAndConfiguration> topLevelTargetsWithConfigs) {
-    super(
-        configuration,
-        targetsToBuild,
-        aspects,
-        targetsToTest,
-        targetsToSkip,
-        analysisFailureDetail,
-        /* actionGraph= */ null,
-        artifactsToBuild,
-        parallelTests,
-        exclusiveTests,
-        exclusiveIfLocalTests,
-        topLevelContext,
-        /* packageRoots= */ null,
-        topLevelTargetsWithConfigs);
-    this.executionDetailedExitCode = executionDetailedExitCode;
-  }
+    init {
+        this.executionDetailedExitCode = executionDetailedExitCode
+    }
 
-  @Nullable
-  public DetailedExitCode getExecutionDetailedExitCode() {
-    return executionDetailedExitCode;
-  }
+    fun getExecutionDetailedExitCode(): DetailedExitCode? {
+        return executionDetailedExitCode
+    }
 }

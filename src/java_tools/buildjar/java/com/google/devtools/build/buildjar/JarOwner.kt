@@ -11,37 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar
 
-package com.google.devtools.build.buildjar;
-
-import com.google.auto.value.AutoValue;
-import java.nio.file.Path;
-import java.util.Optional;
+import com.google.auto.value.AutoValue
+import java.nio.file.Path
 
 /**
  * Holds information about the Bazel rule that created a certain jar.
- *
- * <p>Rules that use Aspects (http://bazel.build/rules/aspects) to compile jars will result in
+ * 
+ * 
+ * Rules that use Aspects (http://bazel.build/rules/aspects) to compile jars will result in
  * 'aspect()' being populated.
  */
 @AutoValue
-public abstract class JarOwner {
+abstract class JarOwner {
+    abstract fun jar(): Path?
 
-  public abstract Path jar();
+    abstract fun label(): java.util.Optional<String?>?
 
-  public abstract Optional<String> label();
+    abstract fun aspect(): java.util.Optional<String?>?
 
-  public abstract Optional<String> aspect();
+    fun withLabel(label: java.util.Optional<String?>?): JarOwner {
+        return AutoValue_JarOwner(jar(), label, aspect())
+    }
 
-  public static JarOwner create(Path jar) {
-    return new AutoValue_JarOwner(jar, Optional.empty(), Optional.empty());
-  }
+    companion object {
+        fun create(jar: Path?): JarOwner {
+            return AutoValue_JarOwner(jar, java.util.Optional.empty<T?>(), java.util.Optional.empty<T?>())
+        }
 
-  public static JarOwner create(Path jar, String label, Optional<String> aspect) {
-    return new AutoValue_JarOwner(jar, Optional.of(label), aspect);
-  }
-
-  public JarOwner withLabel(Optional<String> label) {
-    return new AutoValue_JarOwner(jar(), label, aspect());
-  }
+        fun create(jar: Path?, label: String, aspect: java.util.Optional<String?>?): JarOwner {
+            return AutoValue_JarOwner(jar, java.util.Optional.of<T?>(label), aspect)
+        }
+    }
 }

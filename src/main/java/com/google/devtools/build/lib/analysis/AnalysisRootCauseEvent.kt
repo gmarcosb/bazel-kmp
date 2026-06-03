@@ -11,125 +11,114 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.buildEvent;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ConfigurationId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithConfiguration;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import java.util.Optional;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
 /**
- * Error message of an analysis root cause. This is separate from {@link AnalysisFailureEvent} to
+ * Error message of an analysis root cause. This is separate from [AnalysisFailureEvent] to
  * avoid duplicating error messages in the stream if multiple targets fail due to the same root
  * cause. It also allows UIs to collate errors by root cause.
  */
-public final class AnalysisRootCauseEvent implements BuildEventWithConfiguration {
-  /**
-   * A tri-state representation of the configuration to capture two different notions of nullness.
-   *
-   * <ul>
-   *   <li>The contents of a non-empty value is a configuration value.
-   *   <li>An {@link Optional#empty} represents the <i>null configuration</i>, used for
-   *       unconfigurable targets, for example source files.
-   *   <li>A null value means an <i>unavailable configuration</i>. Sometimes errors may occur for a
-   *       transient {@link BuildConfigurationKey} for which a {@link BuildConfigurationValue} is
-   *       never computed, for example, the intermediate configuration after the attribute
-   *       transition occurs but before the rule transition.
-   * </ul>
-   */
-  @Nullable private final Optional<BuildConfigurationValue> configuration;
+class AnalysisRootCauseEvent private constructor(
+    configuration: java.util.Optional<BuildConfigurationValue?>?,
+    configurationId: ConfigurationId?,
+    label: Label?,
+    errorMessage: String?
+) : BuildEventWithConfiguration {
+    /**
+     * A tri-state representation of the configuration to capture two different notions of nullness.
+     * 
+     * 
+     *  * The contents of a non-empty value is a configuration value.
+     *  * An [Optional.empty] represents the *null configuration*, used for
+     * unconfigurable targets, for example source files.
+     *  * A null value means an *unavailable configuration*. Sometimes errors may occur for a
+     * transient [BuildConfigurationKey] for which a [BuildConfigurationValue] is
+     * never computed, for example, the intermediate configuration after the attribute
+     * transition occurs but before the rule transition.
+     * 
+     */
+    private val configuration: java.util.Optional<BuildConfigurationValue?>?
 
-  private final ConfigurationId configurationId;
-  private final Label label;
-  private final String errorMessage;
+    private val configurationId: ConfigurationId?
+    private val label: Label?
+    private val errorMessage: String?
 
-  public static AnalysisRootCauseEvent withConfigurationValue(
-      @Nullable BuildConfigurationValue configuration, Label label, String errorMessage) {
-    return new AnalysisRootCauseEvent(
-        Optional.ofNullable(configuration),
-        BuildConfigurationValue.configurationIdMessage(configuration),
-        label,
-        errorMessage);
-  }
-
-  public static AnalysisRootCauseEvent withUnavailableConfiguration(
-      ConfigurationId configurationId, Label label, String errorMessage) {
-    return new AnalysisRootCauseEvent(
-        /* configuration= */ null, configurationId, label, errorMessage);
-  }
-
-  private AnalysisRootCauseEvent(
-      @Nullable Optional<BuildConfigurationValue> configuration,
-      ConfigurationId configurationId,
-      Label label,
-      String errorMessage) {
-    this.configuration = configuration;
-    this.configurationId = configurationId;
-    this.label = label;
-    this.errorMessage = errorMessage;
-  }
-
-  @VisibleForTesting
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    // This needs to match AnalysisFailedCause.getIdProto.
-    return BuildEventIdUtil.configuredLabelId(label, configurationId);
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    return GenericBuildEvent.protoChaining(this)
-        .setAborted(
-            BuildEventStreamProtos.Aborted.newBuilder()
-                .setReason(BuildEventStreamProtos.Aborted.AbortReason.ANALYSIS_FAILURE)
-                .setDescription(errorMessage)
-                .build())
-        .build();
-  }
-
-  @Override
-  public ImmutableList<BuildEvent> getConfigurations() {
-    if (configuration == null) {
-      return ImmutableList.of();
+    init {
+        this.configuration = configuration
+        this.configurationId = configurationId
+        this.label = label
+        this.errorMessage = errorMessage
     }
-    return ImmutableList.of(buildEvent(configuration.orElse(null)));
-  }
 
-  @Override
-  public boolean storeForReplay() {
-    return true;
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun getLabel(): Label? {
+        return label
+    }
 
-  @Override
-  public String toString() {
-    return toStringHelper(this)
-        .add("configuration", configuration)
-        .add("configurationId", configurationId)
-        .add("label", label)
-        .add("errorMessage", errorMessage)
-        .toString();
-  }
+    public override fun getEventId(): BuildEventId {
+        // This needs to match AnalysisFailedCause.getIdProto.
+        return BuildEventIdUtil.configuredLabelId(label, configurationId)
+    }
+
+    public override fun getChildrenEvents(): com.google.common.collect.ImmutableList<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<BuildEventId?>()
+    }
+
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        return GenericBuildEvent.protoChaining(this)
+            .setAborted(
+                BuildEventStreamProtos.Aborted.newBuilder()
+                    .setReason(BuildEventStreamProtos.Aborted.AbortReason.ANALYSIS_FAILURE)
+                    .setDescription(errorMessage)
+                    .build()
+            )
+            .build()
+    }
+
+    public override fun getConfigurations(): com.google.common.collect.ImmutableList<BuildEvent?> {
+        if (configuration == null) {
+            return com.google.common.collect.ImmutableList.of<BuildEvent?>()
+        }
+        return com.google.common.collect.ImmutableList.of<BuildEvent?>(
+            BuildConfigurationValue.Companion.buildEvent(
+                configuration.orElse(null)
+            )
+        )
+    }
+
+    public override fun storeForReplay(): Boolean {
+        return true
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("configuration", configuration)
+            .add("configurationId", configurationId)
+            .add("label", label)
+            .add("errorMessage", errorMessage)
+            .toString()
+    }
+
+    companion object {
+        fun withConfigurationValue(
+            configuration: BuildConfigurationValue?, label: Label?, errorMessage: String?
+        ): AnalysisRootCauseEvent {
+            return AnalysisRootCauseEvent(
+                java.util.Optional.ofNullable<BuildConfigurationValue?>(configuration),
+                BuildConfigurationValue.Companion.configurationIdMessage(configuration),
+                label,
+                errorMessage
+            )
+        }
+
+        fun withUnavailableConfiguration(
+            configurationId: ConfigurationId?, label: Label?, errorMessage: String?
+        ): AnalysisRootCauseEvent {
+            return AnalysisRootCauseEvent( /* configuration= */
+                null, configurationId, label, errorMessage
+            )
+        }
+    }
 }

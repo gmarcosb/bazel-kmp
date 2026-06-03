@@ -11,43 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * An interface that provides information about package's source roots, that is, the paths on disk
  * that their BUILD files can be found at. Usually this information is not needed except for when
  * planting the symlink forest in the exec root, and when resolving source exec paths to artifacts
- * in an {@link ArtifactResolver}.
+ * in an [ArtifactResolver].
  */
-public interface PackageRoots {
-
-  /**
-   * Returns a map from {@link PackageIdentifier} to {@link Path}. Should only be needed for
-   * {@linkplain com.google.devtools.build.lib.buildtool.SymlinkForest planting the symlink forest}.
-   *
-   * <p>If {@link PackageIdentifier#EMPTY_PACKAGE_ID} is present, then all top-level path entries
-   * under the corresponding root are to be linked.
-   */
-  ImmutableMap<PackageIdentifier, Root> getPackageRootsMap();
-
-  PackageRootLookup getPackageRootLookup();
-
-  /** Interface for getting the source root of a package, given its {@link PackageIdentifier}. */
-  interface PackageRootLookup {
+interface PackageRoots {
     /**
-     * Returns the {@link ArtifactRoot} of a package, given its {@link PackageIdentifier}. May be
-     * null if the given {@code packageIdentifier} does not correspond to a package in this build.
-     * However, if there is a unique source root for all packages, this may return that root even if
-     * the {@code packageIdentifier} given does not correspond to any packages.
+     * Returns a map from [PackageIdentifier] to [Path]. Should only be needed for
+     * [planting the symlink forest][com.google.devtools.build.lib.buildtool.SymlinkForest].
+     * 
+     * 
+     * If [PackageIdentifier.EMPTY_PACKAGE_ID] is present, then all top-level path entries
+     * under the corresponding root are to be linked.
      */
-    @Nullable
-    Root getRootForPackage(PackageIdentifier packageIdentifier);
-  }
+    fun getPackageRootsMap(): com.google.common.collect.ImmutableMap<PackageIdentifier?, Root?>?
+
+    fun getPackageRootLookup(): PackageRootLookup?
+
+    /** Interface for getting the source root of a package, given its [PackageIdentifier].  */
+    interface PackageRootLookup {
+        /**
+         * Returns the [ArtifactRoot] of a package, given its [PackageIdentifier]. May be
+         * null if the given `packageIdentifier` does not correspond to a package in this build.
+         * However, if there is a unique source root for all packages, this may return that root even if
+         * the `packageIdentifier` given does not correspond to any packages.
+         */
+        fun getRootForPackage(packageIdentifier: PackageIdentifier?): Root?
+    }
 }

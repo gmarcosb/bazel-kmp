@@ -11,15 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
 /**
  * Used to populate resource usage of Bazel to Profiler and get around of dependency cycle of usage
  * ResourceManager.
  */
-public interface ResourceEstimator {
-  public double getUsedMemoryInMb();
+interface ResourceEstimator {
+    fun getUsedMemoryInMb(): Double
 
-  public double getUsedCPU();
+    fun getUsedCPU(): Double
 }

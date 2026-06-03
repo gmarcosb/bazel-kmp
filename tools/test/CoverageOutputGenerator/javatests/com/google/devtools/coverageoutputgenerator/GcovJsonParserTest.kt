@@ -11,28 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
+import com.google.common.truth.Truth
+import com.google.devtools.coverageoutputgenerator.BranchCoverageItem
+import com.google.devtools.coverageoutputgenerator.GcovJsonParser
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayInputStream
+import java.util.zip.GZIPOutputStream
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.util.List;
-import java.util.zip.GZIPOutputStream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Unit tests for {@link GcovJsonParser}. */
-@RunWith(JUnit4.class)
-public final class GcovJsonParserTest {
-
-  @Test
-  public void testParseJsonData() throws Exception {
-    String jsonData =
-        """
+/** Unit tests for [GcovJsonParser].  */
+@RunWith(JUnit4::class)
+class GcovJsonParserTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseJsonData() {
+        val jsonData: String =
+            """
             {
               "format_version": "2",
               "gcc_version": "14.2.0",
@@ -112,22 +109,24 @@ public final class GcovJsonParserTest {
                 ]
               }]
             }
-        """;
-    ByteArrayOutputStream gzipBytes = new ByteArrayOutputStream();
-    try (GZIPOutputStream gzipStream = new GZIPOutputStream(gzipBytes)) {
-      gzipStream.write(jsonData.getBytes(UTF_8));
+        
+        """.trimIndent()
+        val gzipBytes: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        GZIPOutputStream(gzipBytes).use { gzipStream ->
+            gzipStream.write(jsonData.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        }
+        val inputStream: ByteArrayInputStream = ByteArrayInputStream(gzipBytes.toByteArray())
+
+        val sourceFiles: MutableList<SourceFileCoverage?> = GcovJsonParser.Companion.parse(inputStream)
+
+        Truth.assertThat(sourceFiles).hasSize(1)
+        Truth.assertThat(sourceFiles.get(0).sourceFileName()).isEqualTo("baz.cc")
+        Truth.assertThat(sourceFiles.get(0).getFunctionsExecution()).containsExactly("main", 2L)
+        Truth.assertThat(sourceFiles.get(0).getLines()).containsExactly(4, 3L, 5, 3L, 6, 1L, 7, 3L)
+        Truth.assertThat(sourceFiles.get(0).getAllBranches())
+            .containsExactly(
+                BranchCoverageItem.Companion.create(5, "0", "0", true, 1),
+                BranchCoverageItem.Companion.create(5, "0", "1", true, 2)
+            )
     }
-    ByteArrayInputStream inputStream = new ByteArrayInputStream(gzipBytes.toByteArray());
-
-    List<SourceFileCoverage> sourceFiles = GcovJsonParser.parse(inputStream);
-
-    assertThat(sourceFiles).hasSize(1);
-    assertThat(sourceFiles.get(0).sourceFileName()).isEqualTo("baz.cc");
-    assertThat(sourceFiles.get(0).getFunctionsExecution()).containsExactly("main", 2L);
-    assertThat(sourceFiles.get(0).getLines()).containsExactly(4, 3L, 5, 3L, 6, 1L, 7, 3L);
-    assertThat(sourceFiles.get(0).getAllBranches())
-        .containsExactly(
-            BranchCoverageItem.create(5, "0", "0", true, 1),
-            BranchCoverageItem.create(5, "0", "1", true, 2));
-  }
 }

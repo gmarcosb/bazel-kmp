@@ -11,28 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * Event which indicates a configuration change besides build configuration-affecting options.
- *
- * <p>Posting this event will result in the analysis cache being discarded. It is expected to be
- * posted in {@link com.google.devtools.build.lib.runtime.BlazeModule#beforeCommand} so that it can
+ * 
+ * 
+ * Posting this event will result in the analysis cache being discarded. It is expected to be
+ * posted in [com.google.devtools.build.lib.runtime.BlazeModule.beforeCommand] so that it can
  * be received in time to clear the analysis cache.
  */
-public final class AdditionalConfigurationChangeEvent implements Postable {
-  private final String changeDescription;
+class AdditionalConfigurationChangeEvent(changeDescription: String?) : Postable {
+    private val changeDescription: String
 
-  public AdditionalConfigurationChangeEvent(String changeDescription) {
-    this.changeDescription = checkNotNull(changeDescription);
-  }
+    init {
+        this.changeDescription = com.google.common.base.Preconditions.checkNotNull<String>(changeDescription)
+    }
 
-  /** Returns a description of the changed configuration. */
-  public String getChangeDescription() {
-    return changeDescription;
-  }
+    /** Returns a description of the changed configuration.  */
+    fun getChangeDescription(): String {
+        return changeDescription
+    }
 }

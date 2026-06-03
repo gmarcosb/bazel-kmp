@@ -11,70 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.buildEvent;
-import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationId;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithConfiguration;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.cmdline.Label;
-import javax.annotation.Nullable;
+/** Event reporting about the configurations associated with a given apect for a target  */
+class AspectConfiguredEvent(
+    target: Label?,
+    aspectClassName: String?,
+    aspectDescription: String?,
+    configuration: BuildConfigurationValue?
+) : BuildEventWithConfiguration {
+    private val target: Label?
+    private val aspectClassName: String?
+    private val aspectDescription: String?
+    private val configuration: BuildConfigurationValue?
 
-/** Event reporting about the configurations associated with a given apect for a target */
-public class AspectConfiguredEvent implements BuildEventWithConfiguration {
-  private final Label target;
-  private final String aspectClassName;
-  private final String aspectDescription;
-  @Nullable private final BuildConfigurationValue configuration;
+    init {
+        this.target = target
+        this.aspectClassName = aspectClassName
+        this.aspectDescription = aspectDescription
+        this.configuration = configuration
+    }
 
-  public AspectConfiguredEvent(
-      Label target,
-      String aspectClassName,
-      String aspectDescription,
-      @Nullable BuildConfigurationValue configuration) {
-    this.target = target;
-    this.aspectClassName = aspectClassName;
-    this.aspectDescription = aspectDescription;
-    this.configuration = configuration;
-  }
+    public override fun getConfigurations(): com.google.common.collect.ImmutableList<BuildEvent?> {
+        return com.google.common.collect.ImmutableList.of<BuildEvent?>(
+            BuildConfigurationValue.Companion.buildEvent(
+                configuration
+            )
+        )
+    }
 
-  @Override
-  public ImmutableList<BuildEvent> getConfigurations() {
-    return ImmutableList.of(buildEvent(configuration));
-  }
+    public override fun getEventId(): BuildEventId {
+        return BuildEventIdUtil.aspectConfigured(target, aspectClassName)
+    }
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.aspectConfigured(target, aspectClassName);
-  }
+    public override fun getChildrenEvents(): com.google.common.collect.ImmutableList<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<E?>(
+            BuildEventIdUtil.aspectCompleted(
+                target, BuildConfigurationValue.Companion.configurationId(configuration), aspectDescription
+            )
+        )
+    }
 
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of(
-        BuildEventIdUtil.aspectCompleted(
-            target, configurationId(configuration), aspectDescription));
-  }
+    fun getAspectClassName(): String? {
+        return aspectClassName
+    }
 
-  public String getAspectClassName() {
-    return aspectClassName;
-  }
+    fun getTarget(): Label? {
+        return target
+    }
 
-  public Label getTarget() {
-    return target;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.TargetConfigured.Builder builder =
-        BuildEventStreamProtos.TargetConfigured.newBuilder();
-    return GenericBuildEvent.protoChaining(this).setConfigured(builder.build()).build();
-  }
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        val builder: BuildEventStreamProtos.TargetConfigured.Builder =
+            BuildEventStreamProtos.TargetConfigured.newBuilder()
+        return GenericBuildEvent.protoChaining(this).setConfigured(builder.build()).build()
+    }
 }

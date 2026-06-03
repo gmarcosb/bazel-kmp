@@ -11,89 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import java.io.IOException;
-import java.util.Objects;
+import com.google.devtools.build.lib.util.Fingerprint
 
 /**
  * In case we can't get a fast digest from the filesystem, we store this metadata as a proxy to the
  * file contents. Currently it is up to two timestamps and a "node id". On Linux, macOS and Windows
  * we use both ctime and mtime, on Linux and macOS also the inode number. On other OSes, only the
  * mtime is used. We might want to add the device number in the future.
- *
- * <p>For a Linux example of why mtime alone is insufficient, note that 'mv' preserves mtime. So if
+ * 
+ * 
+ * For a Linux example of why mtime alone is insufficient, note that 'mv' preserves mtime. So if
  * files 'a' and 'b' initially have the same timestamp, then we would think 'b' is unchanged after
  * the user executes `mv a b` between two builds.
- *
- * <p>On Linux we also need mtime for hardlinking sandbox, since updating the inode reference
+ * 
+ * 
+ * On Linux we also need mtime for hardlinking sandbox, since updating the inode reference
  * counter preserves mtime, but updates ctime. isModified() call can be used to compare two
  * FileContentsProxys of hardlinked files.
  */
-public final class FileContentsProxy {
-  private final long ctime;
-  private final long mtime;
-  private final long nodeId;
+class FileContentsProxy(private val ctime: Long, private val mtime: Long, private val nodeId: Long) {
+    override fun equals(other: Any?): Boolean {
+        if (other === this) {
+            return true
+        }
 
-  public FileContentsProxy(long ctime, long mtime, long nodeId) {
-    this.ctime = ctime;
-    this.mtime = mtime;
-    this.nodeId = nodeId;
-  }
+        if (other !is FileContentsProxy) {
+            return false
+        }
 
-  public static FileContentsProxy create(FileStatus stat) throws IOException {
-    return new FileContentsProxy(
-        // Note: there are file systems that return mtime for getLastChangeTime() instead of ctime,
-        // such as the JavaIoFileSystem.
-        stat.getLastChangeTime(), stat.getLastModifiedTime(), stat.getNodeId());
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (other == this) {
-      return true;
+        return ctime == other.ctime && mtime == other.mtime && nodeId == other.nodeId
     }
 
-    if (!(other instanceof FileContentsProxy that)) {
-      return false;
+    /**
+     * Can be used when hardlink reference counter changes should not be considered a file
+     * modification. Is only comparing mtime and not ctime and is therefore not detecting changed
+     * metadata like permission.
+     */
+    fun isModified(other: FileContentsProxy): Boolean {
+        if (other === this) {
+            return false
+        }
+        // true if nodeId are different or inode has a new mtime
+        return nodeId != other.nodeId || mtime != other.mtime
     }
 
-    return ctime == that.ctime && mtime == that.mtime && nodeId == that.nodeId;
-  }
-
-  /**
-   * Can be used when hardlink reference counter changes should not be considered a file
-   * modification. Is only comparing mtime and not ctime and is therefore not detecting changed
-   * metadata like permission.
-   */
-  @SuppressWarnings("ReferenceEquality")
-  public boolean isModified(FileContentsProxy other) {
-    if (other == this) {
-      return false;
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(ctime, mtime, nodeId)
     }
-    // true if nodeId are different or inode has a new mtime
-    return nodeId != other.nodeId || mtime != other.mtime;
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(ctime, mtime, nodeId);
-  }
+    fun addToFingerprint(fp: Fingerprint) {
+        fp.addLong(ctime)
+        fp.addLong(mtime)
+        fp.addLong(nodeId)
+    }
 
-  void addToFingerprint(Fingerprint fp) {
-    fp.addLong(ctime);
-    fp.addLong(mtime);
-    fp.addLong(nodeId);
-  }
+    override fun toString(): String {
+        return prettyPrint()!!
+    }
 
-  @Override
-  public String toString() {
-    return prettyPrint();
-  }
+    fun prettyPrint(): String? {
+        return String.format("ctime of %d and mtime of %d and nodeId of %d", ctime, mtime, nodeId)
+    }
 
-  public String prettyPrint() {
-    return String.format("ctime of %d and mtime of %d and nodeId of %d", ctime, mtime, nodeId);
-  }
+    companion object {
+        @Throws(IOException::class)
+        fun create(stat: FileStatus): FileContentsProxy {
+            return FileContentsProxy( // Note: there are file systems that return mtime for getLastChangeTime() instead of ctime,
+                // such as the JavaIoFileSystem.
+                stat.getLastChangeTime(), stat.getLastModifiedTime(), stat.getNodeId()
+            )
+        }
+    }
 }

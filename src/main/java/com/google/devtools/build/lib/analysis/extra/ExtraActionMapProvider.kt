@@ -11,28 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.extra;
+package com.google.devtools.build.lib.analysis.extra
 
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Multimap;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
+import com.google.devtools.build.lib.analysis.TransitiveInfoProvider
+import com.google.devtools.build.lib.analysis.extra.ExtraActionSpec
 
 /**
  * Provides an action type -> set of extra actions to run map.
  */
-@Immutable
-public final class ExtraActionMapProvider implements TransitiveInfoProvider {
-  private final ImmutableMultimap<String, ExtraActionSpec> extraActionMap;
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class ExtraActionMapProvider(extraActionMap: com.google.common.collect.Multimap<String?, ExtraActionSpec?>) :
+    TransitiveInfoProvider {
+    private val extraActionMap: com.google.common.collect.ImmutableMultimap<String?, ExtraActionSpec?>
 
-  public ExtraActionMapProvider(Multimap<String, ExtraActionSpec> extraActionMap) {
-    this.extraActionMap = ImmutableMultimap.copyOf(extraActionMap);
-  }
+    init {
+        this.extraActionMap =
+            com.google.common.collect.ImmutableMultimap.copyOf<String?, ExtraActionSpec?>(extraActionMap)
+    }
 
-  /**
-   * Returns the extra action map.
-   */
-  public ImmutableMultimap<String, ExtraActionSpec> getExtraActionMap() {
-    return extraActionMap;
-  }
+    /**
+     * Returns the extra action map.
+     */
+    fun getExtraActionMap(): com.google.common.collect.ImmutableMultimap<String?, ExtraActionSpec?> {
+        return extraActionMap
+    }
 }

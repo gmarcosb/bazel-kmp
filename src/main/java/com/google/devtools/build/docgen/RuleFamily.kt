@@ -11,108 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen
 
-package com.google.devtools.build.docgen;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ListMultimap;
-import com.google.common.escape.CharEscaperBuilder;
-import com.google.common.escape.Escaper;
-import com.google.devtools.build.docgen.DocgenConsts.RuleType;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import java.util.List;
-import java.util.Locale;
+import com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule.Builder.build
+import com.google.devtools.build.buildjar.javac.plugins.processing.AnnotationProcessingModule.Builder.build
+import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics.Builder.build
+import com.google.devtools.build.docgen.DocgenConsts
+import com.google.devtools.build.docgen.RuleDocumentation
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.Builder.build
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
 
 /**
  * Helper class for representing a rule family in the rule summary table template.
- *
- * <p>The rules are separated into categories by rule class: binary, library, test, flag, and other.
+ * 
+ * 
+ * The rules are separated into categories by rule class: binary, library, test, flag, and other.
  */
-@Immutable
-public class RuleFamily {
-  private static final Escaper FAMILY_NAME_ESCAPER = new CharEscaperBuilder()
-      .addEscape('+', "p")
-      .addEscapes(new char[] {'[', ']', '(', ')'}, "")
-      .addEscapes(new char[] {' ', '/'}, "-")
-      .toEscaper();
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class RuleFamily internal constructor(
+    ruleTypeMap: com.google.common.collect.ListMultimap<DocgenConsts.RuleType?, RuleDocumentation?>,
+    name: String,
+    summary: String?
+) {
+    val summary: String?
+    val name: String?
+    val id: String?
 
-  private final String summary;
-  private final String name;
-  private final String id;
+    private val binaryRules: com.google.common.collect.ImmutableList<RuleDocumentation?>
+    private val libraryRules: com.google.common.collect.ImmutableList<RuleDocumentation?>
+    private val testRules: com.google.common.collect.ImmutableList<RuleDocumentation?>
+    private val otherRules: com.google.common.collect.ImmutableList<RuleDocumentation?>
 
-  private final ImmutableList<RuleDocumentation> binaryRules;
-  private final ImmutableList<RuleDocumentation> libraryRules;
-  private final ImmutableList<RuleDocumentation> testRules;
-  private final ImmutableList<RuleDocumentation> otherRules;
+    private val rules: com.google.common.collect.ImmutableList<RuleDocumentation?>
+    private val flags: com.google.common.collect.ImmutableList<RuleDocumentation?>
 
-  private final ImmutableList<RuleDocumentation> rules;
-  private final ImmutableList<RuleDocumentation> flags;
+    init {
+        this.name = name
+        this.id = normalize(name)
+        this.summary = summary
+        this.binaryRules =
+            com.google.common.collect.ImmutableList.copyOf<RuleDocumentation?>(ruleTypeMap.get(com.google.devtools.build.docgen.DocgenConsts.RuleType.BINARY))
+        this.libraryRules =
+            com.google.common.collect.ImmutableList.copyOf<RuleDocumentation?>(ruleTypeMap.get(com.google.devtools.build.docgen.DocgenConsts.RuleType.LIBRARY))
+        this.testRules =
+            com.google.common.collect.ImmutableList.copyOf<RuleDocumentation?>(ruleTypeMap.get(com.google.devtools.build.docgen.DocgenConsts.RuleType.TEST))
+        this.otherRules =
+            com.google.common.collect.ImmutableList.copyOf<RuleDocumentation?>(ruleTypeMap.get(com.google.devtools.build.docgen.DocgenConsts.RuleType.OTHER))
 
-  RuleFamily(ListMultimap<RuleType, RuleDocumentation> ruleTypeMap, String name, String summary) {
-    this.name = name;
-    this.id = normalize(name);
-    this.summary = summary;
-    this.binaryRules = ImmutableList.copyOf(ruleTypeMap.get(RuleType.BINARY));
-    this.libraryRules = ImmutableList.copyOf(ruleTypeMap.get(RuleType.LIBRARY));
-    this.testRules = ImmutableList.copyOf(ruleTypeMap.get(RuleType.TEST));
-    this.otherRules = ImmutableList.copyOf(ruleTypeMap.get(RuleType.OTHER));
+        rules =
+            com.google.common.collect.ImmutableList.builder<RuleDocumentation?>()
+                .addAll(binaryRules)
+                .addAll(libraryRules)
+                .addAll(testRules)
+                .addAll(otherRules)
+                .build()
+        this.flags =
+            com.google.common.collect.ImmutableList.copyOf<RuleDocumentation?>(ruleTypeMap.get(com.google.devtools.build.docgen.DocgenConsts.RuleType.FLAG))
+    }
 
-    rules =
-        ImmutableList.<RuleDocumentation>builder()
-            .addAll(binaryRules)
-            .addAll(libraryRules)
-            .addAll(testRules)
-            .addAll(otherRules)
-            .build();
-    this.flags = ImmutableList.copyOf(ruleTypeMap.get(RuleType.FLAG));
-  }
+    fun size(): Int {
+        return rules.size
+    }
 
-  /*
+    fun getBinaryRules(): MutableList<RuleDocumentation?> {
+        return binaryRules
+    }
+
+    fun getLibraryRules(): MutableList<RuleDocumentation?> {
+        return libraryRules
+    }
+
+    fun getTestRules(): MutableList<RuleDocumentation?> {
+        return testRules
+    }
+
+    fun getOtherRules(): MutableList<RuleDocumentation?> {
+        return otherRules
+    }
+
+    fun getRules(): MutableList<RuleDocumentation?> {
+        return rules
+    }
+
+    fun getFlags(): MutableList<RuleDocumentation?> {
+        return flags
+    }
+
+    companion object {
+        private val FAMILY_NAME_ESCAPER: com.google.common.escape.Escaper =
+            com.google.common.escape.CharEscaperBuilder()
+                .addEscape('+', "p")
+                .addEscapes(charArrayOf('[', ']', '(', ')'), "")
+                .addEscapes(charArrayOf(' ', '/'), "-")
+                .toEscaper()
+
+        /*
    * Returns a "normalized" version of the input string. Used to convert rule family names into
    * strings that are more friendly as file names. For example, "C / C++" is converted to
    * "c-cpp".
    */
-  static String normalize(String s) {
-    return FAMILY_NAME_ESCAPER.escape(s.toLowerCase(Locale.ROOT)).replaceAll("[-]+", "-");
-  }
-
-  public int size() {
-    return rules.size();
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public String getSummary() {
-    return summary;
-  }
-
-  public String getId() {
-    return id;
-  }
-
-  public List<RuleDocumentation> getBinaryRules() {
-    return binaryRules;
-  }
-
-  public List<RuleDocumentation> getLibraryRules() {
-    return libraryRules;
-  }
-
-  public List<RuleDocumentation> getTestRules() {
-    return testRules;
-  }
-
-  public List<RuleDocumentation> getOtherRules() {
-    return otherRules;
-  }
-
-  public List<RuleDocumentation> getRules() {
-    return rules;
-  }
-
-  public List<RuleDocumentation> getFlags() {
-    return flags;
-  }
+        fun normalize(s: String): String? {
+            return FAMILY_NAME_ESCAPER.escape(s.lowercase()).replace("[-]+".toRegex(), "-")
+        }
+    }
 }

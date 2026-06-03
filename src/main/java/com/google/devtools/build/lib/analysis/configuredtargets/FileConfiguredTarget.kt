@@ -11,113 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.configuredtargets
 
-package com.google.devtools.build.lib.analysis.configuredtargets;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisUtils;
-import com.google.devtools.build.lib.analysis.DefaultInfo;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.analysis.TransitiveVisibilityProvider;
-import com.google.devtools.build.lib.analysis.VisibilityProvider;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.util.FileType;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
+/** A configured target representing a source or derived / generated file.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+abstract class FileConfiguredTarget internal constructor(
+    lookupKey: ActionLookupKey?,
+    visibility: NestedSet<PackageGroupContents?>?,
+    artifact: Artifact?
+) : AbstractConfiguredTarget(lookupKey, visibility), FileType.HasFileType {
+    private val singleFile: NestedSet<Artifact?>
 
-/** A configured target representing a source or derived / generated file. */
-@Immutable
-public abstract sealed class FileConfiguredTarget extends AbstractConfiguredTarget
-    implements FileType.HasFileType permits InputFileConfiguredTarget, OutputFileConfiguredTarget {
-
-  private final NestedSet<Artifact> singleFile;
-
-  FileConfiguredTarget(
-      ActionLookupKey lookupKey, NestedSet<PackageGroupContents> visibility, Artifact artifact) {
-    super(lookupKey, visibility);
-    this.singleFile = NestedSetBuilder.create(Order.STABLE_ORDER, artifact);
-  }
-
-  public Artifact getArtifact() {
-    return singleFile.getSingleton();
-  }
-
-  /** Returns the file name of this file target. */
-  public final String getFilename() {
-    return getLabel().getName();
-  }
-
-  @Override
-  public final String filePathForFileTypeMatcher() {
-    return getFilename();
-  }
-
-  @Override
-  @Nullable
-  public <P extends TransitiveInfoProvider> P getProvider(Class<P> providerClass) {
-    AnalysisUtils.checkProvider(providerClass);
-    if (providerClass.equals(TransitiveVisibilityProvider.class)) {
-      return providerClass.cast(createTransitiveVisibilityProvider());
+    init {
+        this.singleFile = NestedSetBuilder.create(Order.STABLE_ORDER, artifact)
     }
-    return providerClass.cast(getProviderInternal(providerClass));
-  }
 
-  @Nullable
-  private TransitiveInfoProvider getProviderInternal(
-      Class<? extends TransitiveInfoProvider> providerClass) {
-    // The set of possible providers is small and predictable, so to save memory, this method does
-    // simple identity checks so that we don't need to store a TransitiveInfoProviderMap.
-    // Additionally, file providers are created on-demand when requested. These optimizations
-    // combine to save over 1% of analysis heap.
-    if (providerClass == VisibilityProvider.class) {
-      return this;
+    open fun getArtifact(): Artifact {
+        return singleFile.getSingleton()
     }
-    if (providerClass == FileProvider.class) {
-      return createFileProvider();
+
+    /** Returns the file name of this file target.  */
+    fun getFilename(): String {
+        return getLabel().getName()
     }
-    if (providerClass == FilesToRunProvider.class) {
-      return createFilesToRunProvider();
+
+    public override fun filePathForFileTypeMatcher(): String {
+        return getFilename()
     }
-    if (providerClass == TransitiveVisibilityProvider.class) {
-      return createTransitiveVisibilityProvider();
+
+    override fun <P : TransitiveInfoProvider?> getProvider(providerClass: java.lang.Class<P?>): P? {
+        AnalysisUtils.Companion.checkProvider<P?>(providerClass)
+        if (providerClass == TransitiveVisibilityProvider::class.java) {
+            return providerClass.cast(createTransitiveVisibilityProvider())
+        }
+        return providerClass.cast(getProviderInternal(providerClass))
     }
-    return null;
-  }
 
-  private FileProvider createFileProvider() {
-    return FileProvider.of(singleFile);
-  }
+    private fun getProviderInternal(
+        providerClass: java.lang.Class<out TransitiveInfoProvider?>?
+    ): TransitiveInfoProvider? {
+        // The set of possible providers is small and predictable, so to save memory, this method does
+        // simple identity checks so that we don't need to store a TransitiveInfoProviderMap.
+        // Additionally, file providers are created on-demand when requested. These optimizations
+        // combine to save over 1% of analysis heap.
+        if (providerClass == VisibilityProvider::class.java) {
+            return this
+        }
+        if (providerClass == FileProvider::class.java) {
+            return createFileProvider()
+        }
+        if (providerClass == FilesToRunProvider::class.java) {
+            return createFilesToRunProvider()
+        }
+        if (providerClass == TransitiveVisibilityProvider::class.java) {
+            return createTransitiveVisibilityProvider()
+        }
+        return null
+    }
 
-  private FilesToRunProvider createFilesToRunProvider() {
-    return FilesToRunProvider.create(
-        singleFile, /* runfilesSupport= */ null, /* executable= */ getArtifact());
-  }
+    private fun createFileProvider(): FileProvider {
+        return FileProvider.of(singleFile)
+    }
 
-  @Nullable
-  protected abstract TransitiveVisibilityProvider createTransitiveVisibilityProvider();
+    private fun createFilesToRunProvider(): FilesToRunProvider? {
+        return FilesToRunProvider.Companion.create(
+            singleFile,  /* runfilesSupport= */null,  /* executable= */getArtifact()
+        )
+    }
 
-  @Override
-  @Nullable
-  protected final Object rawGetStarlarkProvider(String providerKey) {
-    return null;
-  }
+    protected abstract fun createTransitiveVisibilityProvider(): TransitiveVisibilityProvider?
 
-  @Override
-  public Dict<String, Object> getProvidersDictForQuery() {
-    Dict.Builder<String, Object> dict = Dict.builder();
-    tryAddProviderForQuery(dict, VisibilityProvider.class, this);
-    tryAddProviderForQuery(dict, FileProvider.class, createFileProvider());
-    tryAddProviderForQuery(dict, FilesToRunProvider.class, createFilesToRunProvider());
-    // DefaultInfo is not stored as a provider, but Starlark targets still observe it on
-    // dependencies.
-    tryAddProviderForQuery(dict, DefaultInfo.PROVIDER.getKey(), DefaultInfo.build(this));
-    return dict.buildImmutable();
-  }
+    override fun rawGetStarlarkProvider(providerKey: String?): Any? {
+        return null
+    }
+
+    public override fun getProvidersDictForQuery(): Dict<String?, Any?>? {
+        val dict: net.starlark.java.eval.Dict.Builder<String?, Any?> = Dict.builder<String?, Any?>()
+        AbstractConfiguredTarget.Companion.tryAddProviderForQuery(dict, VisibilityProvider::class.java, this)
+        AbstractConfiguredTarget.Companion.tryAddProviderForQuery(dict, FileProvider::class.java, createFileProvider())
+        AbstractConfiguredTarget.Companion.tryAddProviderForQuery(
+            dict,
+            FilesToRunProvider::class.java,
+            createFilesToRunProvider()
+        )
+        // DefaultInfo is not stored as a provider, but Starlark targets still observe it on
+        // dependencies.
+        AbstractConfiguredTarget.Companion.tryAddProviderForQuery(
+            dict,
+            DefaultInfo.Companion.PROVIDER.getKey(),
+            DefaultInfo.Companion.build(this)
+        )
+        return dict.buildImmutable()
+    }
 }

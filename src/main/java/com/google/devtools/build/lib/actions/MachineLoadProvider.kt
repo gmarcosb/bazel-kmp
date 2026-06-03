@@ -11,33 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.sun.management.OperatingSystemMXBean;
-import java.lang.management.ManagementFactory;
+import com.google.devtools.build.lib.actions.MachineLoadProvider
+import com.google.devtools.build.lib.clock.BlazeClock.instance
 
-/** A provider that collects the load of a machine for the resource manager. */
-public class MachineLoadProvider {
+/** A provider that collects the load of a machine for the resource manager.  */
+class MachineLoadProvider private constructor() {
+    private object Singleton {
+        val instance: MachineLoadProvider = MachineLoadProvider()
+    }
 
-  // Operating system bean used to collect statistic about CPU load of system.
-  private static final OperatingSystemMXBean osBean =
-      (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    /** Returns "recent" CPU load of the machine as number between 0 and number of cores.  */
+    fun getCurrentCpuUsage(): Double {
+        val cpuLoad: Double = osBean.getCpuLoad()
+        val numProcessors: Int = java.lang.Runtime.getRuntime().availableProcessors()
+        return cpuLoad * numProcessors
+    }
 
-  private static class Singleton {
-    static final MachineLoadProvider instance = new MachineLoadProvider();
-  }
+    companion object {
+        // Operating system bean used to collect statistic about CPU load of system.
+        private val osBean: com.sun.management.OperatingSystemMXBean =
+            java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
 
-  /** Returns singleton instance of the machine load provider. */
-  public static MachineLoadProvider instance() {
-    return Singleton.instance;
-  }
-
-  private MachineLoadProvider() {}
-
-  /** Returns "recent" CPU load of the machine as number between 0 and number of cores. */
-  public double getCurrentCpuUsage() {
-    double cpuLoad = osBean.getCpuLoad();
-    int numProcessors = Runtime.getRuntime().availableProcessors();
-    return cpuLoad * numProcessors;
-  }
+        /** Returns singleton instance of the machine load provider.  */
+        fun instance(): MachineLoadProvider {
+            return com.google.devtools.build.lib.actions.MachineLoadProvider.Singleton.instance
+        }
+    }
 }

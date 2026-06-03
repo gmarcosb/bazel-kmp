@@ -11,175 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import static com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationId;
+import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationId
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CompletionContext;
-import com.google.devtools.build.lib.actions.EventReportingArtifacts;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsInOutputGroup;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions.OutputGroupFileModes;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithOrderConstraint;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.causes.Cause;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Collection;
-import javax.annotation.Nullable;
+/** This event is fired as soon as a top-level aspect is either built or fails.  */
+class AspectCompleteEvent
+private constructor(
+    aspectKey: AspectKey,
+    rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>?,
+    completionContext: CompletionContext?,
+    artifactOutputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>,
+    printToMasterLog: Boolean
+) : SkyValue, BuildEventWithOrderConstraint, EventReportingArtifacts {
+    private val aspectKey: AspectKey
+    private val rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>
+    private val postedAfter: MutableCollection<BuildEventId?>
+    private val completionContext: CompletionContext?
+    private val artifactOutputGroups: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>
+    private val printToMasterLog: Boolean
 
-/** This event is fired as soon as a top-level aspect is either built or fails. */
-public final class AspectCompleteEvent
-    implements SkyValue, BuildEventWithOrderConstraint, EventReportingArtifacts {
-  private final AspectKey aspectKey;
-  private final NestedSet<Cause> rootCauses;
-  private final Collection<BuildEventId> postedAfter;
-  private final CompletionContext completionContext;
-  private final ImmutableMap<String, ArtifactsInOutputGroup> artifactOutputGroups;
-  private final boolean printToMasterLog;
-
-  private AspectCompleteEvent(
-      AspectKey aspectKey,
-      NestedSet<Cause> rootCauses,
-      CompletionContext completionContext,
-      ImmutableMap<String, ArtifactsInOutputGroup> artifactOutputGroups,
-      boolean printToMasterLog) {
-    this.aspectKey = aspectKey;
-    this.rootCauses =
-        (rootCauses == null) ? NestedSetBuilder.emptySet(Order.STABLE_ORDER) : rootCauses;
-    ImmutableList.Builder<BuildEventId> postedAfterBuilder = ImmutableList.builder();
-    for (Cause cause : this.rootCauses.toList()) {
-      postedAfterBuilder.add(cause.getIdProto());
+    init {
+        this.aspectKey = aspectKey
+        this.rootCauses =
+            if (rootCauses == null) NestedSetBuilder.emptySet(Order.STABLE_ORDER) else rootCauses
+        val postedAfterBuilder: com.google.common.collect.ImmutableList.Builder<BuildEventId?> =
+            com.google.common.collect.ImmutableList.builder<BuildEventId?>()
+        for (cause in this.rootCauses.toList()) {
+            postedAfterBuilder.add(cause.idProto)
+        }
+        this.postedAfter = postedAfterBuilder.build()
+        this.completionContext = completionContext
+        this.artifactOutputGroups = artifactOutputGroups
+        this.printToMasterLog = printToMasterLog
     }
-    this.postedAfter = postedAfterBuilder.build();
-    this.completionContext = completionContext;
-    this.artifactOutputGroups = artifactOutputGroups;
-    this.printToMasterLog = printToMasterLog;
-  }
 
-  /** Construct a successful target completion event. */
-  public static AspectCompleteEvent createSuccessful(
-      AspectKey key,
-      CompletionContext completionContext,
-      ImmutableMap<String, ArtifactsInOutputGroup> artifacts,
-      boolean printToMasterLog) {
-    return new AspectCompleteEvent(key, null, completionContext, artifacts, printToMasterLog);
-  }
-
-  /**
-   * Construct a target completion event for a failed target, with the given non-empty root causes.
-   */
-  public static AspectCompleteEvent createFailed(
-      AspectKey key,
-      CompletionContext ctx,
-      NestedSet<Cause> rootCauses,
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      boolean printToMasterLog) {
-    Preconditions.checkArgument(!rootCauses.isEmpty());
-    return new AspectCompleteEvent(key, rootCauses, ctx, outputs, printToMasterLog);
-  }
-
-  /** Returns the key of the completed aspect. */
-  public AspectKey getAspectKey() {
-    return aspectKey;
-  }
-
-  /**
-   * Determines whether the target has failed or succeeded.
-   */
-  public boolean failed() {
-    return !rootCauses.isEmpty();
-  }
-
-  /** Get the root causes of the target. May be empty. */
-  public NestedSet<Cause> getRootCauses() {
-    return rootCauses;
-  }
-
-  public Label getLabel() {
-    return aspectKey.getLabel();
-  }
-
-  public String getAspectName() {
-    return aspectKey.getAspectDescriptor().getAspectClass().getName();
-  }
-
-  @Nullable
-  public ArtifactsInOutputGroup getArtifacts(String outputGroup) {
-    return artifactOutputGroups.get(outputGroup);
-  }
-
-  public CompletionContext getCompletionContext() {
-    return completionContext;
-  }
-
-  public Iterable<Artifact> getLegacyFilteredImportantArtifacts() {
-    if (!printToMasterLog) {
-      return ImmutableList.of();
+    /** Returns the key of the completed aspect.  */
+    fun getAspectKey(): AspectKey {
+        return aspectKey
     }
-    NestedSetBuilder<Artifact> builder = NestedSetBuilder.stableOrder();
-    for (ArtifactsInOutputGroup artifactsInOutputGroup : artifactOutputGroups.values()) {
-      if (artifactsInOutputGroup.areImportant()) {
-        builder.addTransitive(artifactsInOutputGroup.getArtifacts());
-      }
+
+    /**
+     * Determines whether the target has failed or succeeded.
+     */
+    fun failed(): Boolean {
+        return !rootCauses.isEmpty()
     }
-    // An aspect could potentially return a source artifact if it added it to its provider.
-    return Iterables.filter(builder.build().toList(), (artifact) -> !artifact.isSourceArtifact());
-  }
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.aspectCompleted(
-        aspectKey.getLabel(),
-        configurationId(aspectKey.getConfigurationKey()),
-        aspectKey.getAspectDescriptor().getDescription());
-  }
+    /** Get the root causes of the target. May be empty.  */
+    fun getRootCauses(): NestedSet<com.google.devtools.build.lib.causes.Cause?> {
+        return rootCauses
+    }
 
-  @Override
-  public Collection<BuildEventId> postedAfter() {
-    return postedAfter;
-  }
+    fun getLabel(): Label {
+        return aspectKey.getLabel()
+    }
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    fun getAspectName(): String {
+        return aspectKey.getAspectDescriptor().getAspectClass().getName()
+    }
 
-  @Override
-  public ReportedArtifacts reportedArtifacts(OutputGroupFileModes outputGroupFileModes) {
-    return TargetCompleteEvent.toReportedArtifacts(
-        artifactOutputGroups,
-        completionContext,
-        outputGroupFileModes);
-  }
+    fun getArtifacts(outputGroup: String?): ArtifactsInOutputGroup? {
+        return artifactOutputGroups.get(outputGroup)
+    }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.TargetComplete.Builder builder =
-        BuildEventStreamProtos.TargetComplete.newBuilder();
-    builder.setSuccess(!failed());
-    builder.addAllOutputGroup(
-        TargetCompleteEvent.toOutputGroupProtos(
+    fun getCompletionContext(): CompletionContext? {
+        return completionContext
+    }
+
+    fun getLegacyFilteredImportantArtifacts(): Iterable<Artifact?> {
+        if (!printToMasterLog) {
+            return com.google.common.collect.ImmutableList.of<Artifact?>()
+        }
+        val builder: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+        for (artifactsInOutputGroup in artifactOutputGroups.values) {
+            if (artifactsInOutputGroup.areImportant()) {
+                builder.addTransitive(artifactsInOutputGroup.getArtifacts())
+            }
+        }
+        // An aspect could potentially return a source artifact if it added it to its provider.
+        return com.google.common.collect.Iterables.filter<T?>(
+            builder.build().toList(),
+            com.google.common.base.Predicate { artifact: T? -> !artifact.isSourceArtifact() })
+    }
+
+    public override fun getEventId(): BuildEventId {
+        return BuildEventIdUtil.aspectCompleted(
+            aspectKey.getLabel(),
+            configurationId(aspectKey.getConfigurationKey()),
+            aspectKey.getAspectDescriptor().getDescription()
+        )
+    }
+
+    public override fun postedAfter(): MutableCollection<BuildEventId?> {
+        return postedAfter
+    }
+
+    public override fun getChildrenEvents(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<BuildEventId?>()
+    }
+
+    public override fun reportedArtifacts(outputGroupFileModes: OutputGroupFileModes?): ReportedArtifacts {
+        return TargetCompleteEvent.Companion.toReportedArtifacts(
             artifactOutputGroups,
             completionContext,
-            converters));
-    return GenericBuildEvent.protoChaining(this).setCompleted(builder.build()).build();
-  }
+            outputGroupFileModes
+        )
+    }
 
-  @Override
-  public boolean storeForReplay() {
-    return true;
-  }
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        val builder: BuildEventStreamProtos.TargetComplete.Builder =
+            BuildEventStreamProtos.TargetComplete.newBuilder()
+        builder.setSuccess(!failed())
+        builder.addAllOutputGroup(
+            TargetCompleteEvent.Companion.toOutputGroupProtos(
+                artifactOutputGroups,
+                completionContext,
+                converters
+            )
+        )
+        return GenericBuildEvent.protoChaining(this).setCompleted(builder.build()).build()
+    }
+
+    public override fun storeForReplay(): Boolean {
+        return true
+    }
+
+    companion object {
+        /** Construct a successful target completion event.  */
+        fun createSuccessful(
+            key: AspectKey,
+            completionContext: CompletionContext?,
+            artifacts: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>,
+            printToMasterLog: Boolean
+        ): AspectCompleteEvent {
+            return AspectCompleteEvent(key, null, completionContext, artifacts, printToMasterLog)
+        }
+
+        /**
+         * Construct a target completion event for a failed target, with the given non-empty root causes.
+         */
+        fun createFailed(
+            key: AspectKey,
+            ctx: CompletionContext?,
+            rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>,
+            outputs: com.google.common.collect.ImmutableMap<String?, ArtifactsInOutputGroup?>,
+            printToMasterLog: Boolean
+        ): AspectCompleteEvent {
+            com.google.common.base.Preconditions.checkArgument(!rootCauses.isEmpty())
+            return AspectCompleteEvent(key, rootCauses, ctx, outputs, printToMasterLog)
+        }
+    }
 }

@@ -11,103 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.NativeInfo;
-import com.google.devtools.build.lib.packages.PackageGroup;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.starlarkbuildapi.PackageSpecificationProviderApi;
-import java.util.Optional;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * A {@link TransitiveInfoProvider} that describes a set of transitive package specifications used
+ * A [TransitiveInfoProvider] that describes a set of transitive package specifications used
  * in package groups.
  */
-public class PackageSpecificationProvider extends NativeInfo
-    implements TransitiveInfoProvider, PackageSpecificationProviderApi {
+class PackageSpecificationProvider private constructor(packageSpecifications: NestedSet<PackageGroupContents?>) :
+    NativeInfo(), TransitiveInfoProvider, PackageSpecificationProviderApi {
+    private val packageSpecifications: NestedSet<PackageGroupContents?>
 
-  private static final String STARLARK_NAME = "PackageSpecificationInfo";
-
-  public static final BuiltinProvider<PackageSpecificationProvider> PROVIDER =
-      new BuiltinProvider<>(STARLARK_NAME, PackageSpecificationProvider.class) {};
-
-  public static final PackageSpecificationProvider EMPTY =
-      new PackageSpecificationProvider(NestedSetBuilder.emptySet(Order.STABLE_ORDER));
-
-  private final NestedSet<PackageGroupContents> packageSpecifications;
-
-  private PackageSpecificationProvider(NestedSet<PackageGroupContents> packageSpecifications) {
-    this.packageSpecifications = packageSpecifications;
-  }
-
-  /**
-   * Creates a {@code PackageSpecificationProvider} by initializing transitive package
-   * specifications from {@code targetContext} and {@code packageGroup}.
-   */
-  public static PackageSpecificationProvider create(
-      TargetContext targetContext, PackageGroup packageGroup) {
-    return new PackageSpecificationProvider(getPackageSpecifications(targetContext, packageGroup));
-  }
-
-  @Override
-  public Provider getProvider() {
-    return PROVIDER;
-  }
-
-  /** Returns set of transitive package specifications used in package groups. */
-  public NestedSet<PackageGroupContents> getPackageSpecifications() {
-    return packageSpecifications;
-  }
-
-  private static NestedSet<PackageGroupContents> getPackageSpecifications(
-      TargetContext targetContext, PackageGroup packageGroup) {
-    NestedSetBuilder<PackageGroupContents> builder = NestedSetBuilder.stableOrder();
-    for (Label includeLabel : packageGroup.getIncludes()) {
-      TransitiveInfoCollection include =
-          targetContext.findDirectPrerequisite(
-              includeLabel, Optional.ofNullable(targetContext.getConfiguration()));
-      PackageSpecificationProvider provider = include == null ? null : include.get(PROVIDER);
-      if (provider == null) {
-        targetContext
-            .getAnalysisEnvironment()
-            .getEventHandler()
-            .handle(
-                Event.error(
-                    targetContext.getTarget().getLocation(),
-                    String.format("Label '%s' does not refer to a package group", includeLabel)));
-        continue;
-      }
-
-      builder.addTransitive(provider.getPackageSpecifications());
+    init {
+        this.packageSpecifications = packageSpecifications
     }
 
-    builder.add(packageGroup.getPackageSpecifications());
-    return builder.build();
-  }
-
-  @Override
-  public boolean targetInAllowlist(Object target) throws EvalException, LabelSyntaxException {
-    Label targetLabel;
-    if (target instanceof String string) {
-      targetLabel = Label.parseCanonical(string);
-    } else if (target instanceof Label label) {
-      targetLabel = label;
-    } else {
-      throw Starlark.errorf(
-          "expected string or label for 'target' instead of %s", Starlark.type(target));
+    public override fun getProvider(): Provider {
+        return PROVIDER
     }
 
-    return Allowlist.isAvailableFor(packageSpecifications, targetLabel);
-  }
+    /** Returns set of transitive package specifications used in package groups.  */
+    fun getPackageSpecifications(): NestedSet<PackageGroupContents?> {
+        return packageSpecifications
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class, LabelSyntaxException::class)
+    public override fun targetInAllowlist(target: Any?): Boolean {
+        val targetLabel: Label?
+        if (target is String) {
+            targetLabel = Label.parseCanonical(target)
+        } else if (target is Label) {
+            targetLabel = target
+        } else {
+            throw Starlark.errorf(
+                "expected string or label for 'target' instead of %s", Starlark.type(target)
+            )
+        }
+
+        return Allowlist.isAvailableFor(packageSpecifications, targetLabel)
+    }
+
+    companion object {
+        private const val STARLARK_NAME = "PackageSpecificationInfo"
+
+        val PROVIDER: BuiltinProvider<PackageSpecificationProvider?> =
+            object : BuiltinProvider(STARLARK_NAME, PackageSpecificationProvider::class.java) {}
+
+        val EMPTY: PackageSpecificationProvider =
+            PackageSpecificationProvider(NestedSetBuilder.emptySet(Order.STABLE_ORDER))
+
+        /**
+         * Creates a `PackageSpecificationProvider` by initializing transitive package
+         * specifications from `targetContext` and `packageGroup`.
+         */
+        fun create(
+            targetContext: TargetContext, packageGroup: PackageGroup
+        ): PackageSpecificationProvider {
+            return PackageSpecificationProvider(getPackageSpecifications(targetContext, packageGroup))
+        }
+
+        private fun getPackageSpecifications(
+            targetContext: TargetContext, packageGroup: PackageGroup
+        ): NestedSet<PackageGroupContents?> {
+            val builder: NestedSetBuilder<PackageGroupContents?> = NestedSetBuilder.stableOrder()
+            for (includeLabel in packageGroup.getIncludes()) {
+                val include: TransitiveInfoCollection? =
+                    targetContext.findDirectPrerequisite(
+                        includeLabel,
+                        java.util.Optional.ofNullable<BuildConfigurationValue?>(targetContext.getConfiguration())
+                    )
+                val provider: PackageSpecificationProvider? = if (include == null) null else include.get(PROVIDER)
+                if (provider == null) {
+                    targetContext
+                        .getAnalysisEnvironment()
+                        .getEventHandler()
+                        .handle(
+                            com.google.devtools.build.lib.events.Event.error(
+                                targetContext.getTarget().getLocation(),
+                                java.lang.String.format("Label '%s' does not refer to a package group", includeLabel)
+                            )
+                        )
+                    continue
+                }
+
+                builder.addTransitive(provider.getPackageSpecifications())
+            }
+
+            builder.add(packageGroup.getPackageSpecifications())
+            return builder.build()
+        }
+    }
 }

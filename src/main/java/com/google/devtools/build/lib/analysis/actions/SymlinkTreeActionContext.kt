@@ -11,18 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
+import com.google.devtools.build.lib.actions.ActionContext
 
 /**
  * Action context for symlink tree actions (an action that creates a tree of symlinks).
  */
-public interface SymlinkTreeActionContext extends ActionContext {
-
-  /** Creates the symlink tree. */
-  void createSymlinks(SymlinkTreeAction action, ActionExecutionContext actionExecutionContext)
-      throws ActionExecutionException, InterruptedException;
+interface SymlinkTreeActionContext : ActionContext {
+    /** Creates the symlink tree.  */
+    @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+    fun createSymlinks(action: SymlinkTreeAction?, actionExecutionContext: ActionExecutionContext?)
 }

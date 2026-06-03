@@ -11,78 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.HashMap
 
 /**
  * A visitor helper class for bipartite graphs. The alternate kinds of nodes are arbitrarily
  * designated "black" or "white".
- *
- * <p>Subclasses implement the black() and white() hook functions which are called as nodes are
+ * 
+ * 
+ * Subclasses implement the black() and white() hook functions which are called as nodes are
  * visited. The class holds a mapping from each node to a small integer; this is available to
  * subclasses if they wish.
  */
-abstract class BipartiteVisitor<BLACK, WHITE> {
+internal abstract class BipartiteVisitor<BLACK, WHITE> protected constructor() {
+    private var nextNodeId = 0
 
-  protected BipartiteVisitor() {}
+    // Maps each visited black node to a small integer.
+    protected val visitedBlackNodes: MutableMap<BLACK?, Int?> = HashMap<BLACK?, Int?>()
 
-  private int nextNodeId = 0;
+    // Maps each visited white node to a small integer.
+    protected val visitedWhiteNodes: MutableMap<WHITE?, Int?> = HashMap<WHITE?, Int?>()
 
-  // Maps each visited black node to a small integer.
-  protected final Map<BLACK, Integer> visitedBlackNodes = new HashMap<>();
-
-  // Maps each visited white node to a small integer.
-  protected final Map<WHITE, Integer> visitedWhiteNodes = new HashMap<>();
-
-  /**
-   * Visit the specified black node. If this node has not already been visited, the black() hook is
-   * called and true is returned; otherwise, false is returned.
-   */
-  protected final boolean visitBlackNode(BLACK blackNode) throws InterruptedException {
-    if (blackNode == null) { throw new NullPointerException(); }
-    if (!visitedBlackNodes.containsKey(blackNode)) {
-      visitedBlackNodes.put(blackNode, nextNodeId++);
-      black(blackNode);
-      return true;
+    /**
+     * Visit the specified black node. If this node has not already been visited, the black() hook is
+     * called and true is returned; otherwise, false is returned.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    protected fun visitBlackNode(blackNode: BLACK?): Boolean {
+        if (blackNode == null) {
+            throw java.lang.NullPointerException()
+        }
+        if (!visitedBlackNodes.containsKey(blackNode)) {
+            visitedBlackNodes.put(blackNode, nextNodeId++)
+            black(blackNode)
+            return true
+        }
+        return false
     }
-    return false;
-  }
 
-  /** Visit all specified black nodes. */
-  protected final void visitBlackNodes(Iterable<BLACK> blackNodes) throws InterruptedException {
-    for (BLACK blackNode : blackNodes) {
-      visitBlackNode(blackNode);
+    /** Visit all specified black nodes.  */
+    @Throws(java.lang.InterruptedException::class)
+    protected fun visitBlackNodes(blackNodes: Iterable<BLACK?>) {
+        for (blackNode in blackNodes) {
+            visitBlackNode(blackNode)
+        }
     }
-  }
 
-  /**
-   * Visit the specified white node. If this node has not already been visited, the white() hook is
-   * called and true is returned; otherwise, false is returned.
-   */
-  protected final boolean visitWhiteNode(WHITE whiteNode) throws InterruptedException {
-    if (whiteNode == null) {
-      throw new NullPointerException();
+    /**
+     * Visit the specified white node. If this node has not already been visited, the white() hook is
+     * called and true is returned; otherwise, false is returned.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    protected fun visitWhiteNode(whiteNode: WHITE?): Boolean {
+        if (whiteNode == null) {
+            throw java.lang.NullPointerException()
+        }
+        if (!visitedWhiteNodes.containsKey(whiteNode)) {
+            visitedWhiteNodes.put(whiteNode, nextNodeId++)
+            white(whiteNode)
+            return true
+        }
+        return false
     }
-    if (!visitedWhiteNodes.containsKey(whiteNode)) {
-      visitedWhiteNodes.put(whiteNode, nextNodeId++);
-      white(whiteNode);
-      return true;
+
+    /** Visit all specified white nodes.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun visitWhiteNodes(whiteNodes: Iterable<WHITE?>) {
+        for (whiteNode in whiteNodes) {
+            visitWhiteNode(whiteNode)
+        }
     }
-    return false;
-  }
 
-  /** Visit all specified white nodes. */
-  public final void visitWhiteNodes(Iterable<WHITE> whiteNodes) throws InterruptedException {
-    for (WHITE whiteNode : whiteNodes) {
-      visitWhiteNode(whiteNode);
-    }
-  }
+    /** Called whenever a white node is visited. Hook for subclasses.  */
+    @Throws(java.lang.InterruptedException::class)
+    protected abstract fun white(whiteNode: WHITE?)
 
-  /** Called whenever a white node is visited. Hook for subclasses. */
-  protected abstract void white(WHITE whiteNode) throws InterruptedException;
-
-  /** Called whenever a black node is visited. Hook for subclasses. */
-  protected abstract void black(BLACK blackNode) throws InterruptedException;
+    /** Called whenever a black node is visited. Hook for subclasses.  */
+    @Throws(java.lang.InterruptedException::class)
+    protected abstract fun black(blackNode: BLACK?)
 }

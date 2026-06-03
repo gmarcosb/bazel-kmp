@@ -11,128 +11,125 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.Path;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.util.DetailedExitCode
 
 /**
- * An {@link ActionExecutionException} thrown when an action fails to execute because one or more of
+ * An [ActionExecutionException] thrown when an action fails to execute because one or more of
  * its inputs was lost. In some cases, Bazel may know how to fix this on its own.
  */
-public final class LostInputsActionExecutionException extends ActionExecutionException {
+class LostInputsActionExecutionException(
+    message: String?,
+    lostInputs: com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?>,
+    action: com.google.devtools.build.lib.actions.Action?,
+    cause: java.lang.Exception?,
+    detailedExitCode: DetailedExitCode?
+) : ActionExecutionException(message, cause, action,  /* catastrophe= */false, detailedExitCode) {
+    /** Maps lost input digests to their [ActionInput]s.  */
+    private val lostInputs: com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?>
 
-  /** Maps lost input digests to their {@link ActionInput}s. */
-  private final ImmutableSetMultimap<String, ActionInput> lostInputs;
+    /**
+     * The [ActionLookupData] for the action whose evaluation failed. Used to distinguish
+     * whether an action handling this exception was primary in its set of shared actions. Event
+     * emission and action execution state invalidation should only happen for the primary action.
+     */
+    private var primaryAction: ActionLookupData? = null
 
-  /**
-   * The {@link ActionLookupData} for the action whose evaluation failed. Used to distinguish
-   * whether an action handling this exception was primary in its set of shared actions. Event
-   * emission and action execution state invalidation should only happen for the primary action.
-   */
-  @Nullable private ActionLookupData primaryAction;
+    /**
+     * If an ActionStartedEvent was emitted and this action is primary (amongst its set of shared
+     * actions), then:
+     * 
+     * 
+     *  * if rewinding is attempted, then an ActionRewindEvent should be emitted.
+     *  * if rewinding fails, then an ActionCompletionEvent should be emitted.
+     * 
+     */
+    private var actionStartedEventAlreadyEmitted = false
 
-  /**
-   * If an ActionStartedEvent was emitted and this action is primary (amongst its set of shared
-   * actions), then:
-   *
-   * <ul>
-   *   <li>if rewinding is attempted, then an ActionRewindEvent should be emitted.
-   *   <li>if rewinding fails, then an ActionCompletionEvent should be emitted.
-   * </ul>
-   */
-  private boolean actionStartedEventAlreadyEmitted;
+    /** Used to report the action execution failure if rewinding also fails.  */
+    private var primaryOutputPath: Path? = null
 
-  /** Used to report the action execution failure if rewinding also fails. */
-  @Nullable private Path primaryOutputPath;
+    /**
+     * Used to report the action execution failure if rewinding also fails. Note that this will be
+     * closed, so it may only be used for reporting.
+     */
+    private var fileOutErr: FileOutErr? = null
 
-  /**
-   * Used to report the action execution failure if rewinding also fails. Note that this will be
-   * closed, so it may only be used for reporting.
-   */
-  @Nullable private FileOutErr fileOutErr;
+    /** Used to inform rewinding that lost inputs were found during input discovery.  */
+    private var fromInputDiscovery = false
 
-  /** Used to inform rewinding that lost inputs were found during input discovery. */
-  private boolean fromInputDiscovery;
+    init {
+        this.lostInputs = lostInputs
+    }
 
-  public LostInputsActionExecutionException(
-      String message,
-      ImmutableSetMultimap<String, ActionInput> lostInputs,
-      Action action,
-      Exception cause,
-      DetailedExitCode detailedExitCode) {
-    super(message, cause, action, /* catastrophe= */ false, detailedExitCode);
-    this.lostInputs = lostInputs;
-  }
+    fun getLostInputs(): com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?> {
+        return lostInputs
+    }
 
-  public ImmutableSetMultimap<String, ActionInput> getLostInputs() {
-    return lostInputs;
-  }
+    fun getPrimaryOutputPath(): Path? {
+        return primaryOutputPath
+    }
 
-  public Path getPrimaryOutputPath() {
-    return primaryOutputPath;
-  }
+    fun setPrimaryOutputPath(primaryOutputPath: Path?) {
+        this.primaryOutputPath = primaryOutputPath
+    }
 
-  public void setPrimaryOutputPath(Path primaryOutputPath) {
-    this.primaryOutputPath = primaryOutputPath;
-  }
+    fun getFileOutErr(): FileOutErr? {
+        return fileOutErr
+    }
 
-  public FileOutErr getFileOutErr() {
-    return fileOutErr;
-  }
+    fun setFileOutErr(fileOutErr: FileOutErr?) {
+        this.fileOutErr = fileOutErr
+    }
 
-  public void setFileOutErr(FileOutErr fileOutErr) {
-    this.fileOutErr = fileOutErr;
-  }
+    fun setPrimaryAction(primaryAction: ActionLookupData?) {
+        this.primaryAction = primaryAction
+    }
 
-  public void setPrimaryAction(ActionLookupData primaryAction) {
-    this.primaryAction = primaryAction;
-  }
+    /**
+     * Whether `actionLookupData` is equal to the previously set primary action. May only be
+     * called after the primary action is set.
+     */
+    fun isPrimaryAction(actionLookupData: ActionLookupData): Boolean {
+        com.google.common.base.Preconditions.checkNotNull<ActionLookupData?>(
+            primaryAction,
+            "expected primary action to have been set"
+        )
+        return actionLookupData == primaryAction
+    }
 
-  /**
-   * Whether {@code actionLookupData} is equal to the previously set primary action. May only be
-   * called after the primary action is set.
-   */
-  public boolean isPrimaryAction(ActionLookupData actionLookupData) {
-    Preconditions.checkNotNull(primaryAction, "expected primary action to have been set");
-    return actionLookupData.equals(primaryAction);
-  }
+    fun isActionStartedEventAlreadyEmitted(): Boolean {
+        return actionStartedEventAlreadyEmitted
+    }
 
-  public boolean isActionStartedEventAlreadyEmitted() {
-    return actionStartedEventAlreadyEmitted;
-  }
+    fun setActionStartedEventAlreadyEmitted() {
+        this.actionStartedEventAlreadyEmitted = true
+    }
 
-  public void setActionStartedEventAlreadyEmitted() {
-    this.actionStartedEventAlreadyEmitted = true;
-  }
+    fun isFromInputDiscovery(): Boolean {
+        return fromInputDiscovery
+    }
 
-  public boolean isFromInputDiscovery() {
-    return fromInputDiscovery;
-  }
+    fun setFromInputDiscovery() {
+        this.fromInputDiscovery = true
+    }
 
-  public void setFromInputDiscovery() {
-    this.fromInputDiscovery = true;
-  }
-
-  /**
-   * Converts to the "lost inputs" subtype of the other exception type ({@link ExecException}) used
-   * during action execution.
-   *
-   * <p>May not be used if this exception has been decorated with additional information from its
-   * context (e.g. from {@link #setPrimaryOutputPath} or other setters) because that information
-   * would be lost if so.
-   */
-  public LostInputsExecException toExecException() {
-    Preconditions.checkState(primaryAction == null);
-    Preconditions.checkState(!actionStartedEventAlreadyEmitted);
-    Preconditions.checkState(primaryOutputPath == null);
-    Preconditions.checkState(fileOutErr == null);
-    Preconditions.checkState(!fromInputDiscovery);
-    return new LostInputsExecException(lostInputs, this);
-  }
+    /**
+     * Converts to the "lost inputs" subtype of the other exception type ([ExecException]) used
+     * during action execution.
+     * 
+     * 
+     * May not be used if this exception has been decorated with additional information from its
+     * context (e.g. from [.setPrimaryOutputPath] or other setters) because that information
+     * would be lost if so.
+     */
+    fun toExecException(): LostInputsExecException {
+        com.google.common.base.Preconditions.checkState(primaryAction == null)
+        com.google.common.base.Preconditions.checkState(!actionStartedEventAlreadyEmitted)
+        com.google.common.base.Preconditions.checkState(primaryOutputPath == null)
+        com.google.common.base.Preconditions.checkState(fileOutErr == null)
+        com.google.common.base.Preconditions.checkState(!fromInputDiscovery)
+        return LostInputsExecException(lostInputs, this)
+    }
 }

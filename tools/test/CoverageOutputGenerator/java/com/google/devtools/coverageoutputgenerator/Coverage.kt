@@ -11,142 +11,135 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import java.util.TreeMap
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.util.Arrays.asList;
+internal class Coverage {
+    private val sourceFiles: TreeMap<String?, SourceFileCoverage>
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.regex.Pattern;
-
-class Coverage {
-  private final TreeMap<String, SourceFileCoverage> sourceFiles;
-
-  Coverage() {
-    sourceFiles = new TreeMap<>();
-  }
-
-  void add(SourceFileCoverage input) {
-    String sourceFilename = input.sourceFileName();
-    if (sourceFiles.containsKey(sourceFilename)) {
-      SourceFileCoverage old = sourceFiles.get(sourceFilename);
-      sourceFiles.put(sourceFilename, SourceFileCoverage.merge(old, input));
-    } else {
-      sourceFiles.put(sourceFilename, input);
+    init {
+        sourceFiles = TreeMap<String?, SourceFileCoverage>()
     }
-  }
 
-  static Coverage merge(Coverage... coverages) {
-    return merge(asList(coverages));
-  }
+    fun add(input: SourceFileCoverage) {
+        val sourceFilename: String? = input.sourceFileName()
+        if (sourceFiles.containsKey(sourceFilename)) {
+            val old: SourceFileCoverage = sourceFiles.get(sourceFilename)
+            sourceFiles.put(sourceFilename, SourceFileCoverage.Companion.merge(old, input))
+        } else {
+            sourceFiles.put(sourceFilename, input)
+        }
+    }
 
-  static Coverage merge(List<Coverage> coverages) {
-    Coverage merged = new Coverage();
-    for (Coverage c : coverages) {
-      for (SourceFileCoverage sourceFile : c.getAllSourceFiles()) {
-        merged.add(sourceFile);
-      }
+    /**
+     * Replaces the source file names in the current coverage with their mapping in the given map, if
+     * it exists.
+     */
+    fun maybeReplaceSourceFileNames(reportedToOriginalSources: com.google.common.collect.ImmutableMap<String?, String?>?) {
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMap<String?, String?>?>(
+            reportedToOriginalSources
+        )
+        if (reportedToOriginalSources.isEmpty()) {
+            // nothing to replace
+            return
+        }
+        for (source in this.getAllSourceFiles()) {
+            if (reportedToOriginalSources.containsKey(source.sourceFileName())) {
+                source.changeSourcefileName(reportedToOriginalSources.get(source.sourceFileName()))
+            }
+        }
     }
-    return merged;
-  }
 
-  static Coverage create(SourceFileCoverage... sourceFilesCoverage) {
-    return create(asList(sourceFilesCoverage));
-  }
+    fun isEmpty(): Boolean {
+        return sourceFiles.isEmpty()
+    }
 
-  static Coverage create(List<SourceFileCoverage> sourceFilesCoverage) {
-    Coverage coverage = new Coverage();
-    for (SourceFileCoverage sourceFileCoverage : sourceFilesCoverage) {
-      coverage.add(sourceFileCoverage);
+    fun getAllSourceFiles(): MutableCollection<SourceFileCoverage> {
+        return sourceFiles.values()
     }
-    return coverage;
-  }
 
-  /**
-   * Returns {@link Coverage} only for the given CC source filenames, filtering out every other CC
-   * sources of the given coverage. Other types of source files (e.g. Java) will not be filtered
-   * out.
-   *
-   * @param coverage The initial coverage.
-   * @param sourcesToKeep The filenames of the sources to keep from the initial coverage.
-   */
-  static Coverage getOnlyTheseSources(Coverage coverage, Set<String> sourcesToKeep) {
-    if (coverage == null || sourcesToKeep == null) {
-      throw new IllegalArgumentException("Coverage and sourcesToKeep should not be null.");
-    }
-    if (coverage.isEmpty()) {
-      return coverage;
-    }
-    if (sourcesToKeep.isEmpty()) {
-      return new Coverage();
-    }
-    Coverage finalCoverage = new Coverage();
-    for (SourceFileCoverage source : coverage.getAllSourceFiles()) {
-      if (sourcesToKeep.contains(source.sourceFileName())) {
-        finalCoverage.add(source);
-      }
-    }
-    return finalCoverage;
-  }
+    companion object {
+        fun merge(vararg coverages: Coverage?): Coverage {
+            return Companion.merge(java.util.Arrays.asList<Coverage?>(*coverages))
+        }
 
-  /**
-   * Replaces the source file names in the current coverage with their mapping in the given map, if
-   * it exists.
-   */
-  void maybeReplaceSourceFileNames(ImmutableMap<String, String> reportedToOriginalSources) {
-    Preconditions.checkNotNull(reportedToOriginalSources);
-    if (reportedToOriginalSources.isEmpty()) {
-      // nothing to replace
-      return;
-    }
-    for (SourceFileCoverage source : this.getAllSourceFiles()) {
-      if (reportedToOriginalSources.containsKey(source.sourceFileName())) {
-        source.changeSourcefileName(reportedToOriginalSources.get(source.sourceFileName()));
-      }
-    }
-  }
+        fun merge(coverages: MutableList<Coverage>): Coverage {
+            val merged = Coverage()
+            for (c in coverages) {
+                for (sourceFile in c.getAllSourceFiles()) {
+                    merged.add(sourceFile)
+                }
+            }
+            return merged
+        }
 
-  static Coverage filterOutMatchingSources(Coverage coverage, List<String> regexes)
-      throws IllegalArgumentException {
-    if (coverage == null || regexes == null) {
-      throw new IllegalArgumentException("Coverage and regex should not be null.");
-    }
-    if (regexes.isEmpty()) {
-      return coverage;
-    }
-    // Pre-compile patterns once instead of recompiling for every source file
-    ImmutableList<Pattern> compiledPatterns =
-        regexes.stream().map(Pattern::compile).collect(toImmutableList());
-    Coverage filteredCoverage = new Coverage();
-    for (SourceFileCoverage source : coverage.getAllSourceFiles()) {
-      if (!matchesAnyPattern(source.sourceFileName(), compiledPatterns)) {
-        filteredCoverage.add(source);
-      }
-    }
-    return filteredCoverage;
-  }
+        fun create(vararg sourceFilesCoverage: SourceFileCoverage?): Coverage {
+            return Companion.create(java.util.Arrays.asList<SourceFileCoverage?>(*sourceFilesCoverage))
+        }
 
-  private static boolean matchesAnyPattern(String input, List<Pattern> patterns) {
-    for (Pattern pattern : patterns) {
-      if (pattern.matcher(input).matches()) {
-        return true;
-      }
+        fun create(sourceFilesCoverage: MutableList<SourceFileCoverage>): Coverage {
+            val coverage = Coverage()
+            for (sourceFileCoverage in sourceFilesCoverage) {
+                coverage.add(sourceFileCoverage)
+            }
+            return coverage
+        }
+
+        /**
+         * Returns [Coverage] only for the given CC source filenames, filtering out every other CC
+         * sources of the given coverage. Other types of source files (e.g. Java) will not be filtered
+         * out.
+         * 
+         * @param coverage The initial coverage.
+         * @param sourcesToKeep The filenames of the sources to keep from the initial coverage.
+         */
+        fun getOnlyTheseSources(coverage: Coverage, sourcesToKeep: MutableSet<String?>): Coverage {
+            require(!(coverage == null || sourcesToKeep == null)) { "Coverage and sourcesToKeep should not be null." }
+            if (coverage.isEmpty()) {
+                return coverage
+            }
+            if (sourcesToKeep.isEmpty()) {
+                return Coverage()
+            }
+            val finalCoverage = Coverage()
+            for (source in coverage.getAllSourceFiles()) {
+                if (sourcesToKeep.contains(source.sourceFileName())) {
+                    finalCoverage.add(source)
+                }
+            }
+            return finalCoverage
+        }
+
+        @Throws(java.lang.IllegalArgumentException::class)
+        fun filterOutMatchingSources(coverage: Coverage, regexes: MutableList<String?>): Coverage {
+            require(!(coverage == null || regexes == null)) { "Coverage and regex should not be null." }
+            if (regexes.isEmpty()) {
+                return coverage
+            }
+            // Pre-compile patterns once instead of recompiling for every source file
+            val compiledPatterns: com.google.common.collect.ImmutableList<java.util.regex.Pattern> =
+                regexes.stream().map<java.util.regex.Pattern?>(java.util.function.Function { regex: String? ->
+                    java.util.regex.Pattern.compile(regex)
+                }).collect(com.google.common.collect.ImmutableList.toImmutableList<java.util.regex.Pattern?>())
+            val filteredCoverage = Coverage()
+            for (source in coverage.getAllSourceFiles()) {
+                if (!matchesAnyPattern(source.sourceFileName(), compiledPatterns)) {
+                    filteredCoverage.add(source)
+                }
+            }
+            return filteredCoverage
+        }
+
+        private fun matchesAnyPattern(input: String?, patterns: MutableList<java.util.regex.Pattern>): Boolean {
+            for (pattern in patterns) {
+                if (pattern.matcher(input).matches()) {
+                    return true
+                }
+            }
+            return false
+        }
     }
-    return false;
-  }
-
-  boolean isEmpty() {
-    return sourceFiles.isEmpty();
-  }
-
-  Collection<SourceFileCoverage> getAllSourceFiles() {
-    return sourceFiles.values();
-  }
 }

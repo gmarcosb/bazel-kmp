@@ -11,128 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.starlark
 
-package com.google.devtools.build.lib.analysis.starlark;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.analysis.actions.SymlinkAction;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.SymlinkAction.Code;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SymlinkTargetType;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.AbstractAction
 
 /**
  * Action to create a possibly unresolved symbolic link to a raw path.
- *
- * <p>To create a symlink to a known-to-exist target with alias semantics similar to a true copy of
- * the input, use {@link SymlinkAction} instead.
+ * 
+ * 
+ * To create a symlink to a known-to-exist target with alias semantics similar to a true copy of
+ * the input, use [SymlinkAction] instead.
  */
-public final class UnresolvedSymlinkAction extends AbstractAction {
-  private static final String GUID = "0f302651-602c-404b-881c-58913193cfe7";
+class UnresolvedSymlinkAction private constructor(
+    owner: ActionOwner?,
+    primaryOutput: Artifact,
+    private val target: String?,
+    targetType: SymlinkTargetType,
+    progressMessage: String?
+) : AbstractAction(
+    owner,
+    NestedSetBuilder.emptySet(Order.STABLE_ORDER),
+    com.google.common.collect.ImmutableSet.of<E?>(primaryOutput)
+) {
+    private val targetType: SymlinkTargetType
+    private val progressMessage: String?
 
-  private final String target;
-  private final SymlinkTargetType targetType;
-  private final String progressMessage;
-
-  private UnresolvedSymlinkAction(
-      ActionOwner owner,
-      Artifact primaryOutput,
-      String target,
-      SymlinkTargetType targetType,
-      String progressMessage) {
-    super(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), ImmutableSet.of(primaryOutput));
-    this.target = target;
-    this.targetType = targetType;
-    this.progressMessage = progressMessage;
-  }
-
-  public static UnresolvedSymlinkAction create(
-      ActionOwner owner,
-      Artifact primaryOutput,
-      String target,
-      SymlinkTargetType targetType,
-      String progressMessage) {
-    Preconditions.checkArgument(primaryOutput.isSymlink());
-    return new UnresolvedSymlinkAction(owner, primaryOutput, target, targetType, progressMessage);
-  }
-
-  @Override
-  public ActionResult execute(ActionExecutionContext actionExecutionContext)
-      throws ActionExecutionException {
-
-    Path outputPath = actionExecutionContext.getInputPath(getPrimaryOutput());
-    try {
-      outputPath.createSymbolicLink(getTargetPathFragment(), targetType);
-    } catch (IOException e) {
-      String message =
-          String.format(
-              "failed to create symbolic link '%s' with target '%s' due to I/O error: %s",
-              getPrimaryOutput().getExecPathString(), target, e.getMessage());
-      DetailedExitCode code = createDetailedExitCode(message, Code.LINK_CREATION_IO_EXCEPTION);
-      throw new ActionExecutionException(message, e, this, false, code);
+    init {
+        this.targetType = targetType
+        this.progressMessage = progressMessage
     }
 
-    return ActionResult.EMPTY;
-  }
+    @Throws(ActionExecutionException::class)
+    public override fun execute(actionExecutionContext: ActionExecutionContext): ActionResult {
+        val outputPath: Path = actionExecutionContext.getInputPath(getPrimaryOutput())
+        try {
+            outputPath.createSymbolicLink(getTargetPathFragment(), targetType)
+        } catch (e: IOException) {
+            val message: String? =
+                java.lang.String.format(
+                    "failed to create symbolic link '%s' with target '%s' due to I/O error: %s",
+                    getPrimaryOutput().getExecPathString(), target, e.getMessage()
+                )
+            val code: DetailedExitCode = createDetailedExitCode(message, Code.LINK_CREATION_IO_EXCEPTION)
+            throw ActionExecutionException(message, e, this, false, code)
+        }
 
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    fp.addString(GUID);
-    fp.addString(target);
-    fp.addString(targetType.name());
-  }
+        return ActionResult.EMPTY
+    }
 
-  @Override
-  public String describeKey() {
-    return String.format("GUID: %s\ntarget: %s\ntype: %s\n", GUID, target, targetType.name());
-  }
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addString(GUID)
+        fp.addString(target)
+        fp.addString(targetType.name())
+    }
 
-  @Override
-  public String getMnemonic() {
-    return "UnresolvedSymlink";
-  }
+    public override fun describeKey(): String? {
+        return java.lang.String.format("GUID: %s\ntarget: %s\ntype: %s\n", GUID, target, targetType.name())
+    }
 
-  @Override
-  protected String getRawProgressMessage() {
-    return progressMessage;
-  }
+    public override fun getMnemonic(): String {
+        return "UnresolvedSymlink"
+    }
 
-  public String getTarget() {
-    return getTargetPathFragment().getPathString();
-  }
+    protected override fun getRawProgressMessage(): String? {
+        return progressMessage
+    }
 
-  private PathFragment getTargetPathFragment() {
-    // TODO: PathFragment#create normalizes the symlink target, which may change how it resolves
-    //  when combined with directory symlinks. Ideally, Bazel's file system abstraction would
-    //  offer a way to create symlinks without any preprocessing of the target.
-    return PathFragment.create(target);
-  }
+    fun getTarget(): String {
+        return getTargetPathFragment().getPathString()
+    }
 
-  private static DetailedExitCode createDetailedExitCode(String message, Code detailedCode) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setSymlinkAction(FailureDetails.SymlinkAction.newBuilder().setCode(detailedCode))
-            .build());
-  }
+    private fun getTargetPathFragment(): PathFragment {
+        // TODO: PathFragment#create normalizes the symlink target, which may change how it resolves
+        //  when combined with directory symlinks. Ideally, Bazel's file system abstraction would
+        //  offer a way to create symlinks without any preprocessing of the target.
+        return PathFragment.create(target)
+    }
+
+    companion object {
+        private const val GUID = "0f302651-602c-404b-881c-58913193cfe7"
+
+        fun create(
+            owner: ActionOwner?,
+            primaryOutput: Artifact,
+            target: String?,
+            targetType: SymlinkTargetType,
+            progressMessage: String?
+        ): UnresolvedSymlinkAction {
+            com.google.common.base.Preconditions.checkArgument(primaryOutput.isSymlink())
+            return UnresolvedSymlinkAction(owner, primaryOutput, target, targetType, progressMessage)
+        }
+
+        private fun createDetailedExitCode(message: String?, detailedCode: Code?): DetailedExitCode {
+            return DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setSymlinkAction(FailureDetails.SymlinkAction.newBuilder().setCode(detailedCode))
+                    .build()
+            )
+        }
+    }
 }

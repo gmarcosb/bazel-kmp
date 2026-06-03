@@ -11,32 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding
 
-package com.google.testing.junit.runner.sharding;
-
-import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory;
-import com.google.testing.junit.runner.sharding.testing.ShardingFilterTestCase;
-
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
-
-import java.util.Collection;
+import com.google.testing.junit.runner.sharding.HashBackedShardingFilter
+import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory
+import com.google.testing.junit.runner.sharding.testing.ShardingFilterTestCase
 
 /**
- * Tests for the {@link HashBackedShardingFilter}.
+ * Tests for the [HashBackedShardingFilter].
  */
-public class HashBackedShardingFilterTest extends ShardingFilterTestCase {
-  
-  private static class HashBackedShardingFilterFactory implements ShardingFilterFactory {
-    @Override
-    public Filter createFilter(
-        Collection<Description> testDescriptions, int shardIndex, int totalShards) {
-      return new HashBackedShardingFilter(shardIndex, totalShards);
+class HashBackedShardingFilterTest : ShardingFilterTestCase() {
+    private class HashBackedShardingFilterFactory : ShardingFilterFactory {
+        override fun createFilter(
+            testDescriptions: MutableCollection<org.junit.runner.Description?>?, shardIndex: Int, totalShards: Int
+        ): org.junit.runner.manipulation.Filter {
+            return HashBackedShardingFilter(shardIndex, totalShards)
+        }
     }
-  }
 
-  @Override
-  protected ShardingFilterFactory createShardingFilterFactory() {
-    return new HashBackedShardingFilterFactory();
-  }
+    override fun createShardingFilterFactory(): ShardingFilterFactory? {
+        return HashBackedShardingFilterFactory()
+    }
 }

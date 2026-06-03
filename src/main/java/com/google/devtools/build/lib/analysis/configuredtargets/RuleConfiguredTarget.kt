@@ -11,335 +11,283 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.configuredtargets;
+package com.google.devtools.build.lib.analysis.configuredtargets
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisUtils;
-import com.google.devtools.build.lib.analysis.DefaultInfo;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.IncompatiblePlatformProvider;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProviderMap;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProviderMapBuilder;
-import com.google.devtools.build.lib.analysis.Util;
-import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkApiProvider;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.OutputFile;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.RuleClassId;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.starlarkbuildapi.ActionApi;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
- * A {@link com.google.devtools.build.lib.analysis.ConfiguredTarget} that is produced by a rule.
- *
- * <p>Created by {@link com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder}. There
+ * A [com.google.devtools.build.lib.analysis.ConfiguredTarget] that is produced by a rule.
+ * 
+ * 
+ * Created by [com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder]. There
  * is an instance of this class for every analyzed rule. For more information about how analysis
- * works, see {@link com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory}.
+ * works, see [com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory].
  */
-@Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public final class RuleConfiguredTarget extends AbstractConfiguredTarget {
+class RuleConfiguredTarget : AbstractConfiguredTarget {
+    /** A set of this target's implicitDeps.  */
+    private val implicitDeps: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?
 
-  /** A set of this target's implicitDeps. */
-  private final ImmutableList<ConfiguredTargetKey> implicitDeps;
+    private val providers: TransitiveInfoProviderMap
+    private val configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?
+    private val ruleClassId: RuleClassId
 
-  /**
-   * An interner for the implicitDeps set. {@link Util.findImplicitDeps} is called upon every
-   * construction of a RuleConfiguredTarget and we expect many of these targets to contain the same
-   * set of implicit deps so this reduces the memory load per build.
-   */
-  private static final Interner<ImmutableList<ConfiguredTargetKey>> IMPLICIT_DEPS_INTERNER =
-      BlazeInterners.newWeakInterner();
+    private val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?
 
-  private final TransitiveInfoProviderMap providers;
-  private final ImmutableMap<Label, ConfigMatchingProvider> configConditions;
-  private final RuleClassId ruleClassId;
+    private constructor(
+        actionLookupKey: ActionLookupKey?,
+        visibility: NestedSet<PackageGroupContents?>?,
+        isCreatedInSymbolicMacro: Boolean,
+        providers: TransitiveInfoProviderMap,
+        configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?,
+        implicitDeps: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?,
+        ruleClassId: RuleClassId,
+        actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?
+    ) : super(actionLookupKey, visibility) {
+        // We don't use ImmutableMap.Builder here to allow augmenting the initial list of 'default'
+        // providers by passing them in.
+        val providerBuilder: TransitiveInfoProviderMapBuilder =
+            TransitiveInfoProviderMapBuilder().addAll(providers)
+        if (isCreatedInSymbolicMacro) {
+            // Rather than add a boolean field to all RuleConfiguredTargets, we add a marker provider to
+            // just the ones that are created in symbolic macros. (This tradeoff may make less sense if
+            // many targets are created in macros.)
+            providerBuilder.add(CreatedInSymbolicMacroMarker.INSTANCE)
+        }
+        checkState(providerBuilder.contains(RunfilesProvider::class.java), actionLookupKey)
+        checkState(providerBuilder.contains(FileProvider::class.java), actionLookupKey)
+        checkState(providerBuilder.contains(FilesToRunProvider::class.java), actionLookupKey)
 
-  private final ImmutableList<ActionAnalysisMetadata> actions;
+        // Initialize every StarlarkApiProvider
+        for (i in 0..<providers.getProviderCount()) {
+            val obj: Any? = providers.getProviderInstanceAt(i)
+            if (obj is StarlarkApiProvider) {
+                obj.init(this)
+            }
+        }
 
-  private RuleConfiguredTarget(
-      ActionLookupKey actionLookupKey,
-      NestedSet<PackageGroupContents> visibility,
-      boolean isCreatedInSymbolicMacro,
-      TransitiveInfoProviderMap providers,
-      ImmutableMap<Label, ConfigMatchingProvider> configConditions,
-      ImmutableList<ConfiguredTargetKey> implicitDeps,
-      RuleClassId ruleClassId,
-      ImmutableList<ActionAnalysisMetadata> actions) {
-    super(actionLookupKey, visibility);
-
-    // We don't use ImmutableMap.Builder here to allow augmenting the initial list of 'default'
-    // providers by passing them in.
-    TransitiveInfoProviderMapBuilder providerBuilder =
-        new TransitiveInfoProviderMapBuilder().addAll(providers);
-    if (isCreatedInSymbolicMacro) {
-      // Rather than add a boolean field to all RuleConfiguredTargets, we add a marker provider to
-      // just the ones that are created in symbolic macros. (This tradeoff may make less sense if
-      // many targets are created in macros.)
-      providerBuilder.add(CreatedInSymbolicMacroMarker.INSTANCE);
-    }
-    checkState(providerBuilder.contains(RunfilesProvider.class), actionLookupKey);
-    checkState(providerBuilder.contains(FileProvider.class), actionLookupKey);
-    checkState(providerBuilder.contains(FilesToRunProvider.class), actionLookupKey);
-
-    // Initialize every StarlarkApiProvider
-    for (int i = 0; i < providers.getProviderCount(); i++) {
-      Object obj = providers.getProviderInstanceAt(i);
-      if (obj instanceof StarlarkApiProvider starlarkApiProvider) {
-        starlarkApiProvider.init(this);
-      }
+        this.providers = providerBuilder.build()
+        this.configConditions = configConditions
+        this.implicitDeps = IMPLICIT_DEPS_INTERNER.intern(implicitDeps)
+        this.ruleClassId = ruleClassId
+        this.actions = actions
     }
 
-    this.providers = providerBuilder.build();
-    this.configConditions = configConditions;
-    this.implicitDeps = IMPLICIT_DEPS_INTERNER.intern(implicitDeps);
-    this.ruleClassId = ruleClassId;
-    this.actions = actions;
-  }
-
-  public RuleConfiguredTarget(
-      RuleContext ruleContext,
-      TransitiveInfoProviderMap providers,
-      ImmutableList<ActionAnalysisMetadata> actions) {
-    this(
+    constructor(
+        ruleContext: RuleContext,
+        providers: TransitiveInfoProviderMap,
+        actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?
+    ) : this(
         ruleContext.getOwner(),
-        ruleContext.getVisibility(),
-        /* isCreatedInSymbolicMacro= */ ruleContext.getRule().isCreatedInSymbolicMacro(),
+        ruleContext.getVisibility(),  /* isCreatedInSymbolicMacro= */
+        ruleContext.getRule().isCreatedInSymbolicMacro(),
         providers,
         ruleContext.getConfigConditions(),
-        Util.findImplicitDeps(ruleContext),
+        com.google.devtools.build.lib.analysis.Util.findImplicitDeps(ruleContext),
         ruleContext.getRule().getRuleClassObject().getRuleClassId(),
-        actions);
-    // Make sure that all declared output files are also created as artifacts. The
-    // CachingAnalysisEnvironment makes sure that they all have generating actions.
-    if (!ruleContext.hasErrors()) {
-      for (OutputFile out : ruleContext.getRule().getOutputFiles()) {
-        ruleContext.createOutputArtifact(out);
-      }
+        actions
+    ) {
+        // Make sure that all declared output files are also created as artifacts. The
+        // CachingAnalysisEnvironment makes sure that they all have generating actions.
+        if (!ruleContext.hasErrors()) {
+            for (out in ruleContext.getRule().getOutputFiles()) {
+                ruleContext.createOutputArtifact(out)
+            }
+        }
     }
-  }
 
-  /** Use this constructor for creating incompatible ConfiguredTarget instances. */
-  public RuleConfiguredTarget(
-      ActionLookupKey actionLookupKey,
-      NestedSet<PackageGroupContents> visibility,
-      boolean isCreatedInSymbolicMacro,
-      TransitiveInfoProviderMap providers,
-      ImmutableMap<Label, ConfigMatchingProvider> configConditions,
-      RuleClassId ruleClassId) {
-    this(
+    /** Use this constructor for creating incompatible ConfiguredTarget instances.  */
+    constructor(
+        actionLookupKey: ActionLookupKey?,
+        visibility: NestedSet<PackageGroupContents?>?,
+        isCreatedInSymbolicMacro: Boolean,
+        providers: TransitiveInfoProviderMap,
+        configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?,
+        ruleClassId: RuleClassId
+    ) : this(
         actionLookupKey,
         visibility,
         isCreatedInSymbolicMacro,
         providers,
         configConditions,
-        ImmutableList.of(),
+        com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(),
         ruleClassId,
-        ImmutableList.of());
-    checkState(providers.get(IncompatiblePlatformProvider.PROVIDER) != null, actionLookupKey);
-  }
-
-  /**
-   * @deprecated for serialization only
-   */
-  @Deprecated
-  @VisibleForSerialization
-  @AutoCodec.Instantiator
-  RuleConfiguredTarget(
-      ActionLookupKey lookupKey,
-      NestedSet<PackageGroupContents> visibility,
-      TransitiveInfoProviderMap providers,
-      ImmutableMap<Label, ConfigMatchingProvider> configConditions,
-      ImmutableList<ConfiguredTargetKey> implicitDeps,
-      RuleClassId ruleClassId,
-      ImmutableList<ActionAnalysisMetadata> actions) {
-    super(lookupKey, visibility);
-    this.providers = providers;
-    this.configConditions = configConditions;
-    this.implicitDeps = implicitDeps;
-    this.ruleClassId = ruleClassId;
-    this.actions = actions;
-  }
-
-  /**
-   * Marker provider that indicates this target was instantiated within one or more symbolic macros.
-   */
-  private static class CreatedInSymbolicMacroMarker implements TransitiveInfoProvider {
-    public static final CreatedInSymbolicMacroMarker INSTANCE = new CreatedInSymbolicMacroMarker();
-
-    // Singleton.
-    private CreatedInSymbolicMacroMarker() {}
-  }
-
-  @Override
-  public boolean isCreatedInSymbolicMacro() {
-    return getProvider(CreatedInSymbolicMacroMarker.class) != null;
-  }
-
-  /** The configuration conditions that trigger this rule's configurable attributes. */
-  @Override
-  public ImmutableMap<Label, ConfigMatchingProvider> getConfigConditions() {
-    return configConditions;
-  }
-
-  @Override
-  public boolean isRuleConfiguredTarget() {
-    return true;
-  }
-
-  public ImmutableList<ConfiguredTargetKey> getImplicitDeps() {
-    return implicitDeps;
-  }
-
-  @Override
-  public String getRuleClassString() {
-    return ruleClassId.name();
-  }
-
-  public RuleClassId getRuleClassId() {
-    return ruleClassId;
-  }
-
-  @Nullable
-  @Override
-  public <P extends TransitiveInfoProvider> P getProvider(Class<P> providerClass) {
-    // TODO(bazel-team): Should aspects be allowed to override providers on the configured target
-    // class?
-    AnalysisUtils.checkProvider(providerClass);
-    final P provider = providers.getProvider(providerClass);
-    if (provider != null) {
-      return provider;
+        com.google.common.collect.ImmutableList.of<ActionAnalysisMetadata?>()
+    ) {
+        com.google.common.base.Preconditions.checkState(
+            providers.get(IncompatiblePlatformProvider.PROVIDER) != null,
+            actionLookupKey
+        )
     }
-    if (providerClass.isAssignableFrom(getClass())) {
-      return providerClass.cast(this);
+
+    @VisibleForSerialization
+    @AutoCodec.Instantiator
+    @Deprecated("for serialization only")
+    internal constructor(
+        lookupKey: ActionLookupKey?,
+        visibility: NestedSet<PackageGroupContents?>?,
+        providers: TransitiveInfoProviderMap,
+        configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?,
+        implicitDeps: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?,
+        ruleClassId: RuleClassId,
+        actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?
+    ) : super(lookupKey, visibility) {
+        this.providers = providers
+        this.configConditions = configConditions
+        this.implicitDeps = implicitDeps
+        this.ruleClassId = ruleClassId
+        this.actions = actions
     }
-    return null;
-  }
 
-  @Override
-  public String getErrorMessageForUnknownField(String name) {
-    return String.format(
-        "%s (rule '%s') doesn't have provider '%s'",
-        Starlark.repr(this, StarlarkSemantics.DEFAULT), ruleClassId.name(), name);
-  }
-
-  @Override
-  protected void addExtraStarlarkKeys(Consumer<String> result) {
-    for (int i = 0; i < providers.getProviderCount(); i++) {
-      Object classAt = providers.getProviderKeyAt(i);
-      if (classAt instanceof String string) {
-        result.accept(string);
-      }
+    /**
+     * Marker provider that indicates this target was instantiated within one or more symbolic macros.
+     */
+    private object CreatedInSymbolicMacroMarker : TransitiveInfoProvider {
+        val INSTANCE: CreatedInSymbolicMacroMarker = CreatedInSymbolicMacroMarker()
     }
-    result.accept(ACTIONS_FIELD_NAME);
-  }
 
-  @Override
-  protected Info rawGetStarlarkProvider(Provider.Key providerKey) {
-    return providers.get(providerKey);
-  }
-
-  @Override
-  protected Object rawGetStarlarkProvider(String providerKey) {
-    if (providerKey.equals(ACTIONS_FIELD_NAME)) {
-      // Only expose actions which are legitimate Starlark values, otherwise they will later
-      // cause a Bazel crash.
-      // TODO(cparsons): Expose all actions to Starlark.
-      return getActions().stream()
-          .filter(action -> action instanceof ActionApi)
-          .collect(ImmutableList.toImmutableList());
+    public override fun isCreatedInSymbolicMacro(): Boolean {
+        return getProvider<CreatedInSymbolicMacroMarker?>(CreatedInSymbolicMacroMarker::class.java) != null
     }
-    return providers.get(providerKey);
-  }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<target " + getLabel() + ">");
-  }
-
-  @Override
-  public void debugPrint(Printer printer, StarlarkThread thread) {
-    // Show the names of the provider keys that this target propagates.
-    // Provider key names might potentially be *private* information, and thus a comprehensive
-    // list of provider keys should not be exposed in any way other than for debug information.
-    printer.append("<target " + getLabel() + ", keys:[");
-    ImmutableList.Builder<String> starlarkProviderKeyStrings = ImmutableList.builder();
-    for (int providerIndex = 0; providerIndex < providers.getProviderCount(); providerIndex++) {
-      Object providerKey = providers.getProviderKeyAt(providerIndex);
-      if (providerKey instanceof Provider.Key) {
-        starlarkProviderKeyStrings.add(providerKey.toString());
-      }
+    /** The configuration conditions that trigger this rule's configurable attributes.  */
+    public override fun getConfigConditions(): com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>? {
+        return configConditions
     }
-    printer.append(Joiner.on(", ").join(starlarkProviderKeyStrings.build()));
-    printer.append("]>");
-  }
 
-  /** Returns a list of actions that this configured target generated. */
-  public ImmutableList<ActionAnalysisMetadata> getActions() {
-    return checkNotNull(actions, "actions are not available on deserialized instances");
-  }
+    public override fun isRuleConfiguredTarget(): Boolean {
+        return true
+    }
 
-  /**
-   * Finds an artifact (known to be produced by this rule) by its corresponding output label, for
-   * use when creating an {@link OutputFileConfiguredTarget}.
-   */
-  public Artifact findArtifactByOutputLabel(Label outputLabel) {
-    checkArgument(
-        outputLabel.getPackageIdentifier().equals(getLabel().getPackageIdentifier()),
-        "%s not in same package as %s",
-        outputLabel,
-        this);
-    PathFragment relativeOutputPath = outputLabel.toPathFragment();
-    for (ActionAnalysisMetadata action : getActions()) {
-      for (Artifact output : action.getOutputs()) {
-        if (output.getExecPath().endsWith(relativeOutputPath)) {
-          return output;
+    fun getImplicitDeps(): com.google.common.collect.ImmutableList<ConfiguredTargetKey?>? {
+        return implicitDeps
+    }
+
+    override fun getRuleClassString(): String {
+        return ruleClassId.name()
+    }
+
+    fun getRuleClassId(): RuleClassId {
+        return ruleClassId
+    }
+
+    override fun <P : TransitiveInfoProvider?> getProvider(providerClass: java.lang.Class<P?>): P? {
+        // TODO(bazel-team): Should aspects be allowed to override providers on the configured target
+        // class?
+        AnalysisUtils.Companion.checkProvider<P?>(providerClass)
+        val provider: P? = providers.getProvider(providerClass)
+        if (provider != null) {
+            return provider
         }
-      }
+        if (providerClass.isAssignableFrom(getClass())) {
+            return providerClass.cast(this)
+        }
+        return null
     }
-    throw new IllegalArgumentException("No output matching " + outputLabel + " in " + this);
-  }
 
-  @Override
-  public Dict<String, Object> getProvidersDictForQuery() {
-    return toProvidersDictForQuery(providers);
-  }
+    override fun getErrorMessageForUnknownField(name: String?): String? {
+        return java.lang.String.format(
+            "%s (rule '%s') doesn't have provider '%s'",
+            Starlark.repr(this, StarlarkSemantics.DEFAULT), ruleClassId.name(), name
+        )
+    }
 
-  /**
-   * Returns the providers map. Should only be used for metrics, as it is missing {@link
-   * DefaultInfo}.
-   */
-  public TransitiveInfoProviderMap getProvidersForMetrics() {
-    return providers;
-  }
+    protected override fun addExtraStarlarkKeys(result: java.util.function.Consumer<String?>) {
+        for (i in 0..<providers.getProviderCount()) {
+            val classAt: Any? = providers.getProviderKeyAt(i)
+            if (classAt is String) {
+                result.accept(classAt)
+            }
+        }
+        result.accept(AbstractConfiguredTarget.Companion.ACTIONS_FIELD_NAME)
+    }
+
+    override fun rawGetStarlarkProvider(providerKey: Provider.Key?): Info {
+        return providers.get(providerKey)
+    }
+
+    override fun rawGetStarlarkProvider(providerKey: String): Any? {
+        if (providerKey == AbstractConfiguredTarget.Companion.ACTIONS_FIELD_NAME) {
+            // Only expose actions which are legitimate Starlark values, otherwise they will later
+            // cause a Bazel crash.
+            // TODO(cparsons): Expose all actions to Starlark.
+            return getActions().stream()
+                .filter(java.util.function.Predicate { action: ActionAnalysisMetadata -> action is ActionApi })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<ActionAnalysisMetadata?>())
+        }
+        return providers.get(providerKey)
+    }
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: StarlarkSemantics?) {
+        printer.append("<target " + getLabel() + ">")
+    }
+
+    public override fun debugPrint(printer: net.starlark.java.eval.Printer, thread: StarlarkThread?) {
+        // Show the names of the provider keys that this target propagates.
+        // Provider key names might potentially be *private* information, and thus a comprehensive
+        // list of provider keys should not be exposed in any way other than for debug information.
+        printer.append("<target " + getLabel() + ", keys:[")
+        val starlarkProviderKeyStrings: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        for (providerIndex in 0..<providers.getProviderCount()) {
+            val providerKey: Any = providers.getProviderKeyAt(providerIndex)
+            if (providerKey is Provider.Key) {
+                starlarkProviderKeyStrings.add(providerKey.toString())
+            }
+        }
+        printer.append(com.google.common.base.Joiner.on(", ").join(starlarkProviderKeyStrings.build()))
+        printer.append("]>")
+    }
+
+    /** Returns a list of actions that this configured target generated.  */
+    fun getActions(): com.google.common.collect.ImmutableList<ActionAnalysisMetadata> {
+        return com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>>(
+            actions,
+            "actions are not available on deserialized instances"
+        )
+    }
+
+    /**
+     * Finds an artifact (known to be produced by this rule) by its corresponding output label, for
+     * use when creating an [OutputFileConfiguredTarget].
+     */
+    fun findArtifactByOutputLabel(outputLabel: Label): Artifact {
+        checkArgument(
+            outputLabel.getPackageIdentifier().equals(getLabel().getPackageIdentifier()),
+            "%s not in same package as %s",
+            outputLabel,
+            this
+        )
+        val relativeOutputPath: PathFragment? = outputLabel.toPathFragment()
+        for (action in getActions()) {
+            for (output in action.getOutputs()) {
+                if (output.getExecPath().endsWith(relativeOutputPath)) {
+                    return output
+                }
+            }
+        }
+        throw java.lang.IllegalArgumentException("No output matching " + outputLabel + " in " + this)
+    }
+
+    public override fun getProvidersDictForQuery(): Dict<String?, Any?>? {
+        return toProvidersDictForQuery(providers)
+    }
+
+    /**
+     * Returns the providers map. Should only be used for metrics, as it is missing [ ].
+     */
+    fun getProvidersForMetrics(): TransitiveInfoProviderMap {
+        return providers
+    }
+
+    companion object {
+        /**
+         * An interner for the implicitDeps set. [Util.findImplicitDeps] is called upon every
+         * construction of a RuleConfiguredTarget and we expect many of these targets to contain the same
+         * set of implicit deps so this reduces the memory load per build.
+         */
+        private val IMPLICIT_DEPS_INTERNER: com.google.common.collect.Interner<com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?> =
+            BlazeInterners.newWeakInterner<com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?>()
+    }
 }

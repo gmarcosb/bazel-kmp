@@ -11,204 +11,183 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.base.Predicates.notNull;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.configuredtargets.MergedConfiguredTarget;
-import com.google.devtools.build.lib.analysis.configuredtargets.MergedConfiguredTarget.MergingException;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.toolchains.UnloadedToolchainContext;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkIndexable;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.Structure;
+import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo
 
 /**
  * A toolchain context for the aspect's base target toolchains. It is used to represent the result
  * of applying the aspects propagation to the base target toolchains.
  */
 @AutoValue
-public abstract class AspectBaseTargetResolvedToolchainContext
-    implements ResolvedToolchainsDataInterface<
-        AspectBaseTargetResolvedToolchainContext.ToolchainAspectsProviders> {
+abstract class AspectBaseTargetResolvedToolchainContext
 
-  public abstract ImmutableMap<ToolchainTypeInfo, ToolchainAspectsProviders> toolchains();
+    : ResolvedToolchainsDataInterface<ToolchainAspectsProviders?> {
+    abstract fun toolchains(): com.google.common.collect.ImmutableMap<ToolchainTypeInfo?, ToolchainAspectsProviders?>?
 
-  public static AspectBaseTargetResolvedToolchainContext load(
-      UnloadedToolchainContext unloadedToolchainContext,
-      String targetDescription,
-      ImmutableMultimap<ToolchainTypeInfo, ConfiguredTargetAndData> toolchainTargets)
-      throws MergingException {
+    public override fun forToolchainType(toolchainTypeLabel: Label?): ToolchainAspectsProviders? {
+        if (requestedToolchainTypeLabels().containsKey(toolchainTypeLabel)) {
+            return toolchains().get(requestedToolchainTypeLabels().get(toolchainTypeLabel))
+        }
 
-    ImmutableMap.Builder<ToolchainTypeInfo, ToolchainAspectsProviders> toolchainsBuilder =
-        new ImmutableMap.Builder<>();
-
-    for (var toolchainType : unloadedToolchainContext.toolchainTypeToResolved().keySet()) {
-      Preconditions.checkArgument(toolchainTargets.get(toolchainType).size() == 1);
-
-      var toolchainTarget =
-          Iterables.getOnlyElement(toolchainTargets.get(toolchainType)).getConfiguredTarget();
-
-      if (toolchainTarget instanceof MergedConfiguredTarget mergedConfiguredTarget) {
-        // Only add the aspects providers from the toolchains that the aspects applied to.
-        TemplateVariableInfo templateVariableInfo =
-            (TemplateVariableInfo)
-                mergedConfiguredTarget
-                    .getBaseConfiguredTarget()
-                    .get(TemplateVariableInfo.PROVIDER.id());
-        toolchainsBuilder.put(
-            toolchainType,
-            new ToolchainAspectsProviders(
-                mergedConfiguredTarget.getAspectsProviders(),
-                templateVariableInfo,
-                mergedConfiguredTarget.getLabel()));
-      } else {
-        // Add empty providers for the toolchains that the aspects did not apply to.
-        TemplateVariableInfo templateVariableInfo =
-            (TemplateVariableInfo) toolchainTarget.get(TemplateVariableInfo.PROVIDER.id());
-        toolchainsBuilder.put(
-            toolchainType,
-            new ToolchainAspectsProviders(
-                new TransitiveInfoProviderMapBuilder().build(),
-                templateVariableInfo,
-                toolchainTarget.getLabel()));
-      }
-    }
-    ImmutableMap<ToolchainTypeInfo, ToolchainAspectsProviders> toolchains =
-        toolchainsBuilder.buildOrThrow();
-
-    return new AutoValue_AspectBaseTargetResolvedToolchainContext(
-        // ToolchainContext:
-        unloadedToolchainContext.key(),
-        unloadedToolchainContext.executionPlatform(),
-        unloadedToolchainContext.targetPlatform(),
-        unloadedToolchainContext.toolchainTypes(),
-        unloadedToolchainContext.resolvedToolchainLabels(),
-        // ResolvedToolchainsDataInterface:
-        targetDescription,
-        unloadedToolchainContext.requestedLabelToToolchainType(),
-        // this:
-        toolchains);
-  }
-
-  @Override
-  @Nullable
-  public ToolchainAspectsProviders forToolchainType(Label toolchainTypeLabel) {
-    if (requestedToolchainTypeLabels().containsKey(toolchainTypeLabel)) {
-      return toolchains().get(requestedToolchainTypeLabels().get(toolchainTypeLabel));
+        return null
     }
 
-    return null;
-  }
-
-  public ImmutableList<TemplateVariableInfo> templateVariableProviders() {
-    return toolchains().values().stream()
-        .map(ToolchainAspectsProviders::templateVariableProvider)
-        .filter(notNull())
-        .collect(toImmutableList());
-  }
-
-  /**
-   * A Starlark-indexable wrapper used to represent the providers of the aspects applied on the base
-   * target toolchains.
-   */
-  public static class ToolchainAspectsProviders
-      implements StarlarkIndexable, Structure, ResolvedToolchainData {
-
-    private final TransitiveInfoProviderMap aspectsProviders;
-    @Nullable private final TemplateVariableInfo templateVariableInfo;
-    private final Label label;
-
-    private ToolchainAspectsProviders(
-        TransitiveInfoProviderMap aspectsProviders,
-        @Nullable TemplateVariableInfo templateVariableInfo,
-        Label label) {
-      this.aspectsProviders = aspectsProviders;
-      this.templateVariableInfo = templateVariableInfo;
-      this.label = label;
-    }
-
-    @Override
-    public final Object getIndex(StarlarkSemantics semantics, Object key) throws EvalException {
-      Provider constructor = selectExportedProvider(key, semantics, "index");
-      Object declaredProvider = aspectsProviders.get(constructor.getKey());
-      if (declaredProvider != null) {
-        return declaredProvider;
-      }
-      throw Starlark.errorf(
-          "%s doesn't contain declared provider '%s'",
-          Starlark.repr(this, semantics), constructor.getPrintableName());
-    }
-
-    @Override
-    public boolean containsKey(StarlarkSemantics semantics, Object key) throws EvalException {
-      return aspectsProviders.get(selectExportedProvider(key, semantics, "query").getKey()) != null;
+    fun templateVariableProviders(): com.google.common.collect.ImmutableList<TemplateVariableInfo?> {
+        return toolchains().values.stream()
+            .map<TemplateVariableInfo?> { obj: ToolchainAspectsProviders? -> obj!!.templateVariableProvider() }
+            .filter(com.google.common.base.Predicates.notNull<TemplateVariableInfo?>())
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<TemplateVariableInfo?>())
     }
 
     /**
-     * Selects the provider identified by {@code key}, throwing a Starlark error if the key is not a
-     * provider or not exported.
+     * A Starlark-indexable wrapper used to represent the providers of the aspects applied on the base
+     * target toolchains.
      */
-    private Provider selectExportedProvider(
-        Object key, StarlarkSemantics semantics, String operation) throws EvalException {
-      if (!(key instanceof Provider constructor)) {
-        throw Starlark.errorf(
-            "This type only supports %sing by object constructors, got %s instead",
-            operation, Starlark.type(key));
-      }
-      if (!constructor.isExported()) {
-        throw Starlark.errorf(
-            "%s only supports %sing by exported providers. Assign the provider a name "
-                + "in a top-level assignment statement.",
-            Starlark.repr(this, semantics), operation);
-      }
-      return constructor;
+    class ToolchainAspectsProviders
+    private constructor(
+        aspectsProviders: TransitiveInfoProviderMap,
+        templateVariableInfo: TemplateVariableInfo?,
+        label: Label?
+    ) : StarlarkIndexable, Structure, ResolvedToolchainData {
+        private val aspectsProviders: TransitiveInfoProviderMap
+        private val templateVariableInfo: TemplateVariableInfo?
+        private val label: Label?
+
+        init {
+            this.aspectsProviders = aspectsProviders
+            this.templateVariableInfo = templateVariableInfo
+            this.label = label
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        override fun getIndex(semantics: StarlarkSemantics?, key: Any?): Any {
+            val constructor: Provider = selectExportedProvider(key, semantics, "index")
+            val declaredProvider: Any? = aspectsProviders.get(constructor.getKey())
+            if (declaredProvider != null) {
+                return declaredProvider
+            }
+            throw Starlark.errorf(
+                "%s doesn't contain declared provider '%s'",
+                Starlark.repr(this, semantics), constructor.getPrintableName()
+            )
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        override fun containsKey(semantics: StarlarkSemantics?, key: Any?): Boolean {
+            return aspectsProviders.get(selectExportedProvider(key, semantics, "query").getKey()) != null
+        }
+
+        /**
+         * Selects the provider identified by `key`, throwing a Starlark error if the key is not a
+         * provider or not exported.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun selectExportedProvider(
+            key: Any?, semantics: StarlarkSemantics?, operation: String?
+        ): Provider {
+            if (key !is Provider) {
+                throw Starlark.errorf(
+                    "This type only supports %sing by object constructors, got %s instead",
+                    operation, Starlark.type(key)
+                )
+            }
+            if (!key.isExported()) {
+                throw Starlark.errorf(
+                    "%s only supports %sing by exported providers. Assign the provider a name "
+                            + "in a top-level assignment statement.",
+                    Starlark.repr(this, semantics), operation
+                )
+            }
+            return key
+        }
+
+        override fun repr(printer: net.starlark.java.eval.Printer, semantics: StarlarkSemantics?) {
+            printer.append("<ToolchainAspectsProviders for toolchain target: " + label + ">")
+        }
+
+        override fun getValue(name: String): Any? {
+            if (name == LABEL_FIELD) {
+                return label
+            }
+            return null
+        }
+
+        override fun getFieldNames(): com.google.common.collect.ImmutableList<String?> {
+            return com.google.common.collect.ImmutableList.of<String?>(LABEL_FIELD)
+        }
+
+        override fun getErrorMessageForUnknownField(field: String?): String? {
+            // Use the default error message.
+            return null
+        }
+
+        fun templateVariableProvider(): TemplateVariableInfo? {
+            return this.templateVariableInfo
+        }
     }
 
-    @Override
-    public void repr(Printer printer, StarlarkSemantics semantics) {
-      printer.append("<ToolchainAspectsProviders for toolchain target: " + label + ">");
-    }
+    companion object {
+        @Throws(MergingException::class)
+        fun load(
+            unloadedToolchainContext: UnloadedToolchainContext,
+            targetDescription: String?,
+            toolchainTargets: com.google.common.collect.ImmutableMultimap<ToolchainTypeInfo?, ConfiguredTargetAndData?>
+        ): AspectBaseTargetResolvedToolchainContext {
+            val toolchainsBuilder: com.google.common.collect.ImmutableMap.Builder<ToolchainTypeInfo?, ToolchainAspectsProviders?> =
+                com.google.common.collect.ImmutableMap.Builder<ToolchainTypeInfo?, ToolchainAspectsProviders?>()
 
-    @Nullable
-    @Override
-    public Object getValue(String name) {
-      if (name.equals(MergedConfiguredTarget.LABEL_FIELD)) {
-        return label;
-      }
-      return null;
-    }
+            for (toolchainType in unloadedToolchainContext.toolchainTypeToResolved().keySet()) {
+                com.google.common.base.Preconditions.checkArgument(toolchainTargets.get(toolchainType).size == 1)
 
-    @Override
-    public ImmutableList<String> getFieldNames() {
-      return ImmutableList.of(MergedConfiguredTarget.LABEL_FIELD);
-    }
+                val toolchainTarget: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    com.google.common.collect.Iterables.getOnlyElement<ConfiguredTargetAndData?>(
+                        toolchainTargets.get(
+                            toolchainType
+                        )
+                    ).getConfiguredTarget()
 
-    @Nullable
-    @Override
-    public String getErrorMessageForUnknownField(String field) {
-      // Use the default error message.
-      return null;
-    }
+                if (toolchainTarget is MergedConfiguredTarget) {
+                    // Only add the aspects providers from the toolchains that the aspects applied to.
+                    val templateVariableInfo: TemplateVariableInfo? =
+                        toolchainTarget
+                            .getBaseConfiguredTarget()
+                            .get(TemplateVariableInfo.PROVIDER.id()) as TemplateVariableInfo?
+                    toolchainsBuilder.put(
+                        toolchainType,
+                        ToolchainAspectsProviders(
+                            toolchainTarget.getAspectsProviders(),
+                            templateVariableInfo,
+                            toolchainTarget.getLabel()
+                        )
+                    )
+                } else {
+                    // Add empty providers for the toolchains that the aspects did not apply to.
+                    val templateVariableInfo: TemplateVariableInfo? =
+                        toolchainTarget.get(TemplateVariableInfo.PROVIDER.id()) as TemplateVariableInfo?
+                    toolchainsBuilder.put(
+                        toolchainType,
+                        ToolchainAspectsProviders(
+                            TransitiveInfoProviderMapBuilder().build(),
+                            templateVariableInfo,
+                            toolchainTarget.getLabel()
+                        )
+                    )
+                }
+            }
+            val toolchains: com.google.common.collect.ImmutableMap<ToolchainTypeInfo?, ToolchainAspectsProviders?> =
+                toolchainsBuilder.buildOrThrow()
 
-    @Nullable
-    public TemplateVariableInfo templateVariableProvider() {
-      return this.templateVariableInfo;
+            return AutoValue_AspectBaseTargetResolvedToolchainContext( // ToolchainContext:
+                unloadedToolchainContext.key(),
+                unloadedToolchainContext.executionPlatform(),
+                unloadedToolchainContext.targetPlatform(),
+                unloadedToolchainContext.toolchainTypes(),
+                unloadedToolchainContext.resolvedToolchainLabels(),  // ResolvedToolchainsDataInterface:
+                targetDescription,
+                unloadedToolchainContext.requestedLabelToToolchainType(),  // this:
+                toolchains
+            )
+        }
     }
-  }
 }

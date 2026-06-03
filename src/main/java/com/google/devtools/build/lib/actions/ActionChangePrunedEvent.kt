@@ -11,7 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-/** An event that is fired after an action is change pruned. */
-public record ActionChangePrunedEvent(ActionLookupData actionLookupData, long finishTimeNanos) {}
+import com.google.devtools.build.lib.actions.ActionLookupData
+
+/** An event that is fired after an action is change pruned.  */
+class ActionChangePrunedEvent(actionLookupData: ActionLookupData?, finishTimeNanos: Long) {
+    val actionLookupData: ActionLookupData?
+    val finishTimeNanos: Long
+
+    init {
+        this.actionLookupData = actionLookupData
+        this.finishTimeNanos = finishTimeNanos
+    }
+}

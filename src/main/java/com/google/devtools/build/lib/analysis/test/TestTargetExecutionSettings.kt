@@ -11,169 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
-
-import static com.google.devtools.build.lib.analysis.constraints.ConstraintConstants.getOsFromConstraintsOrHost;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandLine;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.Runfiles;
-import com.google.devtools.build.lib.analysis.RunfilesSupport;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.RunUnder;
-import com.google.devtools.build.lib.analysis.config.RunUnder.CommandRunUnder;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.Path;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.constraints.ConstraintConstants.getOsFromConstraintsOrHost
 
 /**
  * Container for common test execution settings shared by all TestRunnerAction instances for the
  * given test target.
  */
-public final class TestTargetExecutionSettings {
+class TestTargetExecutionSettings internal constructor(
+    ruleContext: RuleContext,
+    runfilesSupport: RunfilesSupport,
+    executable: Artifact?,
+    instrumentedFileManifest: Artifact?,
+    shards: Int,
+    runs: Int,
+    executionPlatform: PlatformInfo?
+) {
+    private val testArguments: CommandLine?
+    private val testFilter: String?
+    private val totalShards: Int
+    private val totalRuns: Int
+    private val runUnder: RunUnder?
+    private val runUnderExecutable: Artifact?
+    private val executable: Artifact?
+    private val runfilesSymlinksCreated: Boolean
+    private val runfilesDir: Path?
+    private val runfiles: com.google.devtools.build.lib.analysis.Runfiles?
+    private val runfilesInputManifest: Artifact?
+    private val instrumentedFileManifest: Artifact?
+    private val testRunnerFailFast: Boolean
+    private val executionOs: OS
 
-  private final CommandLine testArguments;
-  private final String testFilter;
-  private final int totalShards;
-  private final int totalRuns;
-  private final RunUnder runUnder;
-  private final Artifact runUnderExecutable;
-  private final Artifact executable;
-  private final boolean runfilesSymlinksCreated;
-  @Nullable private final Path runfilesDir;
-  private final Runfiles runfiles;
-  private final Artifact runfilesInputManifest;
-  private final Artifact instrumentedFileManifest;
-  private final boolean testRunnerFailFast;
-  private final OS executionOs;
+    init {
+        com.google.common.base.Preconditions.checkArgument(TargetUtils.isTestRule(ruleContext.getRule()))
+        com.google.common.base.Preconditions.checkArgument(shards >= 0)
+        val config: BuildConfigurationValue? = ruleContext.getConfiguration()
+        val testConfig: TestConfiguration = config.getFragment<T>(TestConfiguration::class.java)
 
-  TestTargetExecutionSettings(
-      RuleContext ruleContext,
-      RunfilesSupport runfilesSupport,
-      Artifact executable,
-      Artifact instrumentedFileManifest,
-      int shards,
-      int runs,
-      PlatformInfo executionPlatform) {
-    Preconditions.checkArgument(TargetUtils.isTestRule(ruleContext.getRule()));
-    Preconditions.checkArgument(shards >= 0);
-    BuildConfigurationValue config = ruleContext.getConfiguration();
-    TestConfiguration testConfig = config.getFragment(TestConfiguration.class);
+        val targetArgs: CommandLine? = runfilesSupport.getArgs()
+        testArguments =
+            CommandLine.concat(
+                targetArgs,
+                com.google.common.collect.ImmutableList.copyOf(testConfig.getTestArguments())
+            )
 
-    CommandLine targetArgs = runfilesSupport.getArgs();
-    testArguments =
-        CommandLine.concat(targetArgs, ImmutableList.copyOf(testConfig.getTestArguments()));
+        totalShards = shards
+        totalRuns = runs
+        runUnder = config.getRunUnder()
+        runUnderExecutable = getRunUnderExecutable(ruleContext)
 
-    totalShards = shards;
-    totalRuns = runs;
-    runUnder = config.getRunUnder();
-    runUnderExecutable = getRunUnderExecutable(ruleContext);
-
-    this.testFilter = testConfig.getTestFilter();
-    this.testRunnerFailFast = testConfig.getTestRunnerFailFast();
-    this.executable = executable;
-    this.runfilesSymlinksCreated = runfilesSupport.getRunfilesTree().isBuildRunfileLinks();
-    this.runfilesDir = runfilesSupport.getRunfilesDirectory();
-    this.runfiles = runfilesSupport.getRunfiles();
-    this.runfilesInputManifest = runfilesSupport.getRunfilesInputManifest();
-    this.instrumentedFileManifest = instrumentedFileManifest;
-    this.executionOs = getOsFromConstraintsOrHost(executionPlatform);
-  }
-
-  @Nullable
-  private static Artifact getRunUnderExecutable(RuleContext ruleContext) {
-    TransitiveInfoCollection runUnderTarget = ruleContext.getRunUnderPrerequisite();
-    return runUnderTarget == null
-        ? null
-        : runUnderTarget.getProvider(FilesToRunProvider.class).getExecutable();
-  }
-
-  public Artifact getRunUnderExecutable() {
-    return runUnderExecutable;
-  }
-
-  public CommandLine getArgs() {
-    return testArguments;
-  }
-
-  public String getTestFilter() {
-    return testFilter;
-  }
-
-  public boolean getTestRunnerFailFast() {
-    return testRunnerFailFast;
-  }
-
-  public int getTotalShards() {
-    return totalShards;
-  }
-
-  public int getTotalRuns() {
-    return totalRuns;
-  }
-
-  public RunUnder getRunUnder() {
-    return runUnder;
-  }
-
-  public Artifact getExecutable() {
-    return executable;
-  }
-
-  /** Returns whether or not the runfiles symlinks were created. */
-  public boolean getRunfilesSymlinksCreated() {
-    return runfilesSymlinksCreated;
-  }
-
-  /** Returns the directory of the runfiles. */
-  @Nullable
-  public Path getRunfilesDir() {
-    return runfilesDir;
-  }
-
-  /** Returns the runfiles for the test. */
-  public Runfiles getRunfiles() {
-    return runfiles;
-  }
-
-  /**
-   * Returns the input runfiles manifest for this test.
-   *
-   * <p>This always returns the input manifest outside of the runfiles tree.
-   *
-   * @see com.google.devtools.build.lib.analysis.RunfilesSupport#getRunfilesInputManifest()
-   */
-  public Artifact getInputManifest() {
-    return runfilesInputManifest;
-  }
-
-  /** Returns instrumented file manifest or null if code coverage is not collected. */
-  public Artifact getInstrumentedFileManifest() {
-    return instrumentedFileManifest;
-  }
-
-  public OS getExecutionOs() {
-    return executionOs;
-  }
-
-  public boolean needsShell() {
-    if (getRunUnder() instanceof CommandRunUnder commandRunUnder) {
-      String command = commandRunUnder.command();
-      // --run_under commands that do not contain '/' are either shell built-ins or need to be
-      // located on the PATH env, so we wrap them in a shell invocation. Note that we
-      // shell-tokenize
-      // the --run_under parameter and getCommand only returns the first such token.
-      return !command.contains("/") && (!executionOs.equals(OS.WINDOWS) || !command.contains("\\"));
-    } else {
-      return false;
+        this.testFilter = testConfig.getTestFilter()
+        this.testRunnerFailFast = testConfig.getTestRunnerFailFast()
+        this.executable = executable
+        this.runfilesSymlinksCreated = runfilesSupport.getRunfilesTree().isBuildRunfileLinks()
+        this.runfilesDir = runfilesSupport.getRunfilesDirectory()
+        this.runfiles = runfilesSupport.getRunfiles()
+        this.runfilesInputManifest = runfilesSupport.getRunfilesInputManifest()
+        this.instrumentedFileManifest = instrumentedFileManifest
+        this.executionOs = getOsFromConstraintsOrHost(executionPlatform)
     }
-  }
+
+    fun getRunUnderExecutable(): Artifact? {
+        return runUnderExecutable
+    }
+
+    fun getArgs(): CommandLine? {
+        return testArguments
+    }
+
+    fun getTestFilter(): String? {
+        return testFilter
+    }
+
+    fun getTestRunnerFailFast(): Boolean {
+        return testRunnerFailFast
+    }
+
+    fun getTotalShards(): Int {
+        return totalShards
+    }
+
+    fun getTotalRuns(): Int {
+        return totalRuns
+    }
+
+    fun getRunUnder(): RunUnder? {
+        return runUnder
+    }
+
+    fun getExecutable(): Artifact? {
+        return executable
+    }
+
+    /** Returns whether or not the runfiles symlinks were created.  */
+    fun getRunfilesSymlinksCreated(): Boolean {
+        return runfilesSymlinksCreated
+    }
+
+    /** Returns the directory of the runfiles.  */
+    fun getRunfilesDir(): Path? {
+        return runfilesDir
+    }
+
+    /** Returns the runfiles for the test.  */
+    fun getRunfiles(): com.google.devtools.build.lib.analysis.Runfiles? {
+        return runfiles
+    }
+
+    /**
+     * Returns the input runfiles manifest for this test.
+     * 
+     * 
+     * This always returns the input manifest outside of the runfiles tree.
+     * 
+     * @see com.google.devtools.build.lib.analysis.RunfilesSupport.getRunfilesInputManifest
+     */
+    fun getInputManifest(): Artifact? {
+        return runfilesInputManifest
+    }
+
+    /** Returns instrumented file manifest or null if code coverage is not collected.  */
+    fun getInstrumentedFileManifest(): Artifact? {
+        return instrumentedFileManifest
+    }
+
+    fun getExecutionOs(): OS {
+        return executionOs
+    }
+
+    fun needsShell(): Boolean {
+        if (getRunUnder() is CommandRunUnder) {
+            val command: String = commandRunUnder.command()
+            // --run_under commands that do not contain '/' are either shell built-ins or need to be
+            // located on the PATH env, so we wrap them in a shell invocation. Note that we
+            // shell-tokenize
+            // the --run_under parameter and getCommand only returns the first such token.
+            return !command.contains("/") && (!executionOs.equals(OS.WINDOWS) || !command.contains("\\"))
+        } else {
+            return false
+        }
+    }
+
+    companion object {
+        private fun getRunUnderExecutable(ruleContext: RuleContext): Artifact? {
+            val runUnderTarget: TransitiveInfoCollection? = ruleContext.getRunUnderPrerequisite()
+            return if (runUnderTarget == null)
+                null
+            else
+                runUnderTarget.getProvider(FilesToRunProvider::class.java).getExecutable()
+        }
+    }
 }

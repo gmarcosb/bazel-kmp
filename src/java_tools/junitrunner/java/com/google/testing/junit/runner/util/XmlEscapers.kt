@@ -11,131 +11,127 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.HashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import java.util.HashMap
 
 /**
  * Utility class for dealing with escaping XML content and attributes.
  */
-public class XmlEscapers {
-  private XmlEscapers() {}
+object XmlEscapers {
+    private val MIN_ASCII_CONTROL_CHAR = 0x00.toChar()
+    private val MAX_ASCII_CONTROL_CHAR = 0x1F.toChar()
 
-  private static final char MIN_ASCII_CONTROL_CHAR = 0x00;
-  private static final char MAX_ASCII_CONTROL_CHAR = 0x1F;
-
-  public static CharEscaper xmlContentEscaper() {
-    return XML_CONTENT_ESCAPER;
-  }
-
-  public static CharEscaper xmlAttributeEscaper() {
-    return XML_ATTRIBUTE_ESCAPER;
-  }
-
-  private static final CharEscaper XML_CONTENT_ESCAPER;
-  private static final CharEscaper XML_ATTRIBUTE_ESCAPER;
-
-  static {
-    Builder builder = Builder.builder();
-    builder.setSafeRange(Character.MIN_VALUE, '\uFFFD');
-    builder.setUnsafeReplacement("\uFFFD");
-
-    for (char c = MIN_ASCII_CONTROL_CHAR; c <= MAX_ASCII_CONTROL_CHAR; c++) {
-      if (c != '\t' && c != '\n' && c != '\r') {
-        builder.addEscape(c, "\uFFFD");
-      }
+    fun xmlContentEscaper(): com.google.testing.junit.runner.util.CharEscaper {
+        return com.google.testing.junit.runner.util.XmlEscapers.XML_CONTENT_ESCAPER
     }
 
-    builder.addEscape('&', "&amp;");
-    builder.addEscape('<', "&lt;");
-    builder.addEscape('>', "&gt;");
-    XML_CONTENT_ESCAPER = builder.build();
-    builder.addEscape('\'', "&apos;");
-    builder.addEscape('"', "&quot;");
-    builder.addEscape('\t', "&#x9;");
-    builder.addEscape('\n', "&#xA;");
-    builder.addEscape('\r', "&#xD;");
-    XML_ATTRIBUTE_ESCAPER = builder.build();
-  }
-
-  /**
-   * A builder for CharEscaper.
-   */
-  static final class Builder {
-    private final Map<Character, String> replacementMap = new HashMap<>();
-    private char safeMin = Character.MIN_VALUE;
-    private char safeMax = Character.MAX_VALUE;
-    private String unsafeReplacement = null;
-
-    static Builder builder() {
-      return new Builder();
-    }
-    // The constructor is exposed via the builder() method above.
-    private Builder() {}
-
-    /**
-     * Sets the safe range of characters for the escaper. Characters in this range that have no
-     * explicit replacement are considered 'safe' and remain unescaped in the output. If {@code
-     * safeMax < safeMin} then the safe range is empty.
-     *
-     * @return the builder instance
-     */
-    @CanIgnoreReturnValue
-    Builder setSafeRange(char safeMin, char safeMax) {
-      this.safeMin = safeMin;
-      this.safeMax = safeMax;
-      return this;
+    fun xmlAttributeEscaper(): com.google.testing.junit.runner.util.CharEscaper {
+        return com.google.testing.junit.runner.util.XmlEscapers.XML_ATTRIBUTE_ESCAPER
     }
 
-    /**
-     * Sets the replacement string for any characters outside the 'safe' range that have no explicit
-     * replacement. If {@code unsafeReplacement} is {@code null} then no replacement will occur, if
-     * it is {@code ""} then the unsafe characters are removed from the output.
-     *
-     * @return the builder instance
-     */
-    @CanIgnoreReturnValue
-    Builder setUnsafeReplacement(@Nullable String unsafeReplacement) {
-      this.unsafeReplacement = unsafeReplacement;
-      return this;
-    }
+    private val XML_CONTENT_ESCAPER: com.google.testing.junit.runner.util.CharEscaper
+    private val XML_ATTRIBUTE_ESCAPER: com.google.testing.junit.runner.util.CharEscaper
 
-    /**
-     * Adds a replacement string for the given input character. The specified character will be
-     * replaced by the given string whenever it occurs in the input, irrespective of whether it lies
-     * inside or outside the 'safe' range.
-     *
-     * @return the builder instance
-     * @throws NullPointerException if {@code replacement} is null
-     */
-    @CanIgnoreReturnValue
-    Builder addEscape(char c, String replacement) {
-      if (replacement == null) {
-        throw new NullPointerException();
-      }
-      // This can replace an existing character (the builder is re-usable).
-      replacementMap.put(c, replacement);
-      return this;
-    }
+    init {
+        val builder: Builder = com.google.testing.junit.runner.util.XmlEscapers.Builder.Companion.builder()
+        builder.setSafeRange(java.lang.Character.MIN_VALUE, '\uFFFD')
+        builder.setUnsafeReplacement("\uFFFD")
 
-    /**
-     * Returns a new CharEscaper based on the current state of the builder.
-     */
-    CharEscaper build() {
-      return new CharEscaper(replacementMap, safeMin, safeMax) {
-        private final char[] replacementChars =
-            unsafeReplacement != null ? unsafeReplacement.toCharArray() : null;
-
-        @Override
-        char[] escapeUnsafe(char c) {
-          return replacementChars;
+        var c: Char = com.google.testing.junit.runner.util.XmlEscapers.MIN_ASCII_CONTROL_CHAR
+        while (c <= com.google.testing.junit.runner.util.XmlEscapers.MAX_ASCII_CONTROL_CHAR) {
+            if (c != '\t' && c != '\n' && c != '\r') {
+                builder.addEscape(c, "\uFFFD")
+            }
+            c++
         }
-      };
+
+        builder.addEscape('&', "&amp;")
+        builder.addEscape('<', "&lt;")
+        builder.addEscape('>', "&gt;")
+        com.google.testing.junit.runner.util.XmlEscapers.XML_CONTENT_ESCAPER = builder.build()
+        builder.addEscape('\'', "&apos;")
+        builder.addEscape('"', "&quot;")
+        builder.addEscape('\t', "&#x9;")
+        builder.addEscape('\n', "&#xA;")
+        builder.addEscape('\r', "&#xD;")
+        com.google.testing.junit.runner.util.XmlEscapers.XML_ATTRIBUTE_ESCAPER = builder.build()
     }
-  }
+
+    /**
+     * A builder for CharEscaper.
+     */
+    internal class Builder  // The constructor is exposed via the builder() method above.
+    private constructor() {
+        private val replacementMap: MutableMap<Char?, String?> = HashMap<Char?, String?>()
+        private var safeMin: Char = java.lang.Character.MIN_VALUE
+        private var safeMax: Char = java.lang.Character.MAX_VALUE
+        private var unsafeReplacement: String? = null
+
+        /**
+         * Sets the safe range of characters for the escaper. Characters in this range that have no
+         * explicit replacement are considered 'safe' and remain unescaped in the output. If `safeMax < safeMin` then the safe range is empty.
+         * 
+         * @return the builder instance
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setSafeRange(safeMin: Char, safeMax: Char): Builder {
+            this.safeMin = safeMin
+            this.safeMax = safeMax
+            return this
+        }
+
+        /**
+         * Sets the replacement string for any characters outside the 'safe' range that have no explicit
+         * replacement. If `unsafeReplacement` is `null` then no replacement will occur, if
+         * it is `""` then the unsafe characters are removed from the output.
+         * 
+         * @return the builder instance
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setUnsafeReplacement(unsafeReplacement: String?): Builder {
+            this.unsafeReplacement = unsafeReplacement
+            return this
+        }
+
+        /**
+         * Adds a replacement string for the given input character. The specified character will be
+         * replaced by the given string whenever it occurs in the input, irrespective of whether it lies
+         * inside or outside the 'safe' range.
+         * 
+         * @return the builder instance
+         * @throws NullPointerException if `replacement` is null
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addEscape(c: Char, replacement: String): Builder {
+            if (replacement == null) {
+                throw java.lang.NullPointerException()
+            }
+            // This can replace an existing character (the builder is re-usable).
+            replacementMap.put(c, replacement)
+            return this
+        }
+
+        /**
+         * Returns a new CharEscaper based on the current state of the builder.
+         */
+        fun build(): com.google.testing.junit.runner.util.CharEscaper {
+            return object : com.google.testing.junit.runner.util.CharEscaper(replacementMap, safeMin, safeMax) {
+                private val replacementChars: CharArray? =
+                    if (unsafeReplacement != null) unsafeReplacement.toCharArray() else null
+
+                override fun escapeUnsafe(c: Char): CharArray? {
+                    return replacementChars
+                }
+            }
+        }
+
+        companion object {
+            fun builder(): Builder {
+                return com.google.testing.junit.runner.util.XmlEscapers.Builder()
+            }
+        }
+    }
 }
 

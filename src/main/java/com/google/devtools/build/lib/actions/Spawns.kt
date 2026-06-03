@@ -11,195 +11,190 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.server.FailureDetails
 
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn.Code;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.Map;
-
-/** Helper methods relating to implementations of {@link Spawn}. */
-public final class Spawns {
-  private Spawns() {}
-
-  /** Returns {@code true} if the result of {@code spawn} may be cached. */
-  public static boolean mayBeCached(Spawn spawn) {
-    return mayBeCached(spawn.getExecutionInfo());
-  }
-
-  /** Returns {@code true} if the result of {@code spawn} may be cached. */
-  public static boolean mayBeCached(Map<String, String> executionInfo) {
-    return !executionInfo.containsKey(ExecutionRequirements.NO_CACHE)
-        && !executionInfo.containsKey(ExecutionRequirements.LOCAL);
-  }
-
-  /** Returns {@code true} if the result of {@code spawn} may be cached remotely. */
-  public static boolean mayBeCachedRemotely(Spawn spawn) {
-    return mayBeCachedRemotely(spawn.getExecutionInfo());
-  }
-
-  /** Returns {@code true} if the result of {@code spawn} may be cached remotely. */
-  public static boolean mayBeCachedRemotely(Map<String, String> executionInfo) {
-    return mayBeCached(executionInfo)
-        && !executionInfo.containsKey(ExecutionRequirements.NO_REMOTE)
-        && !executionInfo.containsKey(ExecutionRequirements.NO_REMOTE_CACHE);
-  }
-
-  /** Returns {@code true} if {@code spawn} may be executed remotely. */
-  public static boolean mayBeExecutedRemotely(Spawn spawn) {
-    return !spawn.getExecutionInfo().containsKey(ExecutionRequirements.LOCAL)
-        && !spawn.getExecutionInfo().containsKey(ExecutionRequirements.NO_REMOTE)
-        && !spawn.getExecutionInfo().containsKey(ExecutionRequirements.NO_REMOTE_EXEC);
-  }
-
-  /** Returns {@code true} if {@code spawn} may be executed locally. */
-  public static boolean mayBeExecutedLocally(Spawn spawn) {
-    return !spawn.getExecutionInfo().containsKey(ExecutionRequirements.NO_LOCAL);
-  }
-
-  /** Returns whether a Spawn can be executed in a sandbox environment. */
-  public static boolean mayBeSandboxed(Spawn spawn) {
-    return !spawn.getExecutionInfo().containsKey(ExecutionRequirements.LEGACY_NOSANDBOX)
-        && !spawn.getExecutionInfo().containsKey(ExecutionRequirements.NO_SANDBOX)
-        && !spawn.getExecutionInfo().containsKey(ExecutionRequirements.LOCAL);
-  }
-
-  /**
-   * Returns whether a Spawn must be executed on a separate exec root (i.e., in a sandbox) since it
-   * references rewritten input and output paths.
-   */
-  public static boolean usesPathMapping(Spawn spawn) {
-    return !spawn.getPathMapper().isNoop();
-  }
-
-  /** Returns whether a Spawn needs network access in order to run successfully. */
-  public static boolean requiresNetwork(Spawn spawn, boolean defaultSandboxDisallowNetwork) {
-    if (spawn.getExecutionInfo().containsKey(ExecutionRequirements.BLOCK_NETWORK)) {
-      return false;
-    }
-    if (spawn.getExecutionInfo().containsKey(ExecutionRequirements.REQUIRES_NETWORK)) {
-      return true;
+/** Helper methods relating to implementations of [Spawn].  */
+object Spawns {
+    /** Returns `true` if the result of `spawn` may be cached.  */
+    fun mayBeCached(spawn: Spawn): Boolean {
+        return Spawns.mayBeCached(spawn.getExecutionInfo())
     }
 
-    return defaultSandboxDisallowNetwork;
-  }
-
-  /**
-   * Returns whether a Spawn claims to support being executed with the persistent worker strategy
-   * according to its execution info tags.
-   */
-  public static boolean supportsWorkers(Spawn spawn) {
-    return "1".equals(spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_WORKERS));
-  }
-
-  /**
-   * Returns whether a Spawn claims to support being executed with the persistent multiplex worker
-   * strategy according to its execution info tags.
-   */
-  public static boolean supportsMultiplexWorkers(Spawn spawn) {
-    return "1"
-        .equals(spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_MULTIPLEX_WORKERS));
-  }
-
-  public static boolean supportsWorkerCancellation(Spawn spawn) {
-    return "1"
-        .equals(spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_WORKER_CANCELLATION));
-  }
-
-  /**
-   * Returns whether the {@link Spawn} supports sandboxing for multiplex workers through the {@code
-   * WorkRequest.sandbox_dir} field.
-   */
-  public static boolean supportsMultiplexSandboxing(Spawn spawn) {
-    return "1"
-        .equals(spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_MULTIPLEX_SANDBOXING));
-  }
-
-  /**
-   * Returns which worker protocol format a Spawn claims a persistent worker uses. Defaults to proto
-   * if the protocol format is not specified.
-   */
-  public static ExecutionRequirements.WorkerProtocolFormat getWorkerProtocolFormat(Spawn spawn)
-      throws IOException {
-    String protocolFormat =
-        spawn.getExecutionInfo().get(ExecutionRequirements.REQUIRES_WORKER_PROTOCOL);
-
-    if (protocolFormat != null) {
-      return switch (protocolFormat) {
-        case "json" -> ExecutionRequirements.WorkerProtocolFormat.JSON;
-        case "proto" -> ExecutionRequirements.WorkerProtocolFormat.PROTO;
-        default ->
-            throw new IOException(
-                "requires-worker-protocol must be set to a valid worker protocol format: json or"
-                    + " proto");
-      };
-    } else {
-      return ExecutionRequirements.WorkerProtocolFormat.PROTO;
+    /** Returns `true` if the result of `spawn` may be cached.  */
+    fun mayBeCached(executionInfo: MutableMap<String?, String?>): Boolean {
+        return !executionInfo.containsKey(ExecutionRequirements.NO_CACHE)
+                && !executionInfo.containsKey(ExecutionRequirements.LOCAL)
     }
-  }
 
-  /** Returns the mnemonic that should be used in the worker's key. */
-  public static String getWorkerKeyMnemonic(Spawn spawn) {
-    String customValue = spawn.getExecutionInfo().get(ExecutionRequirements.WORKER_KEY_MNEMONIC);
-    return customValue != null ? customValue : spawn.getMnemonic();
-  }
-
-  /**
-   * Parse the timeout key in the spawn execution info, if it exists. Otherwise, return {@link
-   * Duration#ZERO}.
-   */
-  public static Duration getTimeout(Spawn spawn) throws ExecException {
-    return getTimeout(spawn, Duration.ZERO);
-  }
-
-  /**
-   * Parse the timeout key in the spawn execution info, if it exists. Otherwise, return
-   * defaultTimeout, or {@code Duration.ZERO} if that is null.
-   */
-  public static Duration getTimeout(Spawn spawn, Duration defaultTimeout) throws ExecException {
-    String timeoutStr = spawn.getExecutionInfo().get(ExecutionRequirements.TIMEOUT);
-    if (timeoutStr == null) {
-      return defaultTimeout == null ? Duration.ZERO : defaultTimeout;
+    /** Returns `true` if the result of `spawn` may be cached remotely.  */
+    fun mayBeCachedRemotely(spawn: Spawn): Boolean {
+        return Spawns.mayBeCachedRemotely(spawn.getExecutionInfo())
     }
-    try {
-      return Duration.ofSeconds(Integer.parseInt(timeoutStr));
-    } catch (NumberFormatException e) {
-      throw new UserExecException(
-          e,
-          FailureDetail.newBuilder()
-              .setMessage("could not parse timeout")
-              .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.INVALID_TIMEOUT))
-              .build());
-    }
-  }
 
-  /**
-   * Returns whether a local {@link Spawn} runner implementation should prefetch the inputs before
-   * execution, based on the spawns execution info.
-   */
-  public static boolean shouldPrefetchInputsForLocalExecution(Spawn spawn) {
-    String disablePrefetchRequest =
-        spawn.getExecutionInfo().get(ExecutionRequirements.DISABLE_LOCAL_PREFETCH);
-    return (disablePrefetchRequest == null) || disablePrefetchRequest.equals("0");
-  }
-
-  /**
-   * Returns a (somewhat) human-readable string for the given {@code Spawn}. Meant to be used in
-   * {@code toString()} of Spawns.
-   */
-  public static String prettyPrint(Spawn spawn) {
-    if (spawn.getResourceOwner().getPrimaryOutput() != null) {
-      return spawn.getClass().getSimpleName()
-          + " for "
-          + spawn.getResourceOwner().getPrimaryOutput().prettyPrint();
-    } else {
-      return spawn.getClass().getSimpleName()
-          + " for "
-          + spawn.getMnemonic()
-          + " action without primary output";
+    /** Returns `true` if the result of `spawn` may be cached remotely.  */
+    fun mayBeCachedRemotely(executionInfo: MutableMap<String?, String?>): Boolean {
+        return Spawns.mayBeCached(executionInfo)
+                && !executionInfo.containsKey(ExecutionRequirements.NO_REMOTE) && !executionInfo.containsKey(
+            ExecutionRequirements.NO_REMOTE_CACHE
+        )
     }
-  }
+
+    /** Returns `true` if `spawn` may be executed remotely.  */
+    fun mayBeExecutedRemotely(spawn: Spawn): Boolean {
+        return !spawn.getExecutionInfo().containsKey(ExecutionRequirements.LOCAL) && !spawn.getExecutionInfo()
+            .containsKey(ExecutionRequirements.NO_REMOTE) && !spawn.getExecutionInfo()
+            .containsKey(ExecutionRequirements.NO_REMOTE_EXEC)
+    }
+
+    /** Returns `true` if `spawn` may be executed locally.  */
+    fun mayBeExecutedLocally(spawn: Spawn): Boolean {
+        return !spawn.getExecutionInfo().containsKey(ExecutionRequirements.NO_LOCAL)
+    }
+
+    /** Returns whether a Spawn can be executed in a sandbox environment.  */
+    fun mayBeSandboxed(spawn: Spawn): Boolean {
+        return !spawn.getExecutionInfo()
+            .containsKey(ExecutionRequirements.LEGACY_NOSANDBOX) && !spawn.getExecutionInfo()
+            .containsKey(ExecutionRequirements.NO_SANDBOX) && !spawn.getExecutionInfo()
+            .containsKey(ExecutionRequirements.LOCAL)
+    }
+
+    /**
+     * Returns whether a Spawn must be executed on a separate exec root (i.e., in a sandbox) since it
+     * references rewritten input and output paths.
+     */
+    fun usesPathMapping(spawn: Spawn): Boolean {
+        return !spawn.getPathMapper().isNoop()
+    }
+
+    /** Returns whether a Spawn needs network access in order to run successfully.  */
+    fun requiresNetwork(spawn: Spawn, defaultSandboxDisallowNetwork: Boolean): Boolean {
+        if (spawn.getExecutionInfo().containsKey(ExecutionRequirements.BLOCK_NETWORK)) {
+            return false
+        }
+        if (spawn.getExecutionInfo().containsKey(ExecutionRequirements.REQUIRES_NETWORK)) {
+            return true
+        }
+
+        return defaultSandboxDisallowNetwork
+    }
+
+    /**
+     * Returns whether a Spawn claims to support being executed with the persistent worker strategy
+     * according to its execution info tags.
+     */
+    fun supportsWorkers(spawn: Spawn): Boolean {
+        return "1" == spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_WORKERS)
+    }
+
+    /**
+     * Returns whether a Spawn claims to support being executed with the persistent multiplex worker
+     * strategy according to its execution info tags.
+     */
+    fun supportsMultiplexWorkers(spawn: Spawn): Boolean {
+        return ("1"
+                == spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_MULTIPLEX_WORKERS))
+    }
+
+    fun supportsWorkerCancellation(spawn: Spawn): Boolean {
+        return ("1"
+                == spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_WORKER_CANCELLATION))
+    }
+
+    /**
+     * Returns whether the [Spawn] supports sandboxing for multiplex workers through the `WorkRequest.sandbox_dir` field.
+     */
+    fun supportsMultiplexSandboxing(spawn: Spawn): Boolean {
+        return ("1"
+                == spawn.getExecutionInfo().get(ExecutionRequirements.SUPPORTS_MULTIPLEX_SANDBOXING))
+    }
+
+    /**
+     * Returns which worker protocol format a Spawn claims a persistent worker uses. Defaults to proto
+     * if the protocol format is not specified.
+     */
+    @Throws(IOException::class)
+    fun getWorkerProtocolFormat(spawn: Spawn): WorkerProtocolFormat {
+        val protocolFormat: String? =
+            spawn.getExecutionInfo().get(ExecutionRequirements.REQUIRES_WORKER_PROTOCOL)
+
+        if (protocolFormat != null) {
+            return when (protocolFormat) {
+                "json" -> ExecutionRequirements.WorkerProtocolFormat.JSON
+                "proto" -> ExecutionRequirements.WorkerProtocolFormat.PROTO
+                else -> throw IOException(
+                    "requires-worker-protocol must be set to a valid worker protocol format: json or"
+                            + " proto"
+                )
+            }
+        } else {
+            return ExecutionRequirements.WorkerProtocolFormat.PROTO
+        }
+    }
+
+    /** Returns the mnemonic that should be used in the worker's key.  */
+    fun getWorkerKeyMnemonic(spawn: Spawn): String? {
+        val customValue: String? = spawn.getExecutionInfo().get(ExecutionRequirements.WORKER_KEY_MNEMONIC)
+        return if (customValue != null) customValue else spawn.getMnemonic()
+    }
+
+    /**
+     * Parse the timeout key in the spawn execution info, if it exists. Otherwise, return [ ][Duration.ZERO].
+     */
+    @Throws(ExecException::class)
+    fun getTimeout(spawn: Spawn): java.time.Duration? {
+        return getTimeout(spawn, java.time.Duration.ZERO)
+    }
+
+    /**
+     * Parse the timeout key in the spawn execution info, if it exists. Otherwise, return
+     * defaultTimeout, or `Duration.ZERO` if that is null.
+     */
+    @Throws(ExecException::class)
+    fun getTimeout(spawn: Spawn, defaultTimeout: java.time.Duration?): java.time.Duration? {
+        val timeoutStr: String? = spawn.getExecutionInfo().get(ExecutionRequirements.TIMEOUT)
+        if (timeoutStr == null) {
+            return if (defaultTimeout == null) java.time.Duration.ZERO else defaultTimeout
+        }
+        try {
+            return java.time.Duration.ofSeconds(java.lang.Integer.parseInt(timeoutStr).toLong())
+        } catch (e: java.lang.NumberFormatException) {
+            throw UserExecException(
+                e,
+                FailureDetail.newBuilder()
+                    .setMessage("could not parse timeout")
+                    .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.INVALID_TIMEOUT))
+                    .build()
+            )
+        }
+    }
+
+    /**
+     * Returns whether a local [Spawn] runner implementation should prefetch the inputs before
+     * execution, based on the spawns execution info.
+     */
+    fun shouldPrefetchInputsForLocalExecution(spawn: Spawn): Boolean {
+        val disablePrefetchRequest: String? =
+            spawn.getExecutionInfo().get(ExecutionRequirements.DISABLE_LOCAL_PREFETCH)
+        return (disablePrefetchRequest == null) || disablePrefetchRequest == "0"
+    }
+
+    /**
+     * Returns a (somewhat) human-readable string for the given `Spawn`. Meant to be used in
+     * `toString()` of Spawns.
+     */
+    fun prettyPrint(spawn: Spawn): String {
+        if (spawn.getResourceOwner().getPrimaryOutput() != null) {
+            return (spawn.getClass().getSimpleName()
+                    + " for "
+                    + spawn.getResourceOwner().getPrimaryOutput().prettyPrint())
+        } else {
+            return (spawn.getClass().getSimpleName()
+                    + " for "
+                    + spawn.getMnemonic()
+                    + " action without primary output")
+        }
+    }
 }

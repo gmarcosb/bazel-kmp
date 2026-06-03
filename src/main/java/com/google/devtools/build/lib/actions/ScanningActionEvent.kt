@@ -11,27 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * Notifies that an in-flight action has started being scanned for discovered inputs.
- *
- * <p>This phase ends when an {@link StoppedScanningActionEvent} is posted for this action.
+ * 
+ * 
+ * This phase ends when an [StoppedScanningActionEvent] is posted for this action.
  */
-public final class ScanningActionEvent implements Postable {
+class ScanningActionEvent(action: ActionExecutionMetadata?) : Postable {
+    private val action: ActionExecutionMetadata?
 
-  private final ActionExecutionMetadata action;
+    /** Constructs a new event.  */
+    init {
+        this.action = action
+    }
 
-  /** Constructs a new event. */
-  public ScanningActionEvent(ActionExecutionMetadata action) {
-    this.action = action;
-  }
-
-  /** Gets the metadata associated with the action being analyzed. */
-  public ActionExecutionMetadata getActionMetadata() {
-    return action;
-  }
+    /** Gets the metadata associated with the action being analyzed.  */
+    fun getActionMetadata(): ActionExecutionMetadata? {
+        return action
+    }
 }

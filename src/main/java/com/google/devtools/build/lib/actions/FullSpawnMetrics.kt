@@ -11,64 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
+
+import com.google.devtools.build.lib.actions.SpawnMetrics
 
 
-/** Includes limits to SpawnMetrics, if set. */
-@SuppressWarnings("GoodTime") // Use ints instead of Durations to improve build time (cl/505728570)
-public final class FullSpawnMetrics extends SpawnMetrics {
+/** Includes limits to SpawnMetrics, if set.  */
+// Use ints instead of Durations to improve build time (cl/505728570)
+class FullSpawnMetrics internal constructor(builder: com.google.devtools.build.lib.actions.SpawnMetrics.Builder) :
+    SpawnMetrics(builder) {
+    private val inputBytesLimit: Long
+    private val inputFilesLimit: Long
+    private val outputBytesLimit: Long
+    private val outputFilesLimit: Long
+    private val memoryBytesLimit: Long
+    private val timeLimitInMs: Int
 
-  private final long inputBytesLimit;
-  private final long inputFilesLimit;
-  private final long outputBytesLimit;
-  private final long outputFilesLimit;
-  private final long memoryBytesLimit;
-  private final int timeLimitInMs;
+    init {
+        this.inputBytesLimit = builder.inputBytesLimit
+        this.inputFilesLimit = builder.inputFilesLimit
+        this.outputBytesLimit = builder.outputBytesLimit
+        this.outputFilesLimit = builder.outputFilesLimit
+        this.memoryBytesLimit = builder.memoryBytesLimit
+        this.timeLimitInMs = builder.timeLimitInMs
+    }
 
-  FullSpawnMetrics(Builder builder) {
-    super(builder);
-    this.inputBytesLimit = builder.inputBytesLimit;
-    this.inputFilesLimit = builder.inputFilesLimit;
-    this.outputBytesLimit = builder.outputBytesLimit;
-    this.outputFilesLimit = builder.outputFilesLimit;
-    this.memoryBytesLimit = builder.memoryBytesLimit;
-    this.timeLimitInMs = builder.timeLimitInMs;
-  }
+    /** Limit of total size in bytes of inputs or 0 if unavailable.  */
+    override fun inputBytesLimit(): Long {
+        return inputBytesLimit
+    }
 
-  /** Limit of total size in bytes of inputs or 0 if unavailable. */
-  @Override
-  public long inputBytesLimit() {
-    return inputBytesLimit;
-  }
+    /** Limit of total number of input files or 0 if unavailable.  */
+    override fun inputFilesLimit(): Long {
+        return inputFilesLimit
+    }
 
-  /** Limit of total number of input files or 0 if unavailable. */
-  @Override
-  public long inputFilesLimit() {
-    return inputFilesLimit;
-  }
+    /** Limit of total size in bytes of outputs or 0 if unavailable.  */
+    override fun outputBytesLimit(): Long {
+        return outputBytesLimit
+    }
 
-  /** Limit of total size in bytes of outputs or 0 if unavailable. */
-  @Override
-  public long outputBytesLimit() {
-    return outputBytesLimit;
-  }
+    /** Limit of total number of output files or 0 if unavailable.  */
+    override fun outputFilesLimit(): Long {
+        return outputFilesLimit
+    }
 
-  /** Limit of total number of output files or 0 if unavailable. */
-  @Override
-  public long outputFilesLimit() {
-    return outputFilesLimit;
-  }
+    /** Memory limit or 0 if unavailable.  */
+    override fun memoryLimit(): Long {
+        return memoryBytesLimit
+    }
 
-  /** Memory limit or 0 if unavailable. */
-  @Override
-  public long memoryLimit() {
-    return memoryBytesLimit;
-  }
-
-  /** Time limit in milliseconds or 0 if unavailable. */
-  @Override
-  public int timeLimitInMs() {
-    return timeLimitInMs;
-  }
-
+    /** Time limit in milliseconds or 0 if unavailable.  */
+    override fun timeLimitInMs(): Int {
+        return timeLimitInMs
+    }
 }

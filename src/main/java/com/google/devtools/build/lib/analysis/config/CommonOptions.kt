@@ -11,36 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.common.options.Options;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
 
-/** Common sets of option objects for use in core processing. */
-public final class CommonOptions {
+/** Common sets of option objects for use in core processing.  */
+object CommonOptions {
+    // Ideally the empty build options should be actually empty: no fragment options and no flags. But
+    // core Bazel
+    // code assumes CoreOptions exists. For example CoreOptions.check_visibility is required for
+    // basic configured target graph evaluation. So we provide CoreOptions with default values
+    // (not inherited from parent configuration). This means flags like --check_visibility may not
+    // be consistently applied. If this becomes a problem in practice we can carve out exceptions
+    // to flags like that to propagate.
+    // TODO(bazel-team): break out flags that configure Bazel's analysis phase into their own
+    // FragmentOptions and propagate them to this configuration. Those flags should also be
+    // ineligible outputs for other transitions because they're not meant for rule logic.  That
+    // would guarantee consistency of flags like --check_visibility while still preventing forking.
+    @SerializationConstant
+    val EMPTY_OPTIONS: BuildOptions = createEmptyOptions()
 
-  // Ideally the empty build options should be actually empty: no fragment options and no flags. But
-  // core Bazel
-  // code assumes CoreOptions exists. For example CoreOptions.check_visibility is required for
-  // basic configured target graph evaluation. So we provide CoreOptions with default values
-  // (not inherited from parent configuration). This means flags like --check_visibility may not
-  // be consistently applied. If this becomes a problem in practice we can carve out exceptions
-  // to flags like that to propagate.
-  // TODO(bazel-team): break out flags that configure Bazel's analysis phase into their own
-  // FragmentOptions and propagate them to this configuration. Those flags should also be
-  // ineligible outputs for other transitions because they're not meant for rule logic.  That
-  // would guarantee consistency of flags like --check_visibility while still preventing forking.
-  @SerializationConstant public static final BuildOptions EMPTY_OPTIONS = createEmptyOptions();
-
-  private static BuildOptions createEmptyOptions() {
-    BuildOptions options =
-        BuildOptions.builder().addFragmentOptions(Options.getDefaults(CoreOptions.class)).build();
-    // Disable the exec transition. Since this config is empty it shouldn't trigger any exec
-    // transitions. More important, the default value this would otherwise propagate may not exist
-    // in the repo (if the repo remaps with a repo-wide bazelrc).
-    options.get(CoreOptions.class).setStarlarkExecConfig(null);
-    return options;
-  }
-
-  private CommonOptions() {}
+    private fun createEmptyOptions(): BuildOptions {
+        val options: BuildOptions =
+            BuildOptions.Companion.builder().addFragmentOptions<T?>(Options.getDefaults(CoreOptions::class.java))
+                .build()
+        // Disable the exec transition. Since this config is empty it shouldn't trigger any exec
+        // transitions. More important, the default value this would otherwise propagate may not exist
+        // in the repo (if the repo remaps with a repo-wide bazelrc).
+        options.get<T?>(CoreOptions::class.java).setStarlarkExecConfig(null)
+        return options
+    }
 }

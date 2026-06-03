@@ -11,246 +11,176 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.skyframe.ExecutionPhaseSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * Data that uniquely identifies an action.
- *
- * <p>{@link #getActionLookupKey} returns the {@link ActionLookupKey} to look up an {@link
- * ActionLookupValue}. {@link #getActionIndex} returns the index of the action within {@link
- * ActionLookupValue#getActions}.
- *
- * <p>To save memory, a custom subclass without an {@code int} field is used for the most common
+ * 
+ * 
+ * [.getActionLookupKey] returns the [ActionLookupKey] to look up an [ ]. [.getActionIndex] returns the index of the action within [ ][ActionLookupValue.getActions].
+ * 
+ * 
+ * To save memory, a custom subclass without an `int` field is used for the most common
  * action indices [0-9].
  */
-public abstract class ActionLookupData implements ExecutionPhaseSkyKey {
+abstract class ActionLookupData private constructor(actionLookupKey: ActionLookupKey?) : ExecutionPhaseSkyKey {
+    private val actionLookupKey: ActionLookupKey
 
-  /**
-   * Creates a key for the result of action execution. Does <i>not</i> intern its results, so should
-   * only be called once per {@code (actionLookupKey, actionIndex)} pair.
-   */
-  public static ActionLookupData create(ActionLookupKey actionLookupKey, int actionIndex) {
-    if (!actionLookupKey.mayOwnShareableActions()) {
-      return createUnshareable(actionLookupKey, actionIndex);
-    }
-    return switch (actionIndex) {
-      case 0 -> new ActionLookupData0(actionLookupKey);
-      case 1 -> new ActionLookupData1(actionLookupKey);
-      case 2 -> new ActionLookupData2(actionLookupKey);
-      case 3 -> new ActionLookupData3(actionLookupKey);
-      case 4 -> new ActionLookupData4(actionLookupKey);
-      case 5 -> new ActionLookupData5(actionLookupKey);
-      case 6 -> new ActionLookupData6(actionLookupKey);
-      case 7 -> new ActionLookupData7(actionLookupKey);
-      case 8 -> new ActionLookupData8(actionLookupKey);
-      case 9 -> new ActionLookupData9(actionLookupKey);
-      default -> new ActionLookupDataN(actionLookupKey, actionIndex);
-    };
-  }
-
-  /**
-   * Similar to {@link #create}, but the key will return {@code false} for {@link
-   * #valueIsShareable}.
-   */
-  public static ActionLookupData createUnshareable(
-      ActionLookupKey actionLookupKey, int actionIndex) {
-    return new UnshareableActionLookupData(actionLookupKey, actionIndex);
-  }
-
-  private final ActionLookupKey actionLookupKey;
-
-  private ActionLookupData(ActionLookupKey actionLookupKey) {
-    this.actionLookupKey = Preconditions.checkNotNull(actionLookupKey);
-  }
-
-  public final ActionLookupKey getActionLookupKey() {
-    return actionLookupKey;
-  }
-
-  /**
-   * Index of the action in question in the node keyed by {@link #getActionLookupKey}. Should be
-   * passed to {@link ActionLookupValue#getAction}.
-   */
-  public abstract int getActionIndex();
-
-  public final Label getLabel() {
-    return actionLookupKey.getLabel();
-  }
-
-  @Override
-  public final int hashCode() {
-    int hash = 1;
-    hash = 37 * hash + actionLookupKey.hashCode();
-    hash = 37 * hash + Integer.hashCode(getActionIndex());
-    hash = 37 * hash + Boolean.hashCode(valueIsShareable());
-    return hash;
-  }
-
-  @Override
-  public final boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (!(obj instanceof ActionLookupData that)) {
-      return false;
-    }
-    return getActionIndex() == that.getActionIndex()
-        && actionLookupKey.equals(that.actionLookupKey)
-        && valueIsShareable() == that.valueIsShareable();
-  }
-
-  @Override
-  public final String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("actionLookupKey", actionLookupKey)
-        .add("actionIndex", getActionIndex())
-        .toString();
-  }
-
-  @Override
-  public final SkyFunctionName functionName() {
-    return SkyFunctions.ACTION_EXECUTION;
-  }
-
-  private static final class ActionLookupData0 extends ActionLookupData {
-    private ActionLookupData0(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    init {
+        this.actionLookupKey = com.google.common.base.Preconditions.checkNotNull<ActionLookupKey>(actionLookupKey)
     }
 
-    @Override
-    public int getActionIndex() {
-      return 0;
-    }
-  }
-
-  private static final class ActionLookupData1 extends ActionLookupData {
-    private ActionLookupData1(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    fun getActionLookupKey(): ActionLookupKey {
+        return actionLookupKey
     }
 
-    @Override
-    public int getActionIndex() {
-      return 1;
-    }
-  }
+    /**
+     * Index of the action in question in the node keyed by [.getActionLookupKey]. Should be
+     * passed to [ActionLookupValue.getAction].
+     */
+    abstract fun getActionIndex(): Int
 
-  private static final class ActionLookupData2 extends ActionLookupData {
-    private ActionLookupData2(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
-    }
-
-    @Override
-    public int getActionIndex() {
-      return 2;
-    }
-  }
-
-  private static final class ActionLookupData3 extends ActionLookupData {
-    private ActionLookupData3(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    fun getLabel(): Label? {
+        return actionLookupKey.getLabel()
     }
 
-    @Override
-    public int getActionIndex() {
-      return 3;
-    }
-  }
-
-  private static final class ActionLookupData4 extends ActionLookupData {
-    private ActionLookupData4(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    override fun hashCode(): Int {
+        var hash = 1
+        hash = 37 * hash + actionLookupKey.hashCode()
+        hash = 37 * hash + java.lang.Integer.hashCode(getActionIndex())
+        hash = 37 * hash + java.lang.Boolean.hashCode(valueIsShareable())
+        return hash
     }
 
-    @Override
-    public int getActionIndex() {
-      return 4;
-    }
-  }
-
-  private static final class ActionLookupData5 extends ActionLookupData {
-    private ActionLookupData5(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
-    }
-
-    @Override
-    public int getActionIndex() {
-      return 5;
-    }
-  }
-
-  private static final class ActionLookupData6 extends ActionLookupData {
-    private ActionLookupData6(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is ActionLookupData) {
+            return false
+        }
+        return getActionIndex() == obj.getActionIndex() && actionLookupKey == obj.actionLookupKey
+                && valueIsShareable() === obj.valueIsShareable()
     }
 
-    @Override
-    public int getActionIndex() {
-      return 6;
-    }
-  }
-
-  private static final class ActionLookupData7 extends ActionLookupData {
-    private ActionLookupData7(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("actionLookupKey", actionLookupKey)
+            .add("actionIndex", getActionIndex())
+            .toString()
     }
 
-    @Override
-    public int getActionIndex() {
-      return 7;
-    }
-  }
-
-  private static final class ActionLookupData8 extends ActionLookupData {
-    private ActionLookupData8(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    public override fun functionName(): SkyFunctionName {
+        return SkyFunctions.ACTION_EXECUTION
     }
 
-    @Override
-    public int getActionIndex() {
-      return 8;
-    }
-  }
-
-  private static final class ActionLookupData9 extends ActionLookupData {
-    private ActionLookupData9(ActionLookupKey actionLookupKey) {
-      super(actionLookupKey);
+    private class ActionLookupData0(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 0
+        }
     }
 
-    @Override
-    public int getActionIndex() {
-      return 9;
-    }
-  }
-
-  private static class ActionLookupDataN extends ActionLookupData {
-    private final int actionIndex;
-
-    private ActionLookupDataN(ActionLookupKey actionLookupKey, int actionIndex) {
-      super(actionLookupKey);
-      this.actionIndex = actionIndex;
+    private class ActionLookupData1(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 1
+        }
     }
 
-    @Override
-    public final int getActionIndex() {
-      return actionIndex;
-    }
-  }
-
-  private static final class UnshareableActionLookupData extends ActionLookupDataN {
-    private UnshareableActionLookupData(ActionLookupKey actionLookupKey, int actionIndex) {
-      super(actionLookupKey, actionIndex);
+    private class ActionLookupData2(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 2
+        }
     }
 
-    @Override
-    public boolean valueIsShareable() {
-      return false;
+    private class ActionLookupData3(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 3
+        }
     }
-  }
+
+    private class ActionLookupData4(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 4
+        }
+    }
+
+    private class ActionLookupData5(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 5
+        }
+    }
+
+    private class ActionLookupData6(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 6
+        }
+    }
+
+    private class ActionLookupData7(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 7
+        }
+    }
+
+    private class ActionLookupData8(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 8
+        }
+    }
+
+    private class ActionLookupData9(actionLookupKey: ActionLookupKey?) : ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return 9
+        }
+    }
+
+    private open class ActionLookupDataN(actionLookupKey: ActionLookupKey?, private val actionIndex: Int) :
+        ActionLookupData(actionLookupKey) {
+        override fun getActionIndex(): Int {
+            return actionIndex
+        }
+    }
+
+    private class UnshareableActionLookupData(actionLookupKey: ActionLookupKey?, actionIndex: Int) :
+        ActionLookupDataN(actionLookupKey, actionIndex) {
+        public override fun valueIsShareable(): Boolean {
+            return false
+        }
+    }
+
+    companion object {
+        /**
+         * Creates a key for the result of action execution. Does *not* intern its results, so should
+         * only be called once per `(actionLookupKey, actionIndex)` pair.
+         */
+        fun create(actionLookupKey: ActionLookupKey, actionIndex: Int): ActionLookupData {
+            if (!actionLookupKey.mayOwnShareableActions()) {
+                return createUnshareable(actionLookupKey, actionIndex)
+            }
+            return when (actionIndex) {
+                0 -> ActionLookupData0(actionLookupKey)
+                1 -> ActionLookupData1(actionLookupKey)
+                2 -> ActionLookupData2(actionLookupKey)
+                3 -> ActionLookupData3(actionLookupKey)
+                4 -> ActionLookupData4(actionLookupKey)
+                5 -> ActionLookupData5(actionLookupKey)
+                6 -> ActionLookupData6(actionLookupKey)
+                7 -> ActionLookupData7(actionLookupKey)
+                8 -> ActionLookupData8(actionLookupKey)
+                9 -> ActionLookupData9(actionLookupKey)
+                else -> ActionLookupDataN(actionLookupKey, actionIndex)
+            }
+        }
+
+        /**
+         * Similar to [.create], but the key will return `false` for [ ][.valueIsShareable].
+         */
+        fun createUnshareable(
+            actionLookupKey: ActionLookupKey?, actionIndex: Int
+        ): ActionLookupData {
+            return UnshareableActionLookupData(actionLookupKey, actionIndex)
+        }
+    }
 }

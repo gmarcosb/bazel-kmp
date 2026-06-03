@@ -11,232 +11,230 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformConstants;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.analysis.platform.PlatformConstants
 
 /**
  * Contains metadata used for reporting the progress and status of an action.
- *
- * <p>Morally an action's owner is the RuleConfiguredTarget instance responsible for creating it,
+ * 
+ * 
+ * Morally an action's owner is the RuleConfiguredTarget instance responsible for creating it,
  * but to avoid storing heavyweight analysis objects in actions, and to avoid coupling between the
  * analysis and actions packages, the RuleConfiguredTarget provides an instance of this class.
  */
 @Immutable
-public abstract class ActionOwner {
-  /** An action owner for special cases. Usage is strongly discouraged. */
-  @SerializationConstant
-  public static final ActionOwner SYSTEM_ACTION_OWNER =
-      createDummy(
-          /* label= */ PlatformConstants.INTERNAL_PLATFORM,
-          Location.BUILTIN,
-          /* targetKind= */ "empty target kind",
-          /* buildConfigurationMnemonic= */ "system",
-          /* configurationChecksum= */ "system",
-          /* buildConfigurationEvent= */ null,
-          /* isToolConfiguration= */ false,
-          /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-          /* aspectDescriptors= */ ImmutableList.of(),
-          /* execProperties= */ ImmutableMap.of());
+abstract class ActionOwner {
+    fun getDescription(): String? {
+        val label: Label? = getLabel()
+        if (label == null) {
+            return null
+        }
+        val targetDescription: String? = String.format("%s target %s", getTargetKind(), label)
 
-  public static ActionOwner create(
-      @Nullable Label label,
-      Location location,
-      String targetKind,
-      BuildConfigurationInfo buildConfigurationValue,
-      @Nullable PlatformInfo executionPlatform,
-      ImmutableList<AspectDescriptor> aspectDescriptors,
-      ImmutableMap<String, String> execProperties) {
-    if (aspectDescriptors.isEmpty() && execProperties.isEmpty()) {
-      return LiteActionOwner.createInternal(
-          label, location, targetKind, buildConfigurationValue, executionPlatform);
-    } else {
-      return FullActionOwner.createInternal(
-          label,
-          location,
-          targetKind,
-          buildConfigurationValue,
-          executionPlatform,
-          aspectDescriptors,
-          execProperties);
-    }
-  }
+        val aspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?> = getAspectDescriptors()
+        if (aspectDescriptors.isEmpty()) {
+            return targetDescription
+        }
 
-  @VisibleForTesting
-  public static ActionOwner createDummy(
-      @Nullable Label label,
-      Location location,
-      String targetKind,
-      String buildConfigurationMnemonic,
-      String configurationChecksum,
-      @Nullable BuildConfigurationEvent buildConfigurationEvent,
-      boolean isToolConfiguration,
-      @Nullable PlatformInfo executionPlatform,
-      ImmutableList<AspectDescriptor> aspectDescriptors,
-      ImmutableMap<String, String> execProperties) {
-    return FullActionOwner.createInternal(
-        label,
-        location,
-        targetKind,
-        BuildConfigurationInfo.AutoBuildConfigurationInfo.create(
-            buildConfigurationMnemonic,
-            configurationChecksum,
-            buildConfigurationEvent,
-            isToolConfiguration),
-        executionPlatform,
-        aspectDescriptors,
-        execProperties);
-  }
+        val aspectNames: String? =
+            aspectDescriptors.stream().map<Any?>(AspectDescriptor::getDescription).collect(Collectors.joining(", "))
 
-  @Nullable
-  public String getDescription() {
-    Label label = getLabel();
-    if (label == null) {
-      return null;
-    }
-    String targetDescription = String.format("%s target %s", getTargetKind(), label);
-
-    ImmutableList<AspectDescriptor> aspectDescriptors = getAspectDescriptors();
-    if (aspectDescriptors.isEmpty()) {
-      return targetDescription;
+        return String.format(
+            "aspect%s [%s] on %s",
+            if (aspectDescriptors.size >= 1) "s" else "", aspectNames, targetDescription
+        )
     }
 
-    String aspectNames =
-        aspectDescriptors.stream().map(AspectDescriptor::getDescription).collect(joining(", "));
+    /**
+     * Returns the label for this [ActionOwner], or null if the [.SYSTEM_ACTION_OWNER].
+     */
+    abstract fun getLabel(): Label?
 
-    return String.format(
-        "aspect%s [%s] on %s",
-        aspectDescriptors.size() >= 1 ? "s" : "", aspectNames, targetDescription);
-  }
+    /** Returns the location for this [ActionOwner].  */
+    abstract fun getLocation(): net.starlark.java.syntax.Location?
 
-  /**
-   * Returns the label for this {@link ActionOwner}, or null if the {@link #SYSTEM_ACTION_OWNER}.
-   */
-  @Nullable
-  public abstract Label getLabel();
+    /** Returns the target kind (rule class name) for this [ActionOwner].  */
+    abstract fun getTargetKind(): String?
 
-  /** Returns the location for this {@link ActionOwner}. */
-  public abstract Location getLocation();
+    /** Returns [BuildConfigurationInfo] for this [ActionOwner].  */
+    abstract fun getBuildConfigurationInfo(): BuildConfigurationInfo?
 
-  /** Returns the target kind (rule class name) for this {@link ActionOwner}. */
-  public abstract String getTargetKind();
-
-  /** Returns {@link BuildConfigurationInfo} for this {@link ActionOwner}. */
-  public abstract BuildConfigurationInfo getBuildConfigurationInfo();
-
-  /** Returns the mnemonic for the configuration for this {@link ActionOwner}. */
-  public final String getBuildConfigurationMnemonic() {
-    return getBuildConfigurationInfo().getMnemonic();
-  }
-
-  /**
-   * Returns the short cache key for the configuration for this {@link ActionOwner}.
-   *
-   * <p>Special action owners that are not targets can return any string here. If the underlying
-   * configuration is null, this should return "null".
-   */
-  public final String getConfigurationChecksum() {
-    return getBuildConfigurationInfo().checksum();
-  }
-
-  /**
-   * Return the {@link BuildConfigurationEvent} for this {@link ActionOwner}, if any, as it should
-   * be reported in the build event protocol.
-   */
-  @Nullable
-  public final BuildConfigurationEvent getBuildConfigurationEvent() {
-    return getBuildConfigurationInfo().toBuildEvent();
-  }
-
-  /**
-   * Returns true when the {@link BuildConfigurationInfo} for this {@link ActionOwner} is a
-   * tool-related configuration.
-   */
-  public final boolean isBuildConfigurationForTool() {
-    return getBuildConfigurationInfo().isToolConfiguration();
-  }
-
-  /**
-   * Returns the {@link PlatformInfo} platform this action should be executed on. If the execution
-   * platform is {@code null}, then the host platform is assumed.
-   */
-  @Nullable
-  public abstract PlatformInfo getExecutionPlatform();
-
-  public abstract ImmutableList<AspectDescriptor> getAspectDescriptors();
-
-  /**
-   * Returns a String to String map containing the execution properties available at the target
-   * level, e.g. via the exec_properties attribute of the rule or the execution platform for the
-   * exec group that the action is assigned to. This does <em>not</em> include any action-specific
-   * properties.
-   */
-  @VisibleForTesting
-  public abstract ImmutableMap<String, String> getExecProperties();
-
-  /**
-   * Created when {@code aspectDescriptors} and {@code execProperties} are both empty.
-   *
-   * <p>{@link LiteActionOwner} is more likely to be created since both fields above are usually
-   * empty. This will save 8 bytes of memory for each {@link ActionOwner} instance compared to
-   * keeping both empty fields.
-   */
-  @AutoValue
-  abstract static class LiteActionOwner extends ActionOwner {
-    static LiteActionOwner createInternal(
-        @Nullable Label label,
-        Location location,
-        String targetKind,
-        BuildConfigurationInfo buildConfigurationInfo,
-        @Nullable PlatformInfo executionPlatform) {
-      return new AutoValue_ActionOwner_LiteActionOwner(
-          label, location, targetKind, buildConfigurationInfo, executionPlatform);
+    /** Returns the mnemonic for the configuration for this [ActionOwner].  */
+    fun getBuildConfigurationMnemonic(): String? {
+        return getBuildConfigurationInfo().getMnemonic()
     }
 
-    @Override
-    public final ImmutableList<AspectDescriptor> getAspectDescriptors() {
-      return ImmutableList.of();
+    /**
+     * Returns the short cache key for the configuration for this [ActionOwner].
+     * 
+     * 
+     * Special action owners that are not targets can return any string here. If the underlying
+     * configuration is null, this should return "null".
+     */
+    fun getConfigurationChecksum(): String? {
+        return getBuildConfigurationInfo().checksum()
     }
 
-    @Override
-    public final ImmutableMap<String, String> getExecProperties() {
-      return ImmutableMap.of();
+    /**
+     * Return the [BuildConfigurationEvent] for this [ActionOwner], if any, as it should
+     * be reported in the build event protocol.
+     */
+    fun getBuildConfigurationEvent(): BuildConfigurationEvent? {
+        return getBuildConfigurationInfo().toBuildEvent()
     }
-  }
 
-  /** Created when either {@code aspectDescriptors} or {@code execProperties} is not empty. */
-  @AutoValue
-  abstract static class FullActionOwner extends ActionOwner {
-    static FullActionOwner createInternal(
-        @Nullable Label label,
-        Location location,
-        String targetKind,
-        BuildConfigurationInfo buildConfigurationInfo,
-        @Nullable PlatformInfo executionPlatform,
-        ImmutableList<AspectDescriptor> aspectDescriptors,
-        ImmutableMap<String, String> execProperties) {
-      return new AutoValue_ActionOwner_FullActionOwner(
-          label,
-          location,
-          targetKind,
-          buildConfigurationInfo,
-          executionPlatform,
-          aspectDescriptors,
-          execProperties);
+    /**
+     * Returns true when the [BuildConfigurationInfo] for this [ActionOwner] is a
+     * tool-related configuration.
+     */
+    fun isBuildConfigurationForTool(): Boolean {
+        return getBuildConfigurationInfo().isToolConfiguration()
     }
-  }
+
+    /**
+     * Returns the [PlatformInfo] platform this action should be executed on. If the execution
+     * platform is `null`, then the host platform is assumed.
+     */
+    abstract fun getExecutionPlatform(): PlatformInfo?
+
+    abstract fun getAspectDescriptors(): com.google.common.collect.ImmutableList<AspectDescriptor?>
+
+    /**
+     * Returns a String to String map containing the execution properties available at the target
+     * level, e.g. via the exec_properties attribute of the rule or the execution platform for the
+     * exec group that the action is assigned to. This does *not* include any action-specific
+     * properties.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    abstract fun getExecProperties(): com.google.common.collect.ImmutableMap<String?, String?>?
+
+    /**
+     * Created when `aspectDescriptors` and `execProperties` are both empty.
+     * 
+     * 
+     * [LiteActionOwner] is more likely to be created since both fields above are usually
+     * empty. This will save 8 bytes of memory for each [ActionOwner] instance compared to
+     * keeping both empty fields.
+     */
+    @AutoValue
+    internal abstract class LiteActionOwner : ActionOwner() {
+        override fun getAspectDescriptors(): com.google.common.collect.ImmutableList<AspectDescriptor?> {
+            return com.google.common.collect.ImmutableList.of<AspectDescriptor?>()
+        }
+
+        override fun getExecProperties(): com.google.common.collect.ImmutableMap<String?, String?> {
+            return com.google.common.collect.ImmutableMap.of<String?, String?>()
+        }
+
+        companion object {
+            fun createInternal(
+                label: Label?,
+                location: net.starlark.java.syntax.Location?,
+                targetKind: String?,
+                buildConfigurationInfo: BuildConfigurationInfo?,
+                executionPlatform: PlatformInfo?
+            ): LiteActionOwner {
+                return AutoValue_ActionOwner_LiteActionOwner(
+                    label, location, targetKind, buildConfigurationInfo, executionPlatform
+                )
+            }
+        }
+    }
+
+    /** Created when either `aspectDescriptors` or `execProperties` is not empty.  */
+    @AutoValue
+    internal object FullActionOwner : ActionOwner() {
+        fun createInternal(
+            label: Label?,
+            location: net.starlark.java.syntax.Location?,
+            targetKind: String?,
+            buildConfigurationInfo: BuildConfigurationInfo?,
+            executionPlatform: PlatformInfo?,
+            aspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?>?,
+            execProperties: com.google.common.collect.ImmutableMap<String?, String?>?
+        ): FullActionOwner {
+            return AutoValue_ActionOwner_FullActionOwner(
+                label,
+                location,
+                targetKind,
+                buildConfigurationInfo,
+                executionPlatform,
+                aspectDescriptors,
+                execProperties
+            )
+        }
+    }
+
+    companion object {
+        /** An action owner for special cases. Usage is strongly discouraged.  */
+        @SerializationConstant
+        val SYSTEM_ACTION_OWNER: ActionOwner = createDummy( /* label= */
+            PlatformConstants.INTERNAL_PLATFORM,
+            net.starlark.java.syntax.Location.BUILTIN,  /* targetKind= */
+            "empty target kind",  /* buildConfigurationMnemonic= */
+            "system",  /* configurationChecksum= */
+            "system",  /* buildConfigurationEvent= */
+            null,  /* isToolConfiguration= */
+            false,  /* executionPlatform= */
+            PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+            com.google.common.collect.ImmutableList.of<AspectDescriptor?>(),  /* execProperties= */
+            com.google.common.collect.ImmutableMap.of<String?, String?>()
+        )
+
+        fun create(
+            label: Label?,
+            location: net.starlark.java.syntax.Location?,
+            targetKind: String?,
+            buildConfigurationValue: BuildConfigurationInfo?,
+            executionPlatform: PlatformInfo?,
+            aspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?>,
+            execProperties: com.google.common.collect.ImmutableMap<String?, String?>
+        ): ActionOwner {
+            if (aspectDescriptors.isEmpty() && execProperties.isEmpty()) {
+                return LiteActionOwner.Companion.createInternal(
+                    label, location, targetKind, buildConfigurationValue, executionPlatform
+                )
+            } else {
+                return FullActionOwner.createInternal(
+                    label,
+                    location,
+                    targetKind,
+                    buildConfigurationValue,
+                    executionPlatform,
+                    aspectDescriptors,
+                    execProperties
+                )
+            }
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun createDummy(
+            label: Label?,
+            location: net.starlark.java.syntax.Location?,
+            targetKind: String?,
+            buildConfigurationMnemonic: String?,
+            configurationChecksum: String?,
+            buildConfigurationEvent: BuildConfigurationEvent?,
+            isToolConfiguration: Boolean,
+            executionPlatform: PlatformInfo?,
+            aspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?>?,
+            execProperties: com.google.common.collect.ImmutableMap<String?, String?>?
+        ): ActionOwner {
+            return FullActionOwner.createInternal(
+                label,
+                location,
+                targetKind,
+                BuildConfigurationInfo.AutoBuildConfigurationInfo.create(
+                    buildConfigurationMnemonic,
+                    configurationChecksum,
+                    buildConfigurationEvent,
+                    isToolConfiguration
+                ),
+                executionPlatform,
+                aspectDescriptors,
+                execProperties
+            )
+        }
+    }
 }

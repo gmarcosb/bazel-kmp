@@ -11,199 +11,199 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.FileArtifactValue.ConstantMetadataValue;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.HashCodes;
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue
 
 /**
  * The artifacts behind a runfiles tree.
- *
- * <p>NB: since this class contains a nested set (through {@link RunfilesTree}), {@link
- * RunfilesTreeAction} needs to be special-cased in {@code
- * Actions.assignOwnersAndThrowIfConflictMaybeToleratingSharedActions}. The comment in that method
+ * 
+ * 
+ * NB: since this class contains a nested set (through [RunfilesTree]), [ ] needs to be special-cased in `Actions.assignOwnersAndThrowIfConflictMaybeToleratingSharedActions`. The comment in that method
  * explains why.
  */
 @AutoCodec
-public final class RunfilesArtifactValue implements RichArtifactData {
-
-  /** A callback for consuming artifacts in a runfiles tree. */
-  @FunctionalInterface
-  public interface RunfilesConsumer<T> {
-    void accept(Artifact artifact, T metadata);
-  }
-
-  private final FileArtifactValue metadata;
-  private final RunfilesTree runfilesTree;
-
-  // Parallel lists.
-  private final ImmutableList<Artifact> files;
-  private final ImmutableList<FileArtifactValue> fileValues;
-
-  // Parallel lists.
-  private final ImmutableList<Artifact> trees;
-  private final ImmutableList<TreeArtifactValue> treeValues;
-
-  // Parallel lists
-  private final ImmutableList<Artifact> filesets;
-  private final ImmutableList<FilesetOutputTree> filesetValues;
-
-  public RunfilesArtifactValue(
-      RunfilesTree runfilesTree,
-      ImmutableList<Artifact> files,
-      ImmutableList<FileArtifactValue> fileValues,
-      ImmutableList<Artifact> trees,
-      ImmutableList<TreeArtifactValue> treeValues,
-      ImmutableList<Artifact> filesets,
-      ImmutableList<FilesetOutputTree> filesetValues) {
-    this.runfilesTree = checkNotNull(runfilesTree);
-    this.files = checkNotNull(files);
-    this.fileValues = checkNotNull(fileValues);
-    this.trees = checkNotNull(trees);
-    this.treeValues = checkNotNull(treeValues);
-    this.filesets = checkNotNull(filesets);
-    this.filesetValues = checkNotNull(filesetValues);
-    checkArgument(
-        files.size() == fileValues.size()
-            && trees.size() == treeValues.size()
-            && filesets.size() == filesetValues.size(),
-        "Size mismatch: %s",
-        this);
-
-    // Compute the digest of this runfiles tree by combining its layout and the digests of every
-    // artifact it references.
-    this.metadata = FileArtifactValue.createRunfilesProxy(computeDigest());
-  }
-
-  private byte[] computeDigest() {
-    Fingerprint result = new Fingerprint();
-
-    result.addInt(runfilesTree.getMapping().size());
-    for (var entry : runfilesTree.getMapping().entrySet()) {
-      result.addPath(entry.getKey());
-      result.addBoolean(entry.getValue() != null);
-      if (entry.getValue() != null) {
-        result.addPath(entry.getValue().getExecPath());
-      }
+class RunfilesArtifactValue(
+    runfilesTree: RunfilesTree?,
+    files: com.google.common.collect.ImmutableList<Artifact?>?,
+    fileValues: com.google.common.collect.ImmutableList<FileArtifactValue?>?,
+    trees: com.google.common.collect.ImmutableList<Artifact?>?,
+    treeValues: com.google.common.collect.ImmutableList<TreeArtifactValue?>?,
+    filesets: com.google.common.collect.ImmutableList<Artifact?>?,
+    filesetValues: com.google.common.collect.ImmutableList<FilesetOutputTree>?
+) : RichArtifactData {
+    /** A callback for consuming artifacts in a runfiles tree.  */
+    fun interface RunfilesConsumer<T> {
+        fun accept(artifact: Artifact?, metadata: T?)
     }
 
-    result.addInt(files.size());
-    for (int i = 0; i < files.size(); i++) {
-      FileArtifactValue value =
-          files.get(i).isConstantMetadata() ? ConstantMetadataValue.INSTANCE : fileValues.get(i);
-      value.addTo(result);
+    private val metadata: FileArtifactValue
+    private val runfilesTree: RunfilesTree
+
+    // Parallel lists.
+    private val files: com.google.common.collect.ImmutableList<Artifact?>
+    private val fileValues: com.google.common.collect.ImmutableList<FileArtifactValue?>
+
+    // Parallel lists.
+    private val trees: com.google.common.collect.ImmutableList<Artifact?>
+    private val treeValues: com.google.common.collect.ImmutableList<TreeArtifactValue?>
+
+    // Parallel lists
+    private val filesets: com.google.common.collect.ImmutableList<Artifact?>
+    private val filesetValues: com.google.common.collect.ImmutableList<FilesetOutputTree>
+
+    init {
+        this.runfilesTree = com.google.common.base.Preconditions.checkNotNull<RunfilesTree>(runfilesTree)
+        this.files =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<Artifact?>>(files)
+        this.fileValues =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<FileArtifactValue?>>(
+                fileValues
+            )
+        this.trees =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<Artifact?>>(trees)
+        this.treeValues =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<TreeArtifactValue?>>(
+                treeValues
+            )
+        this.filesets =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<Artifact?>>(
+                filesets
+            )
+        this.filesetValues =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<FilesetOutputTree>>(
+                filesetValues
+            )
+        com.google.common.base.Preconditions.checkArgument(
+            files.size == fileValues.size && trees.size == treeValues.size && filesets.size == filesetValues.size,
+            "Size mismatch: %s",
+            this
+        )
+
+        // Compute the digest of this runfiles tree by combining its layout and the digests of every
+        // artifact it references.
+        this.metadata = FileArtifactValue.Companion.createRunfilesProxy(computeDigest())
     }
 
-    result.addInt(trees.size());
-    for (int i = 0; i < trees.size(); i++) {
-      result.addBytes(treeValues.get(i).getDigest());
+    private fun computeDigest(): ByteArray {
+        val result: Fingerprint = Fingerprint()
+
+        result.addInt(runfilesTree.getMapping().size)
+        for (entry in runfilesTree.getMapping().entries) {
+            result.addPath(entry.key)
+            result.addBoolean(entry.value != null)
+            if (entry.value != null) {
+                result.addPath(entry.value.getExecPath())
+            }
+        }
+
+        result.addInt(files.size)
+        for (i in files.indices) {
+            val value: FileArtifactValue =
+                if (files.get(i).isConstantMetadata()) ConstantMetadataValue.Companion.INSTANCE else fileValues.get(i)
+            value.addTo(result)
+        }
+
+        result.addInt(trees.size)
+        for (i in trees.indices) {
+            result.addBytes(treeValues.get(i).getDigest())
+        }
+
+        for (i in filesets.indices) {
+            val fileset: FilesetOutputTree = filesetValues.get(i)
+            fileset.addTo(result)
+        }
+
+        return result.digestAndReset()
     }
 
-    for (int i = 0; i < filesets.size(); i++) {
-      FilesetOutputTree fileset = filesetValues.get(i);
-      fileset.addTo(result);
+    fun withOverriddenRunfilesTree(overrideTree: RunfilesTree?): RunfilesArtifactValue {
+        return RunfilesArtifactValue(
+            overrideTree, files, fileValues, trees, treeValues, filesets, filesetValues
+        )
     }
 
-    return result.digestAndReset();
-  }
-
-  public RunfilesArtifactValue withOverriddenRunfilesTree(RunfilesTree overrideTree) {
-    return new RunfilesArtifactValue(
-        overrideTree, files, fileValues, trees, treeValues, filesets, filesetValues);
-  }
-
-  /** Returns the data of the artifact for this value, as computed by the action cache checker. */
-  public FileArtifactValue getMetadata() {
-    return metadata;
-  }
-
-  /** Returns the runfiles tree this value represents. */
-  public RunfilesTree getRunfilesTree() {
-    return runfilesTree;
-  }
-
-  /**
-   * Returns all artifacts in the runfiles tree this value represents. Tree artifacts and filesets
-   * are included, but are not expanded.
-   *
-   * <p>This is similar to calling {@link RunfilesTree#getArtifacts} on the result of {@link
-   * #getRunfilesTree}, except this method additionally includes manifest files.
-   */
-  public Iterable<Artifact> getAllArtifacts() {
-    return Iterables.concat(files, trees, filesets);
-  }
-
-  /** Visits the file artifacts that this runfiles artifact expands to, together with their data. */
-  public void forEachFile(RunfilesConsumer<FileArtifactValue> consumer) {
-    for (int i = 0; i < files.size(); i++) {
-      consumer.accept(files.get(i), fileValues.get(i));
+    /** Returns the data of the artifact for this value, as computed by the action cache checker.  */
+    fun getMetadata(): FileArtifactValue {
+        return metadata
     }
-  }
 
-  /** Visits the tree artifacts that this runfiles artifact expands to, together with their data. */
-  public void forEachTree(RunfilesConsumer<TreeArtifactValue> consumer) {
-    for (int i = 0; i < trees.size(); i++) {
-      consumer.accept(trees.get(i), treeValues.get(i));
+    /** Returns the runfiles tree this value represents.  */
+    fun getRunfilesTree(): RunfilesTree {
+        return runfilesTree
     }
-  }
 
-  /**
-   * Visits the fileset artifacts that this runfiles artifact expands to, together with their data.
-   */
-  public void forEachFileset(RunfilesConsumer<FilesetOutputTree> consumer) {
-    for (int i = 0; i < filesets.size(); i++) {
-      consumer.accept(filesets.get(i), filesetValues.get(i));
+    /**
+     * Returns all artifacts in the runfiles tree this value represents. Tree artifacts and filesets
+     * are included, but are not expanded.
+     * 
+     * 
+     * This is similar to calling [RunfilesTree.getArtifacts] on the result of [ ][.getRunfilesTree], except this method additionally includes manifest files.
+     */
+    fun getAllArtifacts(): Iterable<Artifact?> {
+        return com.google.common.collect.Iterables.concat<Artifact?>(files, trees, filesets)
     }
-  }
 
-  @Override
-  public boolean equals(Object o) {
-    // This method, seemingly erroneously, does not check whether the runfilesTree of the two
-    // objects are equivalent. This is because it's unnecessary because the layout of the runfiles
-    // tree is already factored into the equality decision in two ways:
-    // - Through "metadata", which takes the layout into account (see computeDigest())
-    // - Through the runfiles input manifest file, which is part of the runfiles tree, which
-    //   contains the exact mapping and whose digest is in "fileValues"
-    if (this == o) {
-      return true;
+    /** Visits the file artifacts that this runfiles artifact expands to, together with their data.  */
+    fun forEachFile(consumer: RunfilesConsumer<FileArtifactValue?>) {
+        for (i in files.indices) {
+            consumer.accept(files.get(i), fileValues.get(i))
+        }
     }
-    if (!(o instanceof RunfilesArtifactValue that)) {
-      return false;
+
+    /** Visits the tree artifacts that this runfiles artifact expands to, together with their data.  */
+    fun forEachTree(consumer: RunfilesConsumer<TreeArtifactValue?>) {
+        for (i in trees.indices) {
+            consumer.accept(trees.get(i), treeValues.get(i))
+        }
     }
-    return metadata.equals(that.metadata)
-        && files.equals(that.files)
-        && fileValues.equals(that.fileValues)
-        && trees.equals(that.trees)
-        && treeValues.equals(that.treeValues)
-        && filesets.equals(that.filesets)
-        && filesetValues.equals(that.filesetValues);
-  }
 
-  @Override
-  public int hashCode() {
-    return HashCodes.hashObjects(
-        metadata, files, fileValues, trees, treeValues, filesets, filesetValues);
-  }
+    /**
+     * Visits the fileset artifacts that this runfiles artifact expands to, together with their data.
+     */
+    fun forEachFileset(consumer: RunfilesConsumer<FilesetOutputTree?>) {
+        for (i in filesets.indices) {
+            consumer.accept(filesets.get(i), filesetValues.get(i))
+        }
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("metadata", metadata)
-        .add("files", files)
-        .add("fileValues", fileValues)
-        .add("trees", trees)
-        .add("treeValues", treeValues)
-        .add("filesets", filesets)
-        .add("filesetValues", fileValues)
-        .toString();
-  }
+    override fun equals(o: Any?): Boolean {
+        // This method, seemingly erroneously, does not check whether the runfilesTree of the two
+        // objects are equivalent. This is because it's unnecessary because the layout of the runfiles
+        // tree is already factored into the equality decision in two ways:
+        // - Through "metadata", which takes the layout into account (see computeDigest())
+        // - Through the runfiles input manifest file, which is part of the runfiles tree, which
+        //   contains the exact mapping and whose digest is in "fileValues"
+        if (this === o) {
+            return true
+        }
+        if (o !is RunfilesArtifactValue) {
+            return false
+        }
+        return metadata == o.metadata
+                && files == o.files
+                && fileValues == o.fileValues
+                && trees == o.trees
+                && treeValues == o.treeValues
+                && filesets == o.filesets
+                && filesetValues == o.filesetValues
+    }
+
+    override fun hashCode(): Int {
+        return HashCodes.hashObjects(
+            metadata, files, fileValues, trees, treeValues, filesets, filesetValues
+        )
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("metadata", metadata)
+            .add("files", files)
+            .add("fileValues", fileValues)
+            .add("trees", trees)
+            .add("treeValues", treeValues)
+            .add("filesets", filesets)
+            .add("filesetValues", fileValues)
+            .toString()
+    }
 }

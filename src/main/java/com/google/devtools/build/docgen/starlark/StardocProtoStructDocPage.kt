@@ -11,137 +11,105 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen.starlark
 
-package com.google.devtools.build.docgen.starlark;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ModuleInfo;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ProviderInfo;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.StarlarkOtherSymbolInfo;
+import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ModuleInfo
 
 /**
- * A documentation page for a Starlark struct described by a Stardoc proto obtained via {@code
- * starlark_doc_extract} from a .bzl file.
+ * A documentation page for a Starlark struct described by a Stardoc proto obtained via `starlark_doc_extract` from a .bzl file.
  */
-public final class StardocProtoStructDocPage extends StarlarkDocPage {
-  private final String sourceFileLabel;
-  private final StarlarkOtherSymbolInfo structInfo;
+class StardocProtoStructDocPage(
+    expander: StarlarkDocExpander?,
+    moduleInfo: ModuleInfo,
+    structInfo: StarlarkOtherSymbolInfo
+) : StarlarkDocPage(expander) {
+    private val sourceFileLabel: String?
+    private val structInfo: StarlarkOtherSymbolInfo
 
-  public StardocProtoStructDocPage(
-      StarlarkDocExpander expander, ModuleInfo moduleInfo, StarlarkOtherSymbolInfo structInfo) {
-    super(expander);
-    this.sourceFileLabel = moduleInfo.getFile();
-    this.structInfo = structInfo;
-  }
-
-  @Override
-  public String getName() {
-    return structInfo.getName();
-  }
-
-  @Override
-  public String getRawDocumentation() {
-    return structInfo.getDoc();
-  }
-
-  @Override
-  public String getTitle() {
-    return structInfo.getName();
-  }
-
-  @Override
-  public String getSourceFile() {
-    return getSourceFileFromLabel(sourceFileLabel);
-  }
-
-  @Override
-  public String getLoadStatement() {
-    return String.format("load(\"%s\", \"%s\")", sourceFileLabel, structInfo.getName());
-  }
-
-  public void addProviderAlias(ProviderInfo providerInfo) {
-    addMember(new ProviderAliasDoc(expander, sourceFileLabel, structInfo.getName(), providerInfo));
-  }
-
-  private static final class ProviderAliasDoc extends MemberDoc {
-    private final String sourceFileLabel;
-    private final String structName;
-    private final String nameWithoutNamespace;
-    private final ProviderInfo providerInfo;
-
-    ProviderAliasDoc(
-        StarlarkDocExpander expander,
-        String sourceFileLabel,
-        String structName,
-        ProviderInfo providerInfo) {
-      super(expander);
-      this.sourceFileLabel = sourceFileLabel;
-      this.structName = structName;
-      this.nameWithoutNamespace =
-          providerInfo.getProviderName().startsWith(structName + ".")
-              ? providerInfo.getProviderName().substring(structName.length() + 1)
-              : providerInfo.getProviderName();
-      this.providerInfo = providerInfo;
+    init {
+        this.sourceFileLabel = moduleInfo.getFile()
+        this.structInfo = structInfo
     }
 
-    @Override
-    public String getName() {
-      return nameWithoutNamespace;
+    val name: String
+        get() = structInfo.getName()
+
+    val rawDocumentation: String
+        get() = structInfo.getDoc()
+
+    val title: String
+        get() = structInfo.getName()
+
+    val sourceFile: String?
+        get() = StarlarkDoc.Companion.getSourceFileFromLabel(sourceFileLabel)
+
+    val loadStatement: String?
+        get() = java.lang.String.format("load(\"%s\", \"%s\")", sourceFileLabel, structInfo.getName())
+
+    fun addProviderAlias(providerInfo: ProviderInfo) {
+        addMember(ProviderAliasDoc(expander, sourceFileLabel, structInfo.getName(), providerInfo))
     }
 
-    @Override
-    public boolean documented() {
-      return true;
-    }
+    private class ProviderAliasDoc(
+        expander: StarlarkDocExpander?,
+        private val sourceFileLabel: String?,
+        structName: String,
+        providerInfo: ProviderInfo
+    ) : MemberDoc(expander) {
+        private val structName: String?
+        val name: String?
+        private val providerInfo: ProviderInfo
 
-    @Override
-    public boolean isCallable() {
-      // For simplicity, we document a provider alias in its role as a symbol.
-      return false;
-    }
+        init {
+            this.structName = structName
+            this.name =
+                if (providerInfo.getProviderName().startsWith(structName + "."))
+                    providerInfo.getProviderName().substring(structName.length + 1)
+                else
+                    providerInfo.getProviderName()
+            this.providerInfo = providerInfo
+        }
 
-    @Override
-    public ImmutableList<? extends ParamDoc> getParams() {
-      return ImmutableList.of();
-    }
+        override fun documented(): Boolean {
+            return true
+        }
 
-    @Override
-    public String getReturnType() {
-      return expander.getTypeParser().getHtmlForIdentifier("Provider");
-    }
+        val isCallable: Boolean
+            get() =// For simplicity, we document a provider alias in its role as a symbol.
+                false
 
-    @Override
-    public String getRawDocumentation() {
-      return String.format("A convenience alias for the %s provider symbol.", getAliasedName());
-    }
+        val params: com.google.common.collect.ImmutableList<out ParamDoc?>
+            get() = com.google.common.collect.ImmutableList.of<ParamDoc?>()
 
-    @Override
-    public String getDocumentation() {
-      return String.format(
-          "A convenience alias for the %s provider symbol.",
-          expander.getTypeParser().getHtmlForIdentifier(getAliasedName()));
-    }
+        val returnType: String
+            get() = expander.getTypeParser().getHtmlForIdentifier("Provider")
 
-    /**
-     * Returns the documented name of the provider symbol that this one is aliasing; or this
-     * provider's name without the struct namespace as fallback.
-     */
-    private String getAliasedName() {
-      if (expander.getTypeParser().isDocumentedIdentifier(providerInfo.getOriginKey().getName())) {
-        return providerInfo.getOriginKey().getName();
-      } else {
-        return getName();
-      }
-    }
+        val rawDocumentation: String?
+            get() = String.format("A convenience alias for the %s provider symbol.", this.aliasedName)
 
-    @Override
-    public String getSignature() {
-      return String.format("%s %s", getReturnType(), getName());
-    }
+        val documentation: String?
+            get() = String.format(
+                "A convenience alias for the %s provider symbol.",
+                expander.getTypeParser().getHtmlForIdentifier(this.aliasedName)
+            )
 
-    @Override
-    public String getLoadStatement() {
-      return String.format("load(\"%s\", \"%s\")", sourceFileLabel, structName);
+        val aliasedName: String?
+            /**
+             * Returns the documented name of the provider symbol that this one is aliasing; or this
+             * provider's name without the struct namespace as fallback.
+             */
+            get() {
+                if (expander.getTypeParser().isDocumentedIdentifier(providerInfo.getOriginKey().getName())) {
+                    return providerInfo.getOriginKey().getName()
+                } else {
+                    return this.name
+                }
+            }
+
+        val signature: String?
+            get() = String.format("%s %s", this.returnType, this.name)
+
+        val loadStatement: String?
+            get() = String.format("load(\"%s\", \"%s\")", sourceFileLabel, structName)
     }
-  }
 }

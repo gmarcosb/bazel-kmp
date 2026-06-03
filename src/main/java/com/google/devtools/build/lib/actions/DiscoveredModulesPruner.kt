@@ -11,73 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
 /**
  * Prunes discovered CPP modules by filtering out modules which are already accounted for
  * transitively.
- *
- * <p>{@link #DEFAULT} should be used except when special handling is required for {@link NestedSet}
+ * 
+ * 
+ * [.DEFAULT] should be used except when special handling is required for [NestedSet]
  * data backed by remote storage.
  */
-public interface DiscoveredModulesPruner {
+interface DiscoveredModulesPruner {
+    /**
+     * Computes top-level only modules, i.e. used modules that aren't also dependencies of other used
+     * modules.
+     * 
+     * 
+     * The returned set's iteration order should match that of `usedModules`.
+     * 
+     * @param action the action requesting module pruning
+     * @param usedModules set of all modules used by `action`
+     * @param transitivelyUsedModules map from module to its transitive module dependencies
+     * @return a subset of `usedModules` without elements that are already accounted for via
+     * transitive dependencies
+     * @throws InterruptedException if [NestedSet] data in `transitivelyUsedModules` is
+     * backed by remote storage and an interruption occurs during retrieval
+     * @throws LostInputsActionExecutionException if [NestedSet] data in `transitivelyUsedModules` is backed by remote storage and retrieval fails (e.g. due to
+     * timeout)
+     */
+    @Throws(java.lang.InterruptedException::class, LostInputsActionExecutionException::class)
+    fun computeTopLevelModules(
+        action: com.google.devtools.build.lib.actions.Action?,
+        usedModules: MutableSet<out Artifact?>?,
+        transitivelyUsedModules: com.google.common.collect.ImmutableMap<Artifact?, NestedSet<Artifact?>?>?
+    ): MutableSet<Artifact?>?
 
-  /**
-   * Computes top-level only modules, i.e. used modules that aren't also dependencies of other used
-   * modules.
-   *
-   * <p>The returned set's iteration order should match that of {@code usedModules}.
-   *
-   * @param action the action requesting module pruning
-   * @param usedModules set of all modules used by {@code action}
-   * @param transitivelyUsedModules map from module to its transitive module dependencies
-   * @return a subset of {@code usedModules} without elements that are already accounted for via
-   *     transitive dependencies
-   * @throws InterruptedException if {@link NestedSet} data in {@code transitivelyUsedModules} is
-   *     backed by remote storage and an interruption occurs during retrieval
-   * @throws LostInputsActionExecutionException if {@link NestedSet} data in {@code
-   *     transitivelyUsedModules} is backed by remote storage and retrieval fails (e.g. due to
-   *     timeout)
-   */
-  Set<Artifact> computeTopLevelModules(
-      Action action,
-      Set<? extends Artifact> usedModules,
-      ImmutableMap<Artifact, NestedSet<Artifact>> transitivelyUsedModules)
-      throws InterruptedException, LostInputsActionExecutionException;
+    companion object {
+        /** Default implementation of module pruning for in-memory [NestedSet] data.  */
+        val DEFAULT:  // See comment on topLevel.remove().
+                DiscoveredModulesPruner =
+            DiscoveredModulesPruner { action: com.google.devtools.build.lib.actions.Action?, usedModules: MutableSet<out Artifact?>?, transitivelyUsedModules: com.google.common.collect.ImmutableMap<Artifact?, NestedSet<Artifact?>?>? ->
+                val topLevel: MutableSet<Artifact?> = LinkedHashSet<Artifact?>(usedModules)
+                // It is better to iterate over each nested set here instead of creating a joint one and
+                // iterating over it, as this makes use of NestedSet's memoization (each of them has likely
+                // been iterated over before).
+                for (entry in transitivelyUsedModules.entries) {
+                    val directDep: Artifact? = entry.key
+                    if (!topLevel.contains(directDep)) {
+                        // If this module was removed from topLevel because it is a dependency of another
+                        // module, we can safely ignore it now as all of its dependants have also been removed.
+                        continue
+                    }
+                    val transitiveDeps: MutableList<Artifact?> = entry.value.toList()
 
-  /** Default implementation of module pruning for in-memory {@link NestedSet} data. */
-  @SuppressWarnings("SetRemoveAll") // See comment on topLevel.remove().
-  DiscoveredModulesPruner DEFAULT =
-      (action, usedModules, transitivelyUsedModules) -> {
-        Set<Artifact> topLevel = new LinkedHashSet<>(usedModules);
-
-        // It is better to iterate over each nested set here instead of creating a joint one and
-        // iterating over it, as this makes use of NestedSet's memoization (each of them has likely
-        // been iterated over before).
-        for (Map.Entry<Artifact, NestedSet<Artifact>> entry : transitivelyUsedModules.entrySet()) {
-          Artifact directDep = entry.getKey();
-          if (!topLevel.contains(directDep)) {
-            // If this module was removed from topLevel because it is a dependency of another
-            // module, we can safely ignore it now as all of its dependants have also been removed.
-            continue;
-          }
-          List<Artifact> transitiveDeps = entry.getValue().toList();
-
-          // Don't use Set.removeAll() here as that iterates over the smaller set (topLevel, which
-          // would support efficient lookup) and looks up in the larger one (transitiveDeps, which
-          // is a linear scan).
-          for (Artifact module : transitiveDeps) {
-            topLevel.remove(module);
-          }
-        }
-
-        return topLevel;
-      };
+                    // Don't use Set.removeAll() here as that iterates over the smaller set (topLevel, which
+                    // would support efficient lookup) and looks up in the larger one (transitiveDeps, which
+                    // is a linear scan).
+                    for (module in transitiveDeps) {
+                        topLevel.remove(module)
+                    }
+                }
+                topLevel
+            }
+    }
 }

@@ -11,118 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.RepositoryMapping
 
 /**
- * An interface for an {@link Action}, containing only side-effect-free query methods for
+ * An interface for an [Action], containing only side-effect-free query methods for
  * information needed during both action analysis and execution.
- *
- * <p>The split between {@link Action} and {@link ActionExecutionMetadata} is somewhat arbitrary,
+ * 
+ * 
+ * The split between [Action] and [ActionExecutionMetadata] is somewhat arbitrary,
  * other than that all methods with side effects must belong to the former.
  */
-public interface ActionExecutionMetadata extends ActionAnalysisMetadata {
+interface ActionExecutionMetadata : ActionAnalysisMetadata {
+    /**
+     * If this executable can supply verbose information, returns a string that can be used as a
+     * progress message while this executable is running. A return value of `null` indicates no
+     * message should be reported.
+     */
+    fun getProgressMessage(): String?
 
-  /**
-   * If this executable can supply verbose information, returns a string that can be used as a
-   * progress message while this executable is running. A return value of {@code null} indicates no
-   * message should be reported.
-   */
-  @Nullable
-  String getProgressMessage();
+    /**
+     * A variant of [.getProgressMessage] that additionally takes the [RepositoryMapping]
+     * of the main repository, which can be used by the implementation to emit labels with apparent
+     * instead of canonical repository names. A return value of `null` indicates no message
+     * should be reported.
+     * 
+     * 
+     * The default implementation simply returns the result of [.getProgressMessage].
+     */
+    fun getProgressMessage(mainRepositoryMapping: RepositoryMapping?): String? {
+        return getProgressMessage()
+    }
 
-  /**
-   * A variant of {@link #getProgressMessage} that additionally takes the {@link RepositoryMapping}
-   * of the main repository, which can be used by the implementation to emit labels with apparent
-   * instead of canonical repository names. A return value of {@code null} indicates no message
-   * should be reported.
-   *
-   * <p>The default implementation simply returns the result of {@link #getProgressMessage}.
-   */
-  @Nullable
-  default String getProgressMessage(RepositoryMapping mainRepositoryMapping) {
-    return getProgressMessage();
-  }
+    /**
+     * Returns a human-readable description of the inputs to [.getKey]. Used in the output from
+     * '--explain', and in error messages for '--check_up_to_date' and '--check_tests_up_to_date'. May
+     * return null, meaning no extra information is available.
+     * 
+     * 
+     * If the return value is non-null, for consistency it should be a multiline message of the
+     * form:
+     * 
+     * <pre>
+     * <var>Summary</var>
+     * <var>Fieldname</var>: <var>value</var>
+     * <var>Fieldname</var>: <var>value</var>
+     * ...
+    </pre> * 
+     * 
+     * where each line after the first one is intended two spaces, and where any fields that might
+     * contain newlines or other funny characters are escaped using [ ][com.google.devtools.build.lib.shell.ShellUtils.shellEscape]. For example:
+     * 
+     * <pre>
+     * Compiling foo.cc
+     * Command: /usr/bin/gcc
+     * Argument: '-c'
+     * Argument: foo.cc
+     * Argument: '-o'
+     * Argument: foo.o
+    </pre> * 
+     */
+    fun describeKey(): String?
 
-  /**
-   * Returns a human-readable description of the inputs to {@link #getKey}. Used in the output from
-   * '--explain', and in error messages for '--check_up_to_date' and '--check_tests_up_to_date'. May
-   * return null, meaning no extra information is available.
-   *
-   * <p>If the return value is non-null, for consistency it should be a multiline message of the
-   * form:
-   *
-   * <pre>
-   *   <var>Summary</var>
-   *     <var>Fieldname</var>: <var>value</var>
-   *     <var>Fieldname</var>: <var>value</var>
-   *     ...
-   * </pre>
-   *
-   * where each line after the first one is intended two spaces, and where any fields that might
-   * contain newlines or other funny characters are escaped using {@link
-   * com.google.devtools.build.lib.shell.ShellUtils#shellEscape}. For example:
-   *
-   * <pre>
-   *   Compiling foo.cc
-   *     Command: /usr/bin/gcc
-   *     Argument: '-c'
-   *     Argument: foo.cc
-   *     Argument: '-o'
-   *     Argument: foo.o
-   * </pre>
-   */
-  @Nullable
-  String describeKey();
+    /**
+     * Returns true iff the [.getInputs] set has been updated taking input discovery into
+     * account.
+     * 
+     * 
+     * For most actions, this always returns true. For actions which [ discover inputs][.discoversInputs] (e.g. C++ compilation), inputs are dynamically discovered from the previous
+     * execution of the action, and so before the initial execution, this method returns false.
+     * 
+     * 
+     * Any builder *must* unconditionally execute an action for which this method returns
+     * false, regardless of all other inferences made by its dependency analysis. In addition, all
+     * prerequisites mentioned in the (possibly incomplete) value returned by [.getInputs] must
+     * also be built first, as usual.
+     */
+    @ThreadSafe
+    fun inputsKnown(): Boolean
 
-  /**
-   * Returns true iff the {@link #getInputs} set has been updated taking input discovery into
-   * account.
-   *
-   * <p>For most actions, this always returns true. For actions which {@linkplain #discoversInputs
-   * discover inputs} (e.g. C++ compilation), inputs are dynamically discovered from the previous
-   * execution of the action, and so before the initial execution, this method returns false.
-   *
-   * <p>Any builder <em>must</em> unconditionally execute an action for which this method returns
-   * false, regardless of all other inferences made by its dependency analysis. In addition, all
-   * prerequisites mentioned in the (possibly incomplete) value returned by {@link #getInputs} must
-   * also be built first, as usual.
-   */
-  @ThreadSafe
-  boolean inputsKnown();
+    /**
+     * Returns true if this action discovers inputs.
+     * 
+     * 
+     * The value returned by this method is constant for lifetime of this action.
+     */
+    @ThreadSafe
+    fun discoversInputs(): Boolean
 
-  /**
-   * Returns true if this action discovers inputs.
-   *
-   * <p>The value returned by this method is constant for lifetime of this action.
-   */
-  @ThreadSafe
-  boolean discoversInputs();
+    /**
+     * Returns true if the action may create output artifacts whose contents aren't generated by this
+     * action, and also, this action does not consume its input artifacts' contents.
+     * 
+     * 
+     * This is rarely true. Symlink actions are an example where this is true: their outputs'
+     * contents are equal to their inputs' contents, and a symlink action does not consume its inputs'
+     * contents.
+     * 
+     * 
+     * This property is relevant for action rewinding and top-level output fetching.
+     */
+    fun mayInsensitivelyPropagateInputs(): Boolean {
+        return false
+    }
 
-  /**
-   * Returns true if the action may create output artifacts whose contents aren't generated by this
-   * action, and also, this action does not consume its input artifacts' contents.
-   *
-   * <p>This is rarely true. Symlink actions are an example where this is true: their outputs'
-   * contents are equal to their inputs' contents, and a symlink action does not consume its inputs'
-   * contents.
-   *
-   * <p>This property is relevant for action rewinding and top-level output fetching.
-   */
-  default boolean mayInsensitivelyPropagateInputs() {
-    return false;
-  }
-
-  /**
-   * Returns true if the action may modify spawn outputs after the spawn has executed.
-   *
-   * <p>If this returns true, any kind of spawn output caching or reuse needs to happen
-   * synchronously directly after the spawn execution.
-   */
-  default boolean mayModifySpawnOutputsAfterExecution() {
-    return false;
-  }
+    /**
+     * Returns true if the action may modify spawn outputs after the spawn has executed.
+     * 
+     * 
+     * If this returns true, any kind of spawn output caching or reuse needs to happen
+     * synchronously directly after the spawn execution.
+     */
+    fun mayModifySpawnOutputsAfterExecution(): Boolean {
+        return false
+    }
 }

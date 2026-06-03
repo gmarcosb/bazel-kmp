@@ -11,96 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsClass
 
-/** Command line options for the Build Encyclopedia docgen. */
+/** Command line options for the Build Encyclopedia docgen.  */
 @OptionsClass
-public abstract class BuildEncyclopediaOptions extends CommonOptions {
-  @Option(
-      name = "input_dir",
-      abbrev = 'i',
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "An input directory to read Java source files")
-  public abstract List<String> getInputJavaDirs();
+abstract class BuildEncyclopediaOptions : com.google.devtools.build.docgen.CommonOptions() {
+    @get:com.google.devtools.common.options.Option(
+        name = "input_dir",
+        abbrev = 'i',
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "An input directory to read Java source files"
+    )
+    abstract val inputJavaDirs: MutableList<String?>?
 
-  // The source tree root must be passed on the command line, instead of in link_map_path json
-  // content, because its schema varies wildly depending on execution platform (e.g. RBE vs. local).
-  @Option(
-      name = "input_root",
-      abbrev = 'r',
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Directory of the source tree root")
-  public abstract String getInputRoot();
+    @get:com.google.devtools.common.options.Option(
+        name = "input_root",
+        abbrev = 'r',
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Directory of the source tree root"
+    )
+    abstract val inputRoot: String?
 
-  @Option(
-      name = "be_stardoc_proto",
-      oldName = "input_stardoc_proto",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "A stardoc_output.ModuleInfo binary proto file generated from a Build Encyclopedia entry"
-              + " point .bzl file; documentation from rule_stardoc_proto takes precedence over"
-              + " documentation from input_dir")
-  public abstract List<String> getBuildEncyclopediaStardocProtos();
+    @get:com.google.devtools.common.options.Option(
+        name = "be_stardoc_proto",
+        oldName = "input_stardoc_proto",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("A stardoc_output.ModuleInfo binary proto file generated from a Build Encyclopedia entry"
+                + " point .bzl file; documentation from rule_stardoc_proto takes precedence over"
+                + " documentation from input_dir")
+    )
+    abstract val buildEncyclopediaStardocProtos: MutableList<String?>?
 
-  @Option(
-      name = "provider",
-      abbrev = 'p',
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The name of the rule class provider")
-  public abstract String getProvider();
+    @get:com.google.devtools.common.options.Option(
+        name = "provider",
+        abbrev = 'p',
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The name of the rule class provider"
+    )
+    abstract val provider: String?
 
-  @Option(
-      name = "output_file",
-      abbrev = 'f',
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "An output file.")
-  public abstract String getOutputFile();
+    @get:com.google.devtools.common.options.Option(
+        name = "output_file",
+        abbrev = 'f',
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "An output file."
+    )
+    abstract val outputFile: String?
 
-  @Option(
-      name = "output_dir",
-      abbrev = 'o',
-      defaultValue = ".",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "An output directory.")
-  public abstract String getOutputDir();
+    @get:com.google.devtools.common.options.Option(
+        name = "output_dir",
+        abbrev = 'o',
+        defaultValue = ".",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "An output directory."
+    )
+    abstract val outputDir: String?
 
-  @Option(
-      name = "denylist",
-      oldName = "blacklist",
-      abbrev = 'b',
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "A path to a file listing rules not to document.")
-  public abstract String getDenylist();
+    @get:com.google.devtools.common.options.Option(
+        name = "denylist",
+        oldName = "blacklist",
+        abbrev = 'b',
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "A path to a file listing rules not to document."
+    )
+    abstract val denylist: String?
 
-  @Option(
-      name = "single_page",
-      abbrev = '1',
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Whether to generate the BE as a single HTML page or one page per rule family. Mutually"
-              + " exclusive with --create_toc.")
-  public abstract boolean getSinglePage();
+    @get:com.google.devtools.common.options.Option(
+        name = "single_page",
+        abbrev = '1',
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Whether to generate the BE as a single HTML page or one page per rule family. Mutually"
+                + " exclusive with --create_toc.")
+    )
+    abstract val singlePage: Boolean
 }

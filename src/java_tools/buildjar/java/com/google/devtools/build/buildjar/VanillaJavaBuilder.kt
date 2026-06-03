@@ -11,376 +11,367 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar
 
-package com.google.devtools.build.buildjar;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Locale.ENGLISH;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.io.MoreFiles;
-import com.google.common.io.RecursiveDeleteOption;
-import com.google.devtools.build.buildjar.jarhelper.JarCreator;
-import com.google.devtools.build.buildjar.javac.JavacOptions;
-import com.google.devtools.build.buildjar.proto.JavaCompilation.Manifest;
-import com.google.devtools.build.lib.view.proto.Deps;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import java.io.Closeable;
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.net.URI;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.processing.Processor;
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaCompiler.CompilationTask;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
+import com.google.devtools.build.buildjar.proto.JavaCompilation.Manifest
 
 /**
  * A JavaBuilder that supports non-standard JDKs and unmodified javac's.
- *
- * <p>Does not support:
- *
- * <ul>
- *   <li>Error Prone
- *   <li>strict Java deps
- *   <li>Android desugaring
- *   <li>coverage instrumentation
- *   <li>genclass handling for IDEs
- * </ul>
+ * 
+ * 
+ * Does not support:
+ * 
+ * 
+ *  * Error Prone
+ *  * strict Java deps
+ *  * Android desugaring
+ *  * coverage instrumentation
+ *  * genclass handling for IDEs
+ * 
  */
-public class VanillaJavaBuilder implements Closeable {
+class VanillaJavaBuilder : java.io.Closeable {
+    /** Cache of opened zip filesystems.  */
+    private val filesystems: MutableMap<Path?, java.nio.file.FileSystem> = HashMap<Path?, java.nio.file.FileSystem>()
 
-  /** Cache of opened zip filesystems. */
-  private final Map<Path, FileSystem> filesystems = new HashMap<>();
-
-  private FileSystem getJarFileSystem(Path sourceJar) throws IOException {
-    FileSystem fs = filesystems.get(sourceJar);
-    if (fs == null) {
-      filesystems.put(sourceJar, fs = FileSystems.newFileSystem(sourceJar, (ClassLoader) null));
-    }
-    return fs;
-  }
-
-  public static void main(String[] args) throws IOException {
-    if (args.length == 1 && args[0].equals("--persistent_worker")) {
-      System.exit(runPersistentWorker());
-    } else {
-      try (VanillaJavaBuilder builder = new VanillaJavaBuilder()) {
-        VanillaJavaBuilderResult result = builder.run(ImmutableList.copyOf(args));
-        System.err.print(result.output());
-        System.exit(result.ok() ? 0 : 1);
-      }
-    }
-  }
-
-  private static int runPersistentWorker() {
-    while (true) {
-      try {
-        WorkRequest request = WorkRequest.parseDelimitedFrom(System.in);
-        if (request == null) {
-          break;
+    @Throws(IOException::class)
+    private fun getJarFileSystem(sourceJar: Path): java.nio.file.FileSystem? {
+        var fs: java.nio.file.FileSystem? = filesystems.get(sourceJar)
+        if (fs == null) {
+            filesystems.put(
+                sourceJar,
+                FileSystems.newFileSystem(sourceJar, null as java.lang.ClassLoader?).also { fs = it })
         }
-        VanillaJavaBuilderResult result;
-        try (VanillaJavaBuilder builder = new VanillaJavaBuilder()) {
-          result = builder.run(request.getArgumentsList());
+        return fs
+    }
+
+    /** Return result of a [VanillaJavaBuilder] build.  */
+    class VanillaJavaBuilderResult(private val ok: Boolean, private val output: String?) {
+        /** True if the compilation was succesfull.  */
+        fun ok(): Boolean {
+            return ok
         }
-        /* As soon as we write the response, bazel will start cleaning
+
+        /** Log output from the compilation.  */
+        fun output(): String? {
+            return output
+        }
+    }
+
+    @Throws(IOException::class)
+    fun run(args: MutableList<String?>?): VanillaJavaBuilderResult {
+        val optionsParser: com.google.devtools.build.buildjar.OptionsParser?
+        try {
+            optionsParser = com.google.devtools.build.buildjar.OptionsParser(args)
+        } catch (e: InvalidCommandLineException) {
+            return VanillaJavaBuilderResult(false, e.message)
+        }
+        val diagnosticCollector: DiagnosticCollector<JavaFileObject?> = DiagnosticCollector<JavaFileObject?>()
+        val output: java.io.StringWriter = java.io.StringWriter()
+        val javaCompiler: javax.tools.JavaCompiler = javax.tools.ToolProvider.getSystemJavaCompiler()
+        val tempDir: Path = java.nio.file.Files.createTempDirectory("_tmp")
+        val nativeHeaderDir: Path = tempDir.resolve("native_headers")
+        java.nio.file.Files.createDirectories(nativeHeaderDir)
+        val sourceGenDir: Path = tempDir.resolve("sources")
+        java.nio.file.Files.createDirectories(sourceGenDir)
+        val classDir: Path = tempDir.resolve("classes")
+        java.nio.file.Files.createDirectories(classDir)
+        val ok: Boolean
+        javaCompiler.getStandardFileManager(
+            diagnosticCollector,
+            Locale.ENGLISH,
+            java.nio.charset.StandardCharsets.UTF_8
+        ).use { fileManager ->
+            setLocations(optionsParser, fileManager, nativeHeaderDir, sourceGenDir, classDir)
+            val sources: com.google.common.collect.ImmutableList<JavaFileObject?> =
+                getSources(optionsParser, fileManager)
+            if (sources.isEmpty()) {
+                ok = true
+            } else {
+                val task: CompilationTask =
+                    javaCompiler.getTask(
+                        PrintWriter(output, true),
+                        fileManager,
+                        diagnosticCollector,
+                        JavacOptions.Companion.removeBazelSpecificFlags(
+                            JavacOptions.Companion.normalizeOptionsWithNormalizers(
+                                optionsParser.getJavacOpts(), ReleaseOptionNormalizer()
+                            )
+                        ),
+                        com.google.common.collect.ImmutableList.of<String?>(),  /*classes*/
+                        sources
+                    )
+                setProcessors(optionsParser, fileManager, task)
+                ok = task.call()
+            }
+        }
+        if (ok) {
+            writeOutput(classDir, optionsParser)
+            writeNativeHeaderOutput(optionsParser, nativeHeaderDir)
+        }
+        writeGeneratedSourceOutput(sourceGenDir, optionsParser)
+        // the jdeps output doesn't include any information about dependencies, but Bazel still expects
+        // the file to be created
+        if (optionsParser.getOutputDepsProtoFile() != null) {
+            java.nio.file.Files.newOutputStream(Paths.get(optionsParser.getOutputDepsProtoFile())).use { os ->
+                Deps.Dependencies.newBuilder()
+                    .setRuleLabel(optionsParser.getTargetLabel())
+                    .setSuccess(ok)
+                    .build()
+                    .writeTo(os)
+            }
+        }
+        // TODO(cushon): support manifest protos & genjar
+        if (optionsParser.getManifestProtoPath() != null) {
+            java.nio.file.Files.newOutputStream(Paths.get(optionsParser.getManifestProtoPath())).use { os ->
+                Manifest.getDefaultInstance().writeTo(os)
+            }
+        }
+
+        for (diagnostic in diagnosticCollector.getDiagnostics()) {
+            val code: String = diagnostic.getCode()
+            if (code.startsWith("compiler.note.deprecated")
+                || code.startsWith("compiler.note.unchecked")
+                || code == "compiler.warn.sun.proprietary"
+            ) {
+                continue
+            }
+            val message: java.lang.StringBuilder = java.lang.StringBuilder()
+            if (diagnostic.getSource() != null) {
+                message.append(diagnostic.getSource().getName())
+                if (diagnostic.getLineNumber() != -1L) {
+                    message.append(':').append(diagnostic.getLineNumber())
+                }
+                message.append(": ")
+            }
+            message.append(diagnostic.getKind().toString().lowercase(Locale.ENGLISH))
+            message.append(": ").append(diagnostic.getMessage(Locale.ENGLISH)).append(java.lang.System.lineSeparator())
+            output.write(message.toString())
+        }
+        return VanillaJavaBuilderResult(ok, output.toString())
+    }
+
+    /** Returns the sources to compile, including any source jar entries.  */
+    @Throws(IOException::class)
+    private fun getSources(
+        optionsParser: com.google.devtools.build.buildjar.OptionsParser, fileManager: StandardJavaFileManager
+    ): com.google.common.collect.ImmutableList<JavaFileObject?> {
+        val sources: com.google.common.collect.ImmutableList.Builder<JavaFileObject?> =
+            com.google.common.collect.ImmutableList.builder<JavaFileObject?>()
+        sources.addAll(fileManager.getJavaFileObjectsFromStrings(optionsParser.getSourceFiles()))
+        for (sourceJar in optionsParser.getSourceJars()) {
+            for (root in getJarFileSystem(Paths.get(sourceJar)).getRootDirectories()) {
+                java.nio.file.Files.walkFileTree(
+                    root,
+                    object : SimpleFileVisitor<Path?>() {
+                        @Throws(IOException::class)
+                        override fun visitFile(path: Path, attrs: BasicFileAttributes?): FileVisitResult {
+                            if (path.getFileName().toString().endsWith(".java")) {
+                                sources.add(SourceJarFileObject(root, path))
+                            }
+                            return FileVisitResult.CONTINUE
+                        }
+                    })
+            }
+        }
+        return sources.build()
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        for (fs in filesystems.values) {
+            fs.close()
+        }
+    }
+
+    /**
+     * Wraps a [Path] as a [JavaFileObject]; used to avoid extracting source jar entries
+     * to disk when using file managers that don't support nio.
+     */
+    private class SourceJarFileObject(root: Path, path: Path) : SimpleJavaFileObject(
+        java.net.URI.create("file:/" + root + "!" + root.resolve(path)),
+        JavaFileObject.Kind.SOURCE
+    ) {
+        private val path: Path
+
+        init {
+            this.path = path
+        }
+
+        @Throws(IOException::class)
+        override fun getCharContent(ignoreEncodingErrors: Boolean): CharSequence? {
+            return java.nio.file.Files.readString(path)
+        }
+    }
+
+    companion object {
+        @Throws(IOException::class)
+        @kotlin.jvm.JvmStatic
+        fun main(args: Array<String>) {
+            if (args.size == 1 && args[0] == "--persistent_worker") {
+                java.lang.System.exit(runPersistentWorker())
+            } else {
+                VanillaJavaBuilder().use { builder ->
+                    val result: VanillaJavaBuilderResult =
+                        builder.run(com.google.common.collect.ImmutableList.copyOf<String?>(args))
+                    java.lang.System.err.print(result.output())
+                    java.lang.System.exit(if (result.ok()) 0 else 1)
+                }
+            }
+        }
+
+        private fun runPersistentWorker(): Int {
+            while (true) {
+                try {
+                    val request: WorkRequest? = WorkRequest.parseDelimitedFrom(java.lang.System.`in`)
+                    if (request == null) {
+                        break
+                    }
+                    val result: VanillaJavaBuilderResult
+                    VanillaJavaBuilder().use { builder ->
+                        result = builder.run(request.getArgumentsList())
+                    }
+                    /* As soon as we write the response, bazel will start cleaning
          * up the working tree. The VanillaJavaBuilder must be fully
          * closed at this point.
          */
-        WorkResponse response =
-            WorkResponse.newBuilder()
-                .setOutput(result.output())
-                .setExitCode(result.ok() ? 0 : 1)
-                .setRequestId(request.getRequestId())
-                .build();
-        response.writeDelimitedTo(System.out);
-        System.out.flush();
-      } catch (IOException e) {
-        e.printStackTrace();
-        return 1;
-      }
-    }
-    return 0;
-  }
-
-  /** Return result of a {@link VanillaJavaBuilder} build. */
-  public static class VanillaJavaBuilderResult {
-    private final boolean ok;
-    private final String output;
-
-    public VanillaJavaBuilderResult(boolean ok, String output) {
-      this.ok = ok;
-      this.output = output;
-    }
-
-    /** True if the compilation was succesfull. */
-    public boolean ok() {
-      return ok;
-    }
-
-    /** Log output from the compilation. */
-    public String output() {
-      return output;
-    }
-  }
-
-  public VanillaJavaBuilderResult run(List<String> args) throws IOException {
-    OptionsParser optionsParser;
-    try {
-      optionsParser = new OptionsParser(args);
-    } catch (InvalidCommandLineException e) {
-      return new VanillaJavaBuilderResult(false, e.getMessage());
-    }
-    DiagnosticCollector<JavaFileObject> diagnosticCollector = new DiagnosticCollector<>();
-    StringWriter output = new StringWriter();
-    JavaCompiler javaCompiler = ToolProvider.getSystemJavaCompiler();
-    Path tempDir = Files.createTempDirectory("_tmp");
-    Path nativeHeaderDir = tempDir.resolve("native_headers");
-    Files.createDirectories(nativeHeaderDir);
-    Path sourceGenDir = tempDir.resolve("sources");
-    Files.createDirectories(sourceGenDir);
-    Path classDir = tempDir.resolve("classes");
-    Files.createDirectories(classDir);
-    boolean ok;
-    try (StandardJavaFileManager fileManager =
-        javaCompiler.getStandardFileManager(diagnosticCollector, ENGLISH, UTF_8)) {
-      setLocations(optionsParser, fileManager, nativeHeaderDir, sourceGenDir, classDir);
-      ImmutableList<JavaFileObject> sources = getSources(optionsParser, fileManager);
-      if (sources.isEmpty()) {
-        ok = true;
-      } else {
-        CompilationTask task =
-            javaCompiler.getTask(
-                new PrintWriter(output, true),
-                fileManager,
-                diagnosticCollector,
-                JavacOptions.removeBazelSpecificFlags(
-                    JavacOptions.normalizeOptionsWithNormalizers(
-                        optionsParser.getJavacOpts(), new JavacOptions.ReleaseOptionNormalizer())),
-                ImmutableList.<String>of() /*classes*/,
-                sources);
-        setProcessors(optionsParser, fileManager, task);
-        ok = task.call();
-      }
-    }
-    if (ok) {
-      writeOutput(classDir, optionsParser);
-      writeNativeHeaderOutput(optionsParser, nativeHeaderDir);
-    }
-    writeGeneratedSourceOutput(sourceGenDir, optionsParser);
-    // the jdeps output doesn't include any information about dependencies, but Bazel still expects
-    // the file to be created
-    if (optionsParser.getOutputDepsProtoFile() != null) {
-      try (OutputStream os =
-          Files.newOutputStream(Paths.get(optionsParser.getOutputDepsProtoFile()))) {
-        Deps.Dependencies.newBuilder()
-            .setRuleLabel(optionsParser.getTargetLabel())
-            .setSuccess(ok)
-            .build()
-            .writeTo(os);
-      }
-    }
-    // TODO(cushon): support manifest protos & genjar
-    if (optionsParser.getManifestProtoPath() != null) {
-      try (OutputStream os =
-          Files.newOutputStream(Paths.get(optionsParser.getManifestProtoPath()))) {
-        Manifest.getDefaultInstance().writeTo(os);
-      }
-    }
-
-    for (Diagnostic<? extends JavaFileObject> diagnostic : diagnosticCollector.getDiagnostics()) {
-      String code = diagnostic.getCode();
-      if (code.startsWith("compiler.note.deprecated")
-          || code.startsWith("compiler.note.unchecked")
-          || code.equals("compiler.warn.sun.proprietary")) {
-        continue;
-      }
-      StringBuilder message = new StringBuilder();
-      if (diagnostic.getSource() != null) {
-        message.append(diagnostic.getSource().getName());
-        if (diagnostic.getLineNumber() != -1) {
-          message.append(':').append(diagnostic.getLineNumber());
-        }
-        message.append(": ");
-      }
-      message.append(diagnostic.getKind().toString().toLowerCase(ENGLISH));
-      message.append(": ").append(diagnostic.getMessage(ENGLISH)).append(System.lineSeparator());
-      output.write(message.toString());
-    }
-    return new VanillaJavaBuilderResult(ok, output.toString());
-  }
-
-  /** Returns the sources to compile, including any source jar entries. */
-  private ImmutableList<JavaFileObject> getSources(
-      OptionsParser optionsParser, StandardJavaFileManager fileManager) throws IOException {
-    final ImmutableList.Builder<JavaFileObject> sources = ImmutableList.builder();
-    sources.addAll(fileManager.getJavaFileObjectsFromStrings(optionsParser.getSourceFiles()));
-    for (String sourceJar : optionsParser.getSourceJars()) {
-      for (final Path root : getJarFileSystem(Paths.get(sourceJar)).getRootDirectories()) {
-        Files.walkFileTree(
-            root,
-            new SimpleFileVisitor<Path>() {
-              @Override
-              public FileVisitResult visitFile(Path path, BasicFileAttributes attrs)
-                  throws IOException {
-                if (path.getFileName().toString().endsWith(".java")) {
-                  sources.add(new SourceJarFileObject(root, path));
+                    val response: WorkResponse =
+                        WorkResponse.newBuilder()
+                            .setOutput(result.output())
+                            .setExitCode(if (result.ok()) 0 else 1)
+                            .setRequestId(request.getRequestId())
+                            .build()
+                    response.writeDelimitedTo(java.lang.System.out)
+                    java.lang.System.out.flush()
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                    return 1
                 }
-                return FileVisitResult.CONTINUE;
-              }
-            });
-      }
-    }
-    return sources.build();
-  }
+            }
+            return 0
+        }
 
-  /** Sets the compilation search paths and output directories. */
-  private static void setLocations(
-      OptionsParser optionsParser,
-      StandardJavaFileManager fileManager,
-      Path nativeHeaderDir,
-      Path sourceGenDir,
-      Path classDir)
-      throws IOException {
-    fileManager.setLocation(StandardLocation.CLASS_PATH, toFiles(optionsParser.getClassPath()));
-    Iterable<File> bootClassPath = toFiles(optionsParser.getBootClassPath());
-    // The bootclasspath may legitimately be empty if --release is being used.
-    if (!Iterables.isEmpty(bootClassPath)) {
-      fileManager.setLocation(StandardLocation.PLATFORM_CLASS_PATH, bootClassPath);
-    }
-    fileManager.setLocation(
-        StandardLocation.ANNOTATION_PROCESSOR_PATH, toFiles(optionsParser.getProcessorPath()));
-    setOutputLocation(fileManager, StandardLocation.SOURCE_OUTPUT, sourceGenDir);
-    if (optionsParser.getNativeHeaderOutput() != null) {
-      setOutputLocation(fileManager, StandardLocation.NATIVE_HEADER_OUTPUT, nativeHeaderDir);
-    }
-    setOutputLocation(fileManager, StandardLocation.CLASS_OUTPUT, classDir);
-  }
+        /** Sets the compilation search paths and output directories.  */
+        @Throws(IOException::class)
+        private fun setLocations(
+            optionsParser: com.google.devtools.build.buildjar.OptionsParser,
+            fileManager: StandardJavaFileManager,
+            nativeHeaderDir: Path,
+            sourceGenDir: Path,
+            classDir: Path
+        ) {
+            fileManager.setLocation(StandardLocation.CLASS_PATH, toFiles(optionsParser.getClassPath()))
+            val bootClassPath: Iterable<java.io.File?> = toFiles(optionsParser.getBootClassPath())
+            // The bootclasspath may legitimately be empty if --release is being used.
+            if (!com.google.common.collect.Iterables.isEmpty(bootClassPath)) {
+                fileManager.setLocation(StandardLocation.PLATFORM_CLASS_PATH, bootClassPath)
+            }
+            fileManager.setLocation(
+                StandardLocation.ANNOTATION_PROCESSOR_PATH, toFiles(optionsParser.getProcessorPath())
+            )
+            setOutputLocation(fileManager, StandardLocation.SOURCE_OUTPUT, sourceGenDir)
+            if (optionsParser.getNativeHeaderOutput() != null) {
+                setOutputLocation(fileManager, StandardLocation.NATIVE_HEADER_OUTPUT, nativeHeaderDir)
+            }
+            setOutputLocation(fileManager, StandardLocation.CLASS_OUTPUT, classDir)
+        }
 
-  private static void setOutputLocation(
-      StandardJavaFileManager fileManager, StandardLocation location, Path path)
-      throws IOException {
-    createOutputDirectory(path);
-    fileManager.setLocation(location, ImmutableList.of(path.toFile()));
-  }
+        @Throws(IOException::class)
+        private fun setOutputLocation(
+            fileManager: StandardJavaFileManager, location: StandardLocation?, path: Path
+        ) {
+            createOutputDirectory(path)
+            fileManager.setLocation(location, com.google.common.collect.ImmutableList.of<java.io.File?>(path.toFile()))
+        }
 
-  /** Sets the compilation's annotation processors. */
-  private static void setProcessors(
-      OptionsParser optionsParser, StandardJavaFileManager fileManager, CompilationTask task) {
-    ClassLoader processorLoader =
-        fileManager.getClassLoader(StandardLocation.ANNOTATION_PROCESSOR_PATH);
-    ImmutableList.Builder<Processor> processors = ImmutableList.builder();
-    for (String processor : optionsParser.getProcessorNames()) {
-      try {
-        processors.add(
-            (Processor) processorLoader.loadClass(processor).getConstructor().newInstance());
-      } catch (ReflectiveOperationException e) {
-        throw new LinkageError(e.getMessage(), e);
-      }
-    }
-    task.setProcessors(processors.build());
-  }
+        /** Sets the compilation's annotation processors.  */
+        private fun setProcessors(
+            optionsParser: com.google.devtools.build.buildjar.OptionsParser,
+            fileManager: StandardJavaFileManager,
+            task: CompilationTask
+        ) {
+            val processorLoader: java.lang.ClassLoader =
+                fileManager.getClassLoader(StandardLocation.ANNOTATION_PROCESSOR_PATH)
+            val processors: com.google.common.collect.ImmutableList.Builder<javax.annotation.processing.Processor?> =
+                com.google.common.collect.ImmutableList.builder<javax.annotation.processing.Processor?>()
+            for (processor in optionsParser.getProcessorNames()) {
+                try {
+                    processors.add(
+                        processorLoader.loadClass(processor).getConstructor()
+                            .newInstance() as javax.annotation.processing.Processor?
+                    )
+                } catch (e: java.lang.ReflectiveOperationException) {
+                    throw java.lang.LinkageError(e.message, e)
+                }
+            }
+            task.setProcessors(processors.build())
+        }
 
-  /** Writes a jar containing any sources generated by annotation processors. */
-  private static void writeGeneratedSourceOutput(Path sourceGenDir, OptionsParser optionsParser)
-      throws IOException {
-    if (optionsParser.getGeneratedSourcesOutputJar() == null) {
-      return;
-    }
-    JarCreator jar = new JarCreator(Path.of(optionsParser.getGeneratedSourcesOutputJar()));
-    jar.setCompression(optionsParser.compressJar());
-    jar.addDirectory(sourceGenDir);
-    jar.execute();
-  }
+        /** Writes a jar containing any sources generated by annotation processors.  */
+        @Throws(IOException::class)
+        private fun writeGeneratedSourceOutput(
+            sourceGenDir: Path,
+            optionsParser: com.google.devtools.build.buildjar.OptionsParser
+        ) {
+            if (optionsParser.getGeneratedSourcesOutputJar() == null) {
+                return
+            }
+            val jar: JarCreator = JarCreator(Path.of(optionsParser.getGeneratedSourcesOutputJar()))
+            jar.setCompression(optionsParser.compressJar())
+            jar.addDirectory(sourceGenDir)
+            jar.execute()
+        }
 
-  private static void writeNativeHeaderOutput(OptionsParser optionsParser, Path nativeHeaderDir)
-      throws IOException {
-    if (optionsParser.getNativeHeaderOutput() == null) {
-      return;
-    }
-    JarCreator jar = new JarCreator(Path.of(optionsParser.getNativeHeaderOutput()));
-    try {
-      jar.setCompression(optionsParser.compressJar());
-      jar.addDirectory(nativeHeaderDir);
-    } finally {
-      jar.execute();
-    }
-  }
+        @Throws(IOException::class)
+        private fun writeNativeHeaderOutput(
+            optionsParser: com.google.devtools.build.buildjar.OptionsParser,
+            nativeHeaderDir: Path
+        ) {
+            if (optionsParser.getNativeHeaderOutput() == null) {
+                return
+            }
+            val jar: JarCreator = JarCreator(Path.of(optionsParser.getNativeHeaderOutput()))
+            try {
+                jar.setCompression(optionsParser.compressJar())
+                jar.addDirectory(nativeHeaderDir)
+            } finally {
+                jar.execute()
+            }
+        }
 
-  /** Writes the class output jar, including any resource entries. */
-  private static void writeOutput(Path classDir, OptionsParser optionsParser) throws IOException {
-    JarCreator jar = new JarCreator(Path.of(optionsParser.getOutputJar()));
-    jar.setCompression(optionsParser.compressJar());
-    jar.addDirectory(classDir);
-    jar.execute();
-  }
+        /** Writes the class output jar, including any resource entries.  */
+        @Throws(IOException::class)
+        private fun writeOutput(classDir: Path, optionsParser: com.google.devtools.build.buildjar.OptionsParser) {
+            val jar: JarCreator = JarCreator(Path.of(optionsParser.getOutputJar()))
+            jar.setCompression(optionsParser.compressJar())
+            jar.addDirectory(classDir)
+            jar.execute()
+        }
 
-  private static ImmutableList<File> toFiles(List<String> classPath) {
-    if (classPath == null) {
-      return ImmutableList.of();
-    }
-    ImmutableList.Builder<File> files = ImmutableList.builder();
-    for (String path : classPath) {
-      files.add(new File(path));
-    }
-    return files.build();
-  }
+        private fun toFiles(classPath: MutableList<String>?): com.google.common.collect.ImmutableList<java.io.File?> {
+            if (classPath == null) {
+                return com.google.common.collect.ImmutableList.of<java.io.File?>()
+            }
+            val files: com.google.common.collect.ImmutableList.Builder<java.io.File?> =
+                com.google.common.collect.ImmutableList.builder<java.io.File?>()
+            for (path in classPath) {
+                files.add(java.io.File(path))
+            }
+            return files.build()
+        }
 
-  @Override
-  public void close() throws IOException {
-    for (FileSystem fs : filesystems.values()) {
-      fs.close();
+        @Throws(IOException::class)
+        private fun createOutputDirectory(dir: Path) {
+            if (java.nio.file.Files.exists(dir)) {
+                try {
+                    com.google.common.io.MoreFiles.deleteRecursively(
+                        dir,
+                        com.google.common.io.RecursiveDeleteOption.ALLOW_INSECURE
+                    )
+                } catch (e: IOException) {
+                    throw IOException("Cannot clean output directory '" + dir + "'", e)
+                }
+            }
+            java.nio.file.Files.createDirectories(dir)
+        }
     }
-  }
-
-  /**
-   * Wraps a {@link Path} as a {@link JavaFileObject}; used to avoid extracting source jar entries
-   * to disk when using file managers that don't support nio.
-   */
-  private static class SourceJarFileObject extends SimpleJavaFileObject {
-    private final Path path;
-
-    public SourceJarFileObject(Path root, Path path) {
-      super(URI.create("file:/" + root + "!" + root.resolve(path)), Kind.SOURCE);
-      this.path = path;
-    }
-
-    @Override
-    public CharSequence getCharContent(boolean ignoreEncodingErrors) throws IOException {
-      return Files.readString(path);
-    }
-  }
-
-  private static void createOutputDirectory(Path dir) throws IOException {
-    if (Files.exists(dir)) {
-      try {
-        MoreFiles.deleteRecursively(dir, RecursiveDeleteOption.ALLOW_INSECURE);
-      } catch (IOException e) {
-        throw new IOException("Cannot clean output directory '" + dir + "'", e);
-      }
-    }
-    Files.createDirectories(dir);
-  }
 }

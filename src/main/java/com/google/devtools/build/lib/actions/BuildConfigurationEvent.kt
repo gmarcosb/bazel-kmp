@@ -11,57 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import java.util.Collection;
-import java.util.Objects;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
 /**
- * Encapsulation of {@link BuildEvent} info associated with a {@link
- * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.
+ * Encapsulation of [BuildEvent] info associated with a [ ].
  */
-public final class BuildConfigurationEvent implements BuildEvent {
+class BuildConfigurationEvent(eventId: BuildEventId?, eventProto: BuildEventStreamProtos.BuildEvent?) : BuildEvent {
+    private val eventId: BuildEventId?
+    private val eventProto: BuildEventStreamProtos.BuildEvent?
 
-  private final BuildEventId eventId;
-  private final BuildEventStreamProtos.BuildEvent eventProto;
-
-  public BuildConfigurationEvent(
-      BuildEventId eventId, BuildEventStreamProtos.BuildEvent eventProto) {
-    this.eventId = eventId;
-    this.eventProto = eventProto;
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext unusedConverters) {
-    return eventProto;
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return eventId;
-  }
-
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (!(other instanceof BuildConfigurationEvent that)) {
-      return false;
+    init {
+        this.eventId = eventId
+        this.eventProto = eventProto
     }
-    return Objects.equals(eventId, that.eventId) && Objects.equals(eventProto, that.eventProto);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(eventId, eventProto);
-  }
+    public override fun asStreamProto(unusedConverters: BuildEventContext?): BuildEventStreamProtos.BuildEvent? {
+        return eventProto
+    }
+
+    public override fun getEventId(): BuildEventId? {
+        return eventId
+    }
+
+    public override fun getChildrenEvents(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<BuildEventId?>()
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other !is BuildConfigurationEvent) {
+            return false
+        }
+        return eventId == other.eventId && eventProto == other.eventProto
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(eventId, eventProto)
+    }
 }

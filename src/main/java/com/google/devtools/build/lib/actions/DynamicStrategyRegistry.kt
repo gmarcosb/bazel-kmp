@@ -11,47 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.actions.ActionContext
+import com.google.devtools.build.lib.actions.ActionContext.ActionContextRegistry
+import com.google.devtools.build.lib.actions.SandboxedSpawnStrategy
+import com.google.devtools.build.lib.actions.Spawn
 
-import com.google.common.collect.ImmutableCollection;
+/** Registry providing access to dynamic spawn strategies for both remote and local modes.  */
+interface DynamicStrategyRegistry : ActionContext {
+    /** Indicator for whether a strategy is meant for remote or local branch of dynamic execution.  */
+    enum class DynamicMode(name: String) {
+        REMOTE("remote"),
+        LOCAL("local");
 
-/** Registry providing access to dynamic spawn strategies for both remote and local modes. */
-public interface DynamicStrategyRegistry extends ActionContext {
+        private val name: String?
 
-  /** Indicator for whether a strategy is meant for remote or local branch of dynamic execution. */
-  enum DynamicMode {
-    REMOTE("remote"),
-    LOCAL("local");
+        init {
+            this.name = name
+        }
 
-    private final String name;
+        override fun toString(): String {
+            return name!!
+        }
 
-    DynamicMode(String name) {
-      this.name = name;
+        fun other(): DynamicMode {
+            return if (this == DynamicMode.REMOTE) DynamicMode.LOCAL else DynamicMode.REMOTE
+        }
     }
 
-    @Override
-    public String toString() {
-      return name;
-    }
+    /**
+     * Returns the spawn strategy implementations that [can execute][SpawnStrategy.canExec]
+     * the given spawn in the order that they were registered for the provided dynamic mode.
+     */
+    fun getDynamicSpawnActionContexts(
+        spawn: Spawn?, dynamicMode: DynamicMode?
+    ): com.google.common.collect.ImmutableCollection<SandboxedSpawnStrategy?>?
 
-    public DynamicMode other() {
-      return this == REMOTE ? LOCAL : REMOTE;
-    }
-  }
-
-  /**
-   * Returns the spawn strategy implementations that {@linkplain SpawnStrategy#canExec can execute}
-   * the given spawn in the order that they were registered for the provided dynamic mode.
-   */
-  ImmutableCollection<SandboxedSpawnStrategy> getDynamicSpawnActionContexts(
-      Spawn spawn, DynamicMode dynamicMode);
-
-  /**
-   * Notifies all strategies applying to at least one mnemonic (including the empty all-catch one)
-   * in this registry that they are {@link ActionContext#usedContext used}.
-   *
-   * @param actionContextRegistry a complete registry containing all available action contexts
-   */
-  void notifyUsedDynamic(ActionContext.ActionContextRegistry actionContextRegistry);
+    /**
+     * Notifies all strategies applying to at least one mnemonic (including the empty all-catch one)
+     * in this registry that they are [used][ActionContext.usedContext].
+     * 
+     * @param actionContextRegistry a complete registry containing all available action contexts
+     */
+    fun notifyUsedDynamic(actionContextRegistry: ActionContextRegistry?)
 }

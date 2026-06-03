@@ -11,99 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.configuredtargets
 
-package com.google.devtools.build.lib.analysis.configuredtargets;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact.SourceArtifact;
-import com.google.devtools.build.lib.analysis.PackageSpecificationProvider;
-import com.google.devtools.build.lib.analysis.TargetContext;
-import com.google.devtools.build.lib.analysis.TransitiveVisibilityProvider;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.InputFile;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
  * A ConfiguredTarget for an InputFile.
- *
- * <p>All InputFiles for the same target are equivalent, so configuration does not play any role
- * here and is always set to <b>null</b>.
+ * 
+ * 
+ * All InputFiles for the same target are equivalent, so configuration does not play any role
+ * here and is always set to **null**.
  */
-@Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public final class InputFileConfiguredTarget extends FileConfiguredTarget {
+class InputFileConfiguredTarget @AutoCodec.Instantiator @VisibleForSerialization internal constructor(
+    lookupKey: ActionLookupKey?,
+    visibility: NestedSet<PackageGroupContents?>?,
+    transitiveVisibilityImposedByThisPackage: PackageSpecificationProvider?,
+    artifact: SourceArtifact?,
+    private val isCreatedInSymbolicMacro: Boolean
+) : FileConfiguredTarget(lookupKey, visibility, artifact) {
+    private val transitiveVisibilityImposedByThisPackage: PackageSpecificationProvider?
 
-  private final boolean isCreatedInSymbolicMacro;
-  private final PackageSpecificationProvider transitiveVisibilityImposedByThisPackage;
-
-  public InputFileConfiguredTarget(TargetContext targetContext, SourceArtifact artifact) {
-    this(
+    constructor(targetContext: TargetContext, artifact: SourceArtifact?) : this(
         targetContext.getAnalysisEnvironment().getOwner(),
         targetContext.getVisibility(),
         targetContext.getTransitiveVisibilityImposedByThisPackage(),
         artifact,
-        targetContext.getTarget().isCreatedInSymbolicMacro());
-    checkArgument(targetContext.getTarget() instanceof InputFile, targetContext.getTarget());
-    checkArgument(getConfigurationKey() == null, getLabel());
-  }
+        targetContext.getTarget().isCreatedInSymbolicMacro()
+    ) {
+        com.google.common.base.Preconditions.checkArgument(
+            targetContext.getTarget() is InputFile,
+            targetContext.getTarget()
+        )
+        checkArgument(getConfigurationKey() == null, getLabel())
+    }
 
-  @AutoCodec.Instantiator
-  @VisibleForSerialization
-  InputFileConfiguredTarget(
-      ActionLookupKey lookupKey,
-      NestedSet<PackageGroupContents> visibility,
-      @Nullable PackageSpecificationProvider transitiveVisibilityImposedByThisPackage,
-      SourceArtifact artifact,
-      boolean isCreatedInSymbolicMacro) {
-    super(lookupKey, visibility, artifact);
-    this.isCreatedInSymbolicMacro = isCreatedInSymbolicMacro;
-    this.transitiveVisibilityImposedByThisPackage = transitiveVisibilityImposedByThisPackage;
-  }
+    init {
+        this.transitiveVisibilityImposedByThisPackage = transitiveVisibilityImposedByThisPackage
+    }
 
-  @Override
-  public boolean isCreatedInSymbolicMacro() {
-    return isCreatedInSymbolicMacro;
-  }
+    public override fun isCreatedInSymbolicMacro(): Boolean {
+        return isCreatedInSymbolicMacro
+    }
 
-  @Override
-  public SourceArtifact getArtifact() {
-    return (SourceArtifact) super.getArtifact();
-  }
+    override fun getArtifact(): SourceArtifact? {
+        return super.getArtifact() as SourceArtifact?
+    }
 
-  @Nullable
-  @Override
-  protected TransitiveVisibilityProvider createTransitiveVisibilityProvider() {
-    // The inputFile has no deps, so the transitive visibility is only imposed by its package.
-    return transitiveVisibilityImposedByThisPackage == null
-        ? null
-        : new TransitiveVisibilityProvider(
-            ImmutableSet.of(transitiveVisibilityImposedByThisPackage));
-  }
+    override fun createTransitiveVisibilityProvider(): TransitiveVisibilityProvider? {
+        // The inputFile has no deps, so the transitive visibility is only imposed by its package.
+        return if (transitiveVisibilityImposedByThisPackage == null)
+            null
+        else
+            TransitiveVisibilityProvider(
+                com.google.common.collect.ImmutableSet.of<PackageSpecificationProvider?>(
+                    transitiveVisibilityImposedByThisPackage
+                )
+            )
+    }
 
-  @Override
-  @Nullable
-  protected Info rawGetStarlarkProvider(Provider.Key providerKey) {
-    return null;
-  }
+    override fun rawGetStarlarkProvider(providerKey: Provider.Key?): Info? {
+        return null
+    }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<input file target " + getLabel() + ">");
-  }
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: StarlarkSemantics?) {
+        printer.append("<input file target " + getLabel() + ">")
+    }
 
-  @Override
-  public String toString() {
-    return "InputFileConfiguredTarget(" + getLabel() + ")";
-  }
+    override fun toString(): String {
+        return "InputFileConfiguredTarget(" + getLabel() + ")"
+    }
 }

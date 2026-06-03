@@ -11,121 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
-
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.zip.GZIPInputStream;
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
+import java.io.IOException
+import java.util.zip.GZIPInputStream
 
 /**
- * A {@link Parser} for gcov intermediate json format introduced in GCC 9.1. See the flag {@code
- * --intermediate-format} in <a
- * href="https://gcc.gnu.org/onlinedocs/gcc-9.3.0/gcc/Invoking-Gcov.html">gcov documentation</a>.
+ * A [Parser] for gcov intermediate json format introduced in GCC 9.1. See the flag `--intermediate-format` in [gcov documentation](https://gcc.gnu.org/onlinedocs/gcc-9.3.0/gcc/Invoking-Gcov.html).
  */
-public class GcovJsonParser {
-  private static final Logger logger = Logger.getLogger(GcovJsonParser.class.getName());
-  private final InputStream inputStream;
+class GcovJsonParser private constructor(inputStream: java.io.InputStream) {
+    private val inputStream: java.io.InputStream
 
-  private GcovJsonParser(InputStream inputStream) {
-    this.inputStream = inputStream;
-  }
-
-  public static List<SourceFileCoverage> parse(InputStream inputStream) throws IOException {
-    return new GcovJsonParser(inputStream).parse();
-  }
-
-  private List<SourceFileCoverage> parse() throws IOException {
-    ArrayList<SourceFileCoverage> allSourceFiles = new ArrayList<>();
-    try (InputStream gzipStream = new GZIPInputStream(inputStream)) {
-      ByteArrayOutputStream contents = new ByteArrayOutputStream();
-      byte[] buffer = new byte[1024];
-      int length;
-      while ((length = gzipStream.read(buffer)) != -1) {
-        contents.write(buffer, 0, length);
-      }
-      Gson gson = new Gson();
-      GcovJsonFormat document = gson.fromJson(contents.toString(), GcovJsonFormat.class);
-      if (!document.format_version.equals("1")) {
-        logger.log(
-            Level.WARNING,
-            "Expect GCov JSON format version 1, got format version " + document.format_version);
-      }
-      for (GcovJsonFile file : document.files) {
-        SourceFileCoverage currentFileCoverage = new SourceFileCoverage(file.file);
-        for (GcovJsonFunction function : file.functions) {
-          currentFileCoverage.addFunctionLineNumber(function.name, function.start_line);
-          currentFileCoverage.addFunctionExecution(function.name, function.execution_count);
-        }
-        for (GcovJsonLine line : file.lines) {
-          currentFileCoverage.addLine(line.line_number, line.count);
-          int branchNumber = 0;
-          boolean taken = Arrays.stream(line.branches).anyMatch(b -> b.count > 0);
-          for (GcovJsonBranch branch : line.branches) {
-            currentFileCoverage.addBranch(
-                line.line_number, "0", Integer.toString(branchNumber), taken, branch.count);
-            branchNumber += 1;
-          }
-        }
-        allSourceFiles.add(currentFileCoverage);
-      }
+    init {
+        this.inputStream = inputStream
     }
 
-    return allSourceFiles;
-  }
+    @Throws(IOException::class)
+    private fun parse(): MutableList<SourceFileCoverage?> {
+        val allSourceFiles: java.util.ArrayList<SourceFileCoverage?> = java.util.ArrayList<SourceFileCoverage?>()
+        GZIPInputStream(inputStream).use { gzipStream ->
+            val contents: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(1024)
+            var length: Int
+            while ((gzipStream.read(buffer).also { length = it }) != -1) {
+                contents.write(buffer, 0, length)
+            }
+            val gson: Gson = Gson()
+            val document: GcovJsonFormat =
+                gson.fromJson<GcovJsonFormat>(contents.toString(), GcovJsonFormat::class.java)
+            if (document.format_version != "1") {
+                logger.log(
+                    java.util.logging.Level.WARNING,
+                    "Expect GCov JSON format version 1, got format version " + document.format_version
+                )
+            }
+            for (file in document.files) {
+                val currentFileCoverage: SourceFileCoverage = SourceFileCoverage(file.file)
+                for (function in file.functions) {
+                    currentFileCoverage.addFunctionLineNumber(function.name, function.start_line)
+                    currentFileCoverage.addFunctionExecution(function.name, function.execution_count)
+                }
+                for (line in file.lines) {
+                    currentFileCoverage.addLine(line.line_number, line.count)
+                    var branchNumber = 0
+                    val taken: Boolean = java.util.Arrays.stream<GcovJsonBranch?>(line.branches)
+                        .anyMatch(java.util.function.Predicate { b: GcovJsonBranch? -> b!!.count > 0 })
+                    for (branch in line.branches) {
+                        currentFileCoverage.addBranch(
+                            line.line_number, "0", java.lang.Integer.toString(branchNumber), taken, branch.count
+                        )
+                        branchNumber += 1
+                    }
+                }
+                allSourceFiles.add(currentFileCoverage)
+            }
+        }
+        return allSourceFiles
+    }
 
-  // Classes for the Gson data mapper representing the structure of the GCov JSON format
-  // These do not follow the Java naming styleguide as they need to match the JSON field names
-  // Documentation can be found in GCov's manpage, of which the source is available at
-  // https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=gcc/doc/gcov.texi;h=dcdd7831ff063483d43e5347af0b67083c85ecc4;hb=4212a6a3e44f870412d9025eeb323fd4f50a61da#l184
+    // Classes for the Gson data mapper representing the structure of the GCov JSON format
+    // These do not follow the Java naming styleguide as they need to match the JSON field names
+    // Documentation can be found in GCov's manpage, of which the source is available at
+    // https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=gcc/doc/gcov.texi;h=dcdd7831ff063483d43e5347af0b67083c85ecc4;hb=4212a6a3e44f870412d9025eeb323fd4f50a61da#l184
+    internal class GcovJsonFormat {
+        var gcc_version: String? = null
+        var files: Array<GcovJsonFile>
+        var format_version: String? = null
+        var current_working_directory: String? = null
+        var data_file: String? = null
+    }
 
-  static class GcovJsonFormat {
-    String gcc_version;
-    GcovJsonFile[] files;
-    String format_version;
-    String current_working_directory;
-    String data_file;
-  }
+    internal class GcovJsonFile {
+        var file: String? = null
+        var functions: Array<GcovJsonFunction>
+        var lines: Array<GcovJsonLine>
+    }
 
-  static class GcovJsonFile {
-    String file;
-    GcovJsonFunction[] functions;
-    GcovJsonLine[] lines;
-  }
+    internal class GcovJsonFunction {
+        var blocks: Int = 0
+        var end_column: Int = 0
+        var start_line: Int = 0
+        var name: String? = null
+        var blocks_executed: Int = 0
+        var execution_count: Long = 0
+        var demangled_name: String? = null
+        var start_column: Int = 0
+        var end_line: Int = 0
+    }
 
-  static class GcovJsonFunction {
-    int blocks;
-    int end_column;
-    int start_line;
-    String name;
-    int blocks_executed;
-    long execution_count;
-    String demangled_name;
-    int start_column;
-    int end_line;
-  }
+    internal class GcovJsonLine {
+        var branches: Array<GcovJsonBranch>
+        var count: Long = 0
+        var line_number: Int = 0
+        var unexecuted_block: Boolean = false
+        var function_name: String? = null
+    }
 
-  static class GcovJsonLine {
-    GcovJsonBranch[] branches;
-    long count;
-    int line_number;
-    boolean unexecuted_block;
-    String function_name;
-  }
+    internal class GcovJsonBranch {
+        var fallthrough: Boolean = false
+        var count: Long = 0
 
-  static class GcovJsonBranch {
-    boolean fallthrough;
-    long count;
+        @SerializedName("throw")
+        var _throw: Boolean = false
+    }
 
-    @SerializedName("throw")
-    boolean _throw;
-  }
+    companion object {
+        private val logger: java.util.logging.Logger =
+            java.util.logging.Logger.getLogger(GcovJsonParser::class.java.getName())
+
+        @Throws(IOException::class)
+        fun parse(inputStream: java.io.InputStream): MutableList<SourceFileCoverage?> {
+            return GcovJsonParser(inputStream).parse()
+        }
+    }
 }

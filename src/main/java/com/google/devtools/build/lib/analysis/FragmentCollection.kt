@@ -11,42 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.common.collect.ImmutableCollection;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.starlarkbuildapi.FragmentCollectionApi;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.starlarkbuildapi.FragmentCollectionApi
 
-/** Represents a collection of configuration fragments in Starlark. */
-// Documentation can be found at ctx.fragments
-@Immutable
-public class FragmentCollection implements FragmentCollectionApi {
-  private final RuleContext ruleContext;
+/** Represents a collection of configuration fragments in Starlark.  */ // Documentation can be found at ctx.fragments
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class FragmentCollection(ruleContext: RuleContext) : FragmentCollectionApi {
+    private val ruleContext: RuleContext
 
-  public FragmentCollection(RuleContext ruleContext) {
-    this.ruleContext = ruleContext;
-  }
+    init {
+        this.ruleContext = ruleContext
+    }
 
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
+    public override fun isImmutable(): Boolean {
+        return true // immutable and Starlark-hashable
+    }
 
-  @Override
-  @Nullable
-  public Object getValue(String name) throws EvalException {
-    return ruleContext.getStarlarkFragment(name);
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    public override fun getValue(name: String?): Any? {
+        return ruleContext.getStarlarkFragment(name)
+    }
 
-  @Override
-  public ImmutableCollection<String> getFieldNames() {
-    return ruleContext.getStarlarkFragmentNames();
-  }
+    public override fun getFieldNames(): com.google.common.collect.ImmutableCollection<String?>? {
+        return ruleContext.getStarlarkFragmentNames()
+    }
 
-  @Override
-  public String toString() {
-    return "[ " + fieldsToString() + "]";
-  }
+    override fun toString(): String {
+        return "[ " + fieldsToString() + "]"
+    }
 }

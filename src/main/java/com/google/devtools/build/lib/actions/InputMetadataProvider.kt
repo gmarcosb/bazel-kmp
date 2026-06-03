@@ -11,154 +11,148 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
-/** Provides {@link ActionInput} metadata. */
+/** Provides [ActionInput] metadata.  */
 @ThreadSafe
-public interface InputMetadataProvider {
-  /**
-   * Returns a {@link FileArtifactValue} for the given {@link ActionInput}.
-   *
-   * <p>The returned {@link FileArtifactValue} instance corresponds to the final target of a symlink
-   * and therefore must not have a type of {@link FileStateType#SYMLINK}.
-   *
-   * <p>If {@linkplain DerivedArtifact#getGeneratingActionKey generating action} is not immediately
-   * available, this method throws {@code MissingDepExecException} to signal that a Skyframe restart
-   * is necessary to obtain the requested metadata.
-   *
-   * @param input the input to retrieve the digest for
-   * @return the artifact's digest or null if digest cannot be obtained (due to artifact
-   *     non-existence, lookup errors, or any other reason)
-   * @throws InterruptedException if interrupted
-   * @throws IOException if the action input cannot be digested
-   * @throws MissingDepExecException if a Skyframe restart is required to provide the requested data
-   */
-  @Nullable
-  FileArtifactValue getInputMetadataChecked(ActionInput input)
-      throws InterruptedException, IOException, MissingDepExecException;
+interface InputMetadataProvider {
+    /**
+     * Returns a [FileArtifactValue] for the given [ActionInput].
+     * 
+     * 
+     * The returned [FileArtifactValue] instance corresponds to the final target of a symlink
+     * and therefore must not have a type of [FileStateType.SYMLINK].
+     * 
+     * 
+     * If [generating action][DerivedArtifact.getGeneratingActionKey] is not immediately
+     * available, this method throws `MissingDepExecException` to signal that a Skyframe restart
+     * is necessary to obtain the requested metadata.
+     * 
+     * @param input the input to retrieve the digest for
+     * @return the artifact's digest or null if digest cannot be obtained (due to artifact
+     * non-existence, lookup errors, or any other reason)
+     * @throws InterruptedException if interrupted
+     * @throws IOException if the action input cannot be digested
+     * @throws MissingDepExecException if a Skyframe restart is required to provide the requested data
+     */
+    @Throws(java.lang.InterruptedException::class, IOException::class, MissingDepExecException::class)
+    fun getInputMetadataChecked(input: ActionInput?): FileArtifactValue?
 
-  /**
-   * Returns the {@link TreeArtifactValue} for the given path, or {@code null} if no such tree
-   * artifact exists.
-   */
-  @Nullable
-  TreeArtifactValue getTreeMetadata(ActionInput input);
+    /**
+     * Returns the [TreeArtifactValue] for the given path, or `null` if no such tree
+     * artifact exists.
+     */
+    fun getTreeMetadata(input: ActionInput?): TreeArtifactValue?
 
-  /**
-   * Returns the {@link TreeArtifactValue} for the tree artifact that contains the given path or
-   * {@code null} if no such tree artifact exists.
-   */
-  @Nullable
-  TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath);
+    /**
+     * Returns the [TreeArtifactValue] for the tree artifact that contains the given path or
+     * `null` if no such tree artifact exists.
+     */
+    fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue?
 
-  /**
-   * Like {@link #getInputMetadata(ActionInput)}, but assumes that no Skyframe restart is needed.
-   *
-   * <p>If one is needed anyway, throws {@link IllegalStateException}.
-   */
-  @Nullable
-  default FileArtifactValue getInputMetadata(ActionInput input) throws IOException {
-    try {
-      return getInputMetadataChecked(input);
-    } catch (MissingDepExecException | InterruptedException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  /**
-   * Returns the contents of a given Fileset on the inputs of the action.
-   *
-   * <p>Works both for Filesets that are directly on the inputs and those that are included in a
-   * runfiles tree.
-   */
-  @Nullable
-  FilesetOutputTree getFileset(ActionInput input);
-
-  /**
-   * Returns the Filesets on the inputs of the action.
-   *
-   * <p>Contains both Filesets that are directly on the inputs and those that are included in a
-   * runfiles tree.
-   */
-  Map<Artifact, FilesetOutputTree> getFilesets();
-
-  /**
-   * Returns the {@link RunfilesArtifactValue} for the given {@link ActionInput}, which must be a
-   * runfiles tree artifact.
-   *
-   * @return the appropriate {@link RunfilesArtifactValue} or null if it's not found.
-   */
-  @Nullable
-  RunfilesArtifactValue getRunfilesMetadata(ActionInput input);
-
-  /** Returns the runfiles trees in this metadata provider. */
-  ImmutableList<RunfilesTree> getRunfilesTrees();
-
-  /** Looks up an input from its exec path. */
-  @Nullable
-  ActionInput getInput(PathFragment execPath);
-
-  /**
-   * Expands tree artifacts in a sequence of {@link ActionInput}s.
-   *
-   * <p>If {@code keepEmptyTreeArtifacts} is true, a tree artifact will be included in the
-   * constructed list when it expands into zero file artifacts. Otherwise, only the file artifacts
-   * the tree artifact expands into will be included.
-   *
-   * <p>Runfiles tree artifacts will be returned if {@code keepRunfilesTrees} is set, otherwise they
-   * will be filtered out.
-   *
-   * <p>Non-runfiles, non-tree artifacts are returned untouched.
-   */
-  static List<ActionInput> expandArtifacts(
-      InputMetadataProvider inputMetadataProvider,
-      NestedSet<? extends ActionInput> inputs,
-      boolean keepEmptyTreeArtifacts,
-      boolean keepRunfilesTrees) {
-    List<ActionInput> result = new ArrayList<>();
-    Set<Artifact> emptyTreeArtifacts = new TreeSet<>();
-    Set<Artifact> treeFileArtifactParents = new HashSet<>();
-    for (ActionInput input : inputs.toList()) {
-      if (!(input instanceof Artifact artifact)) {
-        result.add(input);
-      } else if (artifact.isRunfilesTree()) {
-        if (keepRunfilesTrees) {
-          result.add(artifact);
+    /**
+     * Like [.getInputMetadata], but assumes that no Skyframe restart is needed.
+     * 
+     * 
+     * If one is needed anyway, throws [IllegalStateException].
+     */
+    @Throws(IOException::class)
+    fun getInputMetadata(input: ActionInput?): FileArtifactValue? {
+        try {
+            return getInputMetadataChecked(input)
+        } catch (e: MissingDepExecException) {
+            throw java.lang.IllegalStateException(e)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException(e)
         }
-      } else if (artifact.isTreeArtifact()) {
-        TreeArtifactValue treeArtifactValue = inputMetadataProvider.getTreeMetadata(artifact);
-        if (treeArtifactValue == null || treeArtifactValue.getChildren().isEmpty()) {
-          emptyTreeArtifacts.add(artifact);
-        } else {
-          result.addAll(treeArtifactValue.getChildren());
-        }
-      } else {
-        result.add(artifact);
-        if (artifact.isChildOfDeclaredDirectory()) {
-          treeFileArtifactParents.add(artifact.getParent());
-        }
-      }
     }
 
-    if (keepEmptyTreeArtifacts) {
-      emptyTreeArtifacts.removeAll(treeFileArtifactParents);
-      result.addAll(emptyTreeArtifacts);
+    /**
+     * Returns the contents of a given Fileset on the inputs of the action.
+     * 
+     * 
+     * Works both for Filesets that are directly on the inputs and those that are included in a
+     * runfiles tree.
+     */
+    fun getFileset(input: ActionInput?): FilesetOutputTree?
+
+    /**
+     * Returns the Filesets on the inputs of the action.
+     * 
+     * 
+     * Contains both Filesets that are directly on the inputs and those that are included in a
+     * runfiles tree.
+     */
+    fun getFilesets(): MutableMap<Artifact?, FilesetOutputTree?>?
+
+    /**
+     * Returns the [RunfilesArtifactValue] for the given [ActionInput], which must be a
+     * runfiles tree artifact.
+     * 
+     * @return the appropriate [RunfilesArtifactValue] or null if it's not found.
+     */
+    fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue?
+
+    /** Returns the runfiles trees in this metadata provider.  */
+    fun getRunfilesTrees(): com.google.common.collect.ImmutableList<RunfilesTree?>?
+
+    /** Looks up an input from its exec path.  */
+    fun getInput(execPath: PathFragment?): ActionInput?
+
+    companion object {
+        /**
+         * Expands tree artifacts in a sequence of [ActionInput]s.
+         * 
+         * 
+         * If `keepEmptyTreeArtifacts` is true, a tree artifact will be included in the
+         * constructed list when it expands into zero file artifacts. Otherwise, only the file artifacts
+         * the tree artifact expands into will be included.
+         * 
+         * 
+         * Runfiles tree artifacts will be returned if `keepRunfilesTrees` is set, otherwise they
+         * will be filtered out.
+         * 
+         * 
+         * Non-runfiles, non-tree artifacts are returned untouched.
+         */
+        fun expandArtifacts(
+            inputMetadataProvider: InputMetadataProvider,
+            inputs: NestedSet<out ActionInput?>,
+            keepEmptyTreeArtifacts: Boolean,
+            keepRunfilesTrees: Boolean
+        ): MutableList<ActionInput?> {
+            val result: MutableList<ActionInput?> = java.util.ArrayList<ActionInput?>()
+            val emptyTreeArtifacts: MutableSet<Artifact?> = TreeSet<Artifact?>()
+            val treeFileArtifactParents: MutableSet<Artifact?> = HashSet<Artifact?>()
+            for (input in inputs.toList()) {
+                if (input !is Artifact) {
+                    result.add(input)
+                } else if (input.isRunfilesTree()) {
+                    if (keepRunfilesTrees) {
+                        result.add(input)
+                    }
+                } else if (input.isTreeArtifact()) {
+                    val treeArtifactValue: TreeArtifactValue? = inputMetadataProvider.getTreeMetadata(input)
+                    if (treeArtifactValue == null || treeArtifactValue.getChildren().isEmpty()) {
+                        emptyTreeArtifacts.add(input)
+                    } else {
+                        result.addAll(treeArtifactValue.getChildren())
+                    }
+                } else {
+                    result.add(input)
+                    if (input.isChildOfDeclaredDirectory()) {
+                        treeFileArtifactParents.add(input.getParent())
+                    }
+                }
+            }
+
+            if (keepEmptyTreeArtifacts) {
+                emptyTreeArtifacts.removeAll(treeFileArtifactParents)
+                result.addAll(emptyTreeArtifacts)
+            }
+            return result
+        }
     }
-    return result;
-  }
 }

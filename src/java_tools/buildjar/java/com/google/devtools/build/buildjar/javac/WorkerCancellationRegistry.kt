@@ -11,26 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac
 
-package com.google.devtools.build.buildjar.javac;
+import java.util.concurrent.ConcurrentHashMap
 
-import java.util.concurrent.ConcurrentHashMap;
+/** A helper class that keeps track of requests to be cancelled.  */
+class WorkerCancellationRegistry {
+    /** the map keeps track of requests that should be cancelled.  */
+    private val cancelledRequests: ConcurrentHashMap<Int?, Int?> = ConcurrentHashMap<Int?, Int?>()
 
-/** A helper class that keeps track of requests to be cancelled. */
-public class WorkerCancellationRegistry {
+    fun checkIfRequestIsCancelled(requestId: Int): Boolean {
+        return cancelledRequests.containsKey(requestId)
+    }
 
-  /** the map keeps track of requests that should be cancelled. */
-  private final ConcurrentHashMap<Integer, Integer> cancelledRequests = new ConcurrentHashMap<>();
+    fun registerRequest(requestId: Int?) {
+        cancelledRequests.put(requestId, requestId)
+    }
 
-  public boolean checkIfRequestIsCancelled(int requestId) {
-    return cancelledRequests.containsKey(requestId);
-  }
-
-  public void registerRequest(Integer requestId) {
-    cancelledRequests.put(requestId, requestId);
-  }
-
-  public void unregisterRequest(Integer requestId) {
-    cancelledRequests.remove(requestId, requestId);
-  }
+    fun unregisterRequest(requestId: Int?) {
+        cancelledRequests.remove(requestId, requestId)
+    }
 }

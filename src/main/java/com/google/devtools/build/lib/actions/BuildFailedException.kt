@@ -11,64 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 /**
  * This exception gets thrown if there were errors during the execution phase of the build.
- *
- * <p>The argument to the constructor may be null if the thrower has already printed an error
+ * 
+ * 
+ * The argument to the constructor may be null if the thrower has already printed an error
  * message; in this case, no error message should be printed by the catcher. (Typically, this
- * happens when the builder is unsuccessful and {@code --keep_going} was specified. This error
+ * happens when the builder is unsuccessful and `--keep_going` was specified. This error
  * corresponds to one or more actions failing, but since those actions' failures will be reported
  * separately, the exception carries no message and is just used for control flow.)
- *
- * <p>This exception typically leads to Bazel termination with exit code {@link
- * ExitCode#BUILD_FAILURE}. However, if a more specific exit code is appropriate, it can be
- * propagated by specifying the exit code to the constructor using a {@link DetailedExitCode}.
+ * 
+ * 
+ * This exception typically leads to Bazel termination with exit code [ ][ExitCode.BUILD_FAILURE]. However, if a more specific exit code is appropriate, it can be
+ * propagated by specifying the exit code to the constructor using a [DetailedExitCode].
  */
 @ThreadSafe
-public class BuildFailedException extends Exception implements DetailedException {
-  private final boolean catastrophic;
-  private final boolean errorAlreadyShown;
-  private final DetailedExitCode detailedExitCode;
+open class BuildFailedException(
+    message: String?,
+    private val catastrophic: Boolean,
+    private val errorAlreadyShown: Boolean,
+    detailedExitCode: DetailedExitCode?
+) : java.lang.Exception(message), DetailedException {
+    private val detailedExitCode: DetailedExitCode
 
-  public BuildFailedException(String message, DetailedExitCode detailedExitCode) {
-    this(
-        message,
-        /*catastrophic=*/ false,
-        /*errorAlreadyShown=*/ false,
-        detailedExitCode);
-  }
+    constructor(message: String?, detailedExitCode: DetailedExitCode?) : this(
+        message,  /*catastrophic=*/
+        false,  /*errorAlreadyShown=*/
+        false,
+        detailedExitCode
+    )
 
-  public BuildFailedException(
-      String message,
-      boolean catastrophic,
-      boolean errorAlreadyShown,
-      DetailedExitCode detailedExitCode) {
-    super(message);
-    this.catastrophic = catastrophic;
-    this.errorAlreadyShown = errorAlreadyShown;
-    this.detailedExitCode = checkNotNull(detailedExitCode);
-  }
+    init {
+        this.detailedExitCode = com.google.common.base.Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
+    }
 
-  public boolean isCatastrophic() {
-    return catastrophic;
-  }
+    fun isCatastrophic(): Boolean {
+        return catastrophic
+    }
 
-  public boolean isErrorAlreadyShown() {
-    return errorAlreadyShown || getMessage() == null;
-  }
+    fun isErrorAlreadyShown(): Boolean {
+        return errorAlreadyShown || getMessage() == null
+    }
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    public override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
 }

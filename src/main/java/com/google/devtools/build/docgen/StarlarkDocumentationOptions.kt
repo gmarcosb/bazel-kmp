@@ -11,23 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsClass
 
-/** Command line options for the Starlark docgen. */
+/** Command line options for the Starlark docgen.  */
 @OptionsClass
-public abstract class StarlarkDocumentationOptions extends CommonOptions {
-  @Option(
-      name = "starlark_docs_root",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Root URL of narrative Starlark documentation, for example rules.md; replaces"
-              + " $STARLARK_DOCS_ROOT expansion variable in docs.")
-  public abstract String getStarlarkDocsRoot();
+abstract class StarlarkDocumentationOptions : com.google.devtools.build.docgen.CommonOptions() {
+    @get:com.google.devtools.common.options.Option(
+        name = "starlark_docs_root",
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Root URL of narrative Starlark documentation, for example rules.md; replaces"
+                + " \$STARLARK_DOCS_ROOT expansion variable in docs.")
+    )
+    abstract val starlarkDocsRoot: String?
 }

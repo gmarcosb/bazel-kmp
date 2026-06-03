@@ -11,47 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen.starlark
 
-package com.google.devtools.build.docgen.starlark;
+import com.google.devtools.build.docgen.starlark.StarlarkDocExpander
+import com.google.devtools.build.docgen.starlark.StarlarkDocPage
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.syntax.Identifier.getName
 
-import net.starlark.java.annot.StarlarkBuiltin;
+/** A documentation page for a Starlark builtin type implemented in Java.  */
+class AnnotStarlarkBuiltinDoc(
+    starlarkBuiltin: StarlarkBuiltin,
+    classObject: java.lang.Class<*>,
+    expander: StarlarkDocExpander?
+) : StarlarkDocPage(expander) {
+    private val starlarkBuiltin: StarlarkBuiltin
+    private val classObject: java.lang.Class<*>
 
-/** A documentation page for a Starlark builtin type implemented in Java. */
-public final class AnnotStarlarkBuiltinDoc extends StarlarkDocPage {
-  private static final String SOURCE_ROOT = "src/main/java";
+    init {
+        this.starlarkBuiltin = starlarkBuiltin
+        this.classObject = classObject
+    }
 
-  private final StarlarkBuiltin starlarkBuiltin;
-  private final Class<?> classObject;
+    val name: String?
+        get() = starlarkBuiltin.name
 
-  public AnnotStarlarkBuiltinDoc(
-      StarlarkBuiltin starlarkBuiltin, Class<?> classObject, StarlarkDocExpander expander) {
-    super(expander);
-    this.starlarkBuiltin = starlarkBuiltin;
-    this.classObject = classObject;
-  }
+    val rawDocumentation: String?
+        get() = starlarkBuiltin.doc
 
-  @Override
-  public String getName() {
-    return starlarkBuiltin.name();
-  }
+    val title: String?
+        get() = starlarkBuiltin.name
 
-  @Override
-  public String getRawDocumentation() {
-    return starlarkBuiltin.doc();
-  }
+    fun getClassObject(): java.lang.Class<*> {
+        return classObject
+    }
 
-  @Override
-  public String getTitle() {
-    return starlarkBuiltin.name();
-  }
+    val sourceFile: String?
+        get() {
+            val parts: Array<String?> = classObject.getName().split("\\$".toRegex()).toTypedArray()
+            return String.format(
+                "%s/%s.java",
+                SOURCE_ROOT,
+                parts[0].replace('.', '/')
+            )
+        }
 
-  public Class<?> getClassObject() {
-    return classObject;
-  }
-
-  @Override
-  public String getSourceFile() {
-    String[] parts = classObject.getName().split("\\$", -1);
-    return String.format("%s/%s.java", SOURCE_ROOT, parts[0].replace('.', '/'));
-  }
+    companion object {
+        private const val SOURCE_ROOT = "src/main/java"
+    }
 }

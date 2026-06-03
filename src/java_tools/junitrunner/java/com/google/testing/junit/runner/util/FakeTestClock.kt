@@ -11,60 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.time.Duration;
-import java.time.Instant;
+import com.google.devtools.build.lib.clock.Clock.now
+import com.google.testing.junit.runner.util.TestClock
+import com.google.testing.junit.runner.util.TestClock.TestInstant
+import java.time.Instant
 
 /**
  * A Ticker whose value can be advanced programmatically in test.
- *
- * <p>The ticker can be configured so that the time is incremented whenever {@link #now()} is
+ * 
+ * 
+ * The ticker can be configured so that the time is incremented whenever [.now] is
  * called.
- *
- * <p>This class is thread-safe.
+ * 
+ * 
+ * This class is thread-safe.
  */
-public class FakeTestClock extends TestClock {
+class FakeTestClock : TestClock() {
+    private var wallTimeOffset: Instant = Instant.EPOCH
+    private var monotonic: java.time.Duration = java.time.Duration.ZERO
+    private val autoIncrementStep: java.time.Duration = java.time.Duration.ZERO
 
-  private Instant wallTimeOffset = Instant.EPOCH;
-  private Duration monotonic = Duration.ZERO;
-  private Duration autoIncrementStep = Duration.ZERO;
+    /** Advances the ticker value by `time` in `timeUnit`.  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @kotlin.jvm.Synchronized
+    fun advance(duration: java.time.Duration): FakeTestClock {
+        monotonic = monotonic.plus(duration)
+        return this
+    }
 
-  /** Advances the ticker value by {@code time} in {@code timeUnit}. */
-  @CanIgnoreReturnValue
-  public synchronized FakeTestClock advance(Duration duration) {
-    monotonic = monotonic.plus(duration);
-    return this;
-  }
+    /**
+     * Sets the wall time offset to the specified value. That is the offset between the wall time and
+     * the monotonic advance set either via [.setAutoIncrementStep] or [ ][.advance].
+     * 
+     * 
+     * The default behavior is to have an offset of zero, which means that the monotonic timestamp
+     * has the same value as the wall time (relative to EPOCH).
+     */
+    fun setWallTimeOffset(wallTimeOffset: Instant) {
+        this.wallTimeOffset = wallTimeOffset
+    }
 
-  /**
-   * Sets the wall time offset to the specified value. That is the offset between the wall time and
-   * the monotonic advance set either via {@link #setAutoIncrementStep(Duration)} or {@link
-   * #advance(Duration)}.
-   *
-   * <p>The default behavior is to have an offset of zero, which means that the monotonic timestamp
-   * has the same value as the wall time (relative to EPOCH).
-   */
-  public void setWallTimeOffset(Instant wallTimeOffset) {
-    this.wallTimeOffset = wallTimeOffset;
-  }
+    override fun monotonicTime(): java.time.Duration {
+        return monotonic
+    }
 
-  @Override
-  Duration monotonicTime() {
-    return monotonic;
-  }
+    override fun wallTime(): Instant? {
+        return wallTimeOffset.plus(monotonic)
+    }
 
-  @Override
-  Instant wallTime() {
-    return wallTimeOffset.plus(monotonic);
-  }
-
-  @Override
-  public synchronized TestInstant now() {
-    advance(autoIncrementStep);
-    return super.now();
-  }
+    @kotlin.jvm.Synchronized
+    override fun now(): TestInstant? {
+        advance(autoIncrementStep)
+        return super.now()
+    }
 }
 

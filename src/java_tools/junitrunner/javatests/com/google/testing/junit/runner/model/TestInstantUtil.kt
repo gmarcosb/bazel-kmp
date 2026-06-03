@@ -11,28 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
+import com.google.testing.junit.runner.util.TestClock.TestInstant
+import java.time.Instant
 
-import com.google.testing.junit.runner.util.TestClock.TestInstant;
-import java.time.Duration;
-import java.time.Instant;
+/** Utility class used for quick creation of TestInstant for testing.  */
+object TestInstantUtil {
+    // Added to the monotonic nano timestamp to assert it is not used as absolute time
+    private const val INITIAL_RELATIVE_TIMESTAMP = 111111L
 
-/** Utility class used for quick creation of TestInstant for testing. */
-public class TestInstantUtil {
+    /** Creates a TestInstant with a monotonic timestamp that is offset from the wall time.  */
+    fun testInstant(wallTime: Instant): TestInstant {
+        return TestInstant(
+            wallTime, java.time.Duration.ofMillis(INITIAL_RELATIVE_TIMESTAMP + wallTime.toEpochMilli())
+        )
+    }
 
-  // Added to the monotonic nano timestamp to assert it is not used as absolute time
-  private static final long INITIAL_RELATIVE_TIMESTAMP = 111111L;
-
-  /** Creates a TestInstant with a monotonic timestamp that is offset from the wall time. */
-  public static TestInstant testInstant(Instant wallTime) {
-    return new TestInstant(
-        wallTime, Duration.ofMillis(INITIAL_RELATIVE_TIMESTAMP + wallTime.toEpochMilli()));
-  }
-
-  /** Returns a TestInstant advanced in time by the specified duration. */
-  public static TestInstant advance(TestInstant instant, Duration duration) {
-    return new TestInstant(
-        instant.wallTime().plus(duration), instant.monotonicTime().plus(duration));
-  }
+    /** Returns a TestInstant advanced in time by the specified duration.  */
+    fun advance(instant: TestInstant, duration: java.time.Duration): TestInstant {
+        return TestInstant(
+            instant.wallTime().plus(duration), instant.monotonicTime().plus(duration)
+        )
+    }
 }

@@ -11,109 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.analysis.platform.PlatformInfo
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.util.OS;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
+/** Base implementation of a Spawn.  */
+@javax.annotation.concurrent.Immutable
+open class BaseSpawn(
+    arguments: MutableList<String?>,
+    environment: MutableMap<String?, String?>,
+    executionInfo: MutableMap<String?, String?>,
+    action: ActionExecutionMetadata,
+    localResources: ResourceSetOrBuilder
+) : Spawn {
+    private val arguments: com.google.common.collect.ImmutableList<String?>
+    private val environment: com.google.common.collect.ImmutableMap<String?, String?>
+    private val executionInfo: com.google.common.collect.ImmutableMap<String?, String?>
+    private val action: ActionExecutionMetadata
+    private val localResources: ResourceSetOrBuilder
+    private var localResourcesCached: ResourceSet? = null
 
-/** Base implementation of a Spawn. */
-@Immutable
-public class BaseSpawn implements Spawn {
-  private final ImmutableList<String> arguments;
-  private final ImmutableMap<String, String> environment;
-  private final ImmutableMap<String, String> executionInfo;
-  private final ActionExecutionMetadata action;
-  private final ResourceSetOrBuilder localResources;
-  @Nullable private ResourceSet localResourcesCached;
-
-  public BaseSpawn(
-      List<String> arguments,
-      Map<String, String> environment,
-      Map<String, String> executionInfo,
-      ActionExecutionMetadata action,
-      ResourceSetOrBuilder localResources) {
-    this.arguments = ImmutableList.copyOf(arguments);
-    this.environment = ImmutableMap.copyOf(environment);
-    this.executionInfo = ImmutableMap.copyOf(executionInfo);
-    this.action = action;
-    this.localResources = localResources;
-  }
-
-  @Override
-  public final ImmutableMap<String, String> getExecutionInfo() {
-    return executionInfo;
-  }
-
-  @Override
-  public ImmutableList<String> getArguments() {
-    // TODO(bazel-team): this method should be final, as the correct value of the args can be
-    // injected in the ctor.
-    return arguments;
-  }
-
-  @Override
-  public ImmutableMap<String, String> getEnvironment() {
-    return environment;
-  }
-
-  @Override
-  public NestedSet<? extends ActionInput> getToolFiles() {
-    return action.getTools();
-  }
-
-  @Override
-  public NestedSet<? extends ActionInput> getInputFiles() {
-    return action.getInputs();
-  }
-
-  @Override
-  public Collection<? extends ActionInput> getOutputFiles() {
-    return action.getOutputs();
-  }
-
-  @Override
-  public ActionExecutionMetadata getResourceOwner() {
-    return action;
-  }
-
-  @Override
-  public ResourceSet getLocalResources() throws ExecException, InterruptedException {
-    ResourceSet result = localResourcesCached;
-    if (result == null) {
-      // Not expected to be called concurrently, and an idempotent computation if it is.
-      result =
-          localResources
-              .buildResourceSet(OS.getCurrent(), action.getInputs().memoizedFlattenAndGetSize())
-              .withResourceOverrides(
-                  ExecutionRequirements.parseResources(getExecutionInfo()),
-                  ExecutionRequirements.parseResources(getCombinedExecProperties()));
-      localResourcesCached = result;
+    init {
+        this.arguments = com.google.common.collect.ImmutableList.copyOf<String?>(arguments)
+        this.environment = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(environment)
+        this.executionInfo = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(executionInfo)
+        this.action = action
+        this.localResources = localResources
     }
-    return result;
-  }
 
-  @Override
-  public String getMnemonic() {
-    return action.getMnemonic();
-  }
+    override fun getExecutionInfo(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return executionInfo
+    }
 
-  @Override
-  @Nullable
-  public PlatformInfo getExecutionPlatform() {
-    return action.getExecutionPlatform();
-  }
+    override fun getArguments(): com.google.common.collect.ImmutableList<String?> {
+        // TODO(bazel-team): this method should be final, as the correct value of the args can be
+        // injected in the ctor.
+        return arguments
+    }
 
-  @Override
-  public String toString() {
-    return Spawns.prettyPrint(this);
-  }
+    override fun getEnvironment(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return environment
+    }
+
+    override fun getToolFiles(): NestedSet<out ActionInput?>? {
+        return action.getTools()
+    }
+
+    override fun getInputFiles(): NestedSet<out ActionInput?>? {
+        return action.getInputs()
+    }
+
+    override fun getOutputFiles(): MutableCollection<out ActionInput?>? {
+        return action.getOutputs()
+    }
+
+    override fun getResourceOwner(): ActionExecutionMetadata {
+        return action
+    }
+
+    @Throws(ExecException::class, java.lang.InterruptedException::class)
+    override fun getLocalResources(): ResourceSet? {
+        var result: ResourceSet? = localResourcesCached
+        if (result == null) {
+            // Not expected to be called concurrently, and an idempotent computation if it is.
+            result =
+                localResources
+                    .buildResourceSet(OS.getCurrent(), action.getInputs().memoizedFlattenAndGetSize())
+                    .withResourceOverrides(
+                        ExecutionRequirements.parseResources(getExecutionInfo()),
+                        ExecutionRequirements.parseResources(getCombinedExecProperties())
+                    )
+            localResourcesCached = result
+        }
+        return result
+    }
+
+    override fun getMnemonic(): String? {
+        return action.getMnemonic()
+    }
+
+    override fun getExecutionPlatform(): PlatformInfo? {
+        return action.getExecutionPlatform()
+    }
+
+    override fun toString(): String {
+        return Spawns.prettyPrint(this)
+    }
 }

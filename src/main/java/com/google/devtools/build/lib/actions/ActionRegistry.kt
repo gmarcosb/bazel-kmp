@@ -11,14 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
-/** An interface for registering actions. */
-public interface ActionRegistry {
-  /** Notifies the registry of a new action. */
-  void registerAction(ActionAnalysisMetadata action);
+/** An interface for registering actions.  */
+interface ActionRegistry {
+    /** Notifies the registry of a new action.  */
+    fun registerAction(action: ActionAnalysisMetadata?)
 
-  /** Get the key of the ConfiguredTarget/Aspect ultimately responsible for all these actions. */
-  ActionLookupKey getOwner();
+    /** Get the key of the ConfiguredTarget/Aspect ultimately responsible for all these actions.  */
+    fun getOwner(): ActionLookupKey?
 }

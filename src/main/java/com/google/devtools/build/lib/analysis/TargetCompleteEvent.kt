@@ -11,565 +11,533 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.actions.Artifact
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationId;
+/** This event is fired as soon as a target is either built or fails.  */
+class TargetCompleteEvent
+private constructor(
+    targetAndData: ConfiguredTargetAndData,
+    rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>?,
+    completionContext: CompletionContext,
+    outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>,
+    isTest: Boolean,
+    announceTargetSummary: Boolean
+) : SkyValue, BuildEventWithOrderConstraint, EventReportingArtifacts, BuildEventWithConfiguration {
+    /** Lightweight data needed about the configured target in this event.  */
+    class ExecutableTargetData private constructor(targetAndData: ConfiguredTargetAndData) {
+        private val runfilesSupport: RunfilesSupport?
+        private val executable: Artifact?
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.CompletionContext;
-import com.google.devtools.build.lib.actions.CompletionContext.ArtifactReceiver;
-import com.google.devtools.build.lib.actions.EventReportingArtifacts;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FilesetOutputSymlink;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactHelper.ArtifactsInOutputGroup;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration;
-import com.google.devtools.build.lib.analysis.test.TestProvider;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext.OutputGroupFileMode;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions.OutputGroupFileModes;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.File;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.OutputGroup;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TargetComplete;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithConfiguration;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithOrderConstraint;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.causes.Cause;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.packages.TestTimeout;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.DetailedExitCode.DetailedExitCodeComparator;
-import com.google.devtools.build.lib.util.StringEncoding;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.protobuf.util.Durations;
-import java.util.Collection;
-import java.util.List;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
-
-/** This event is fired as soon as a target is either built or fails. */
-public final class TargetCompleteEvent
-    implements SkyValue,
-        BuildEventWithOrderConstraint,
-        EventReportingArtifacts,
-        BuildEventWithConfiguration {
-
-  /** Lightweight data needed about the configured target in this event. */
-  public static class ExecutableTargetData {
-    @Nullable private final RunfilesSupport runfilesSupport;
-    @Nullable private final Artifact executable;
-
-    private ExecutableTargetData(ConfiguredTargetAndData targetAndData) {
-      FilesToRunProvider provider =
-          targetAndData.getConfiguredTarget().getProvider(FilesToRunProvider.class);
-      if (provider != null) {
-        this.executable = provider.getExecutable();
-        this.runfilesSupport = provider.getRunfilesSupport();
-      } else {
-        this.executable = null;
-        this.runfilesSupport = null;
-      }
-    }
-
-    @Nullable
-    public Path getRunfilesDirectory() {
-      if (runfilesSupport != null) {
-        return runfilesSupport.getRunfilesDirectory();
-      }
-      return null;
-    }
-
-    @Nullable
-    public Artifact getExecutable() {
-      return executable;
-    }
-  }
-
-  private static final BaseEncoding LOWERCASE_HEX_ENCODING = BaseEncoding.base16().lowerCase();
-
-  private final Label label;
-  private final ConfiguredTargetKey configuredTargetKey;
-  private final NestedSet<Cause> rootCauses;
-  private final ImmutableList<BuildEventId> postedAfter;
-  private final CompletionContext completionContext;
-  private final ImmutableMap<String, ArtifactsInOutputGroup> outputs;
-  // The label as appeared in the BUILD file.
-  private final Label originalLabel;
-  private final boolean isTest;
-  private final boolean announceTargetSummary;
-  @Nullable private final Long testTimeoutSeconds;
-  @Nullable private final TestProvider.TestParams testParams;
-  private final BuildEvent configurationEvent;
-  private final BuildEventId configEventId;
-  private final Iterable<String> tags;
-  private final ExecutableTargetData executableTargetData;
-  @Nullable private final DetailedExitCode detailedExitCode;
-
-  private TargetCompleteEvent(
-      ConfiguredTargetAndData targetAndData,
-      NestedSet<Cause> rootCauses,
-      CompletionContext completionContext,
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      boolean isTest,
-      boolean announceTargetSummary) {
-    this.rootCauses =
-        (rootCauses == null) ? NestedSetBuilder.emptySet(Order.STABLE_ORDER) : rootCauses;
-    this.executableTargetData = new ExecutableTargetData(targetAndData);
-    ImmutableList.Builder<BuildEventId> postedAfterBuilder = ImmutableList.builder();
-    this.label = targetAndData.getConfiguredTarget().getLabel();
-    this.originalLabel = targetAndData.getConfiguredTarget().getOriginalLabel();
-    this.configuredTargetKey =
-        ConfiguredTargetKey.fromConfiguredTarget(targetAndData.getConfiguredTarget());
-    postedAfterBuilder.add(BuildEventIdUtil.targetConfigured(originalLabel));
-    DetailedExitCode mostImportantDetailedExitCode = null;
-    for (Cause cause : this.rootCauses.toList()) {
-      mostImportantDetailedExitCode =
-          DetailedExitCodeComparator.chooseMoreImportantWithFirstIfTie(
-              mostImportantDetailedExitCode, cause.getDetailedExitCode());
-      postedAfterBuilder.add(cause.getIdProto());
-    }
-    detailedExitCode = mostImportantDetailedExitCode;
-    this.completionContext = completionContext;
-    this.outputs = outputs;
-    this.isTest = isTest;
-    this.announceTargetSummary = announceTargetSummary;
-    this.testTimeoutSeconds = isTest ? getTestTimeoutSeconds(targetAndData) : null;
-    BuildConfigurationValue configuration = targetAndData.getConfiguration();
-    this.configEventId = configurationId(configuration);
-    this.configurationEvent = configuration != null ? configuration.toBuildEvent() : null;
-    this.testParams =
-        isTest
-            ? targetAndData.getConfiguredTarget().getProvider(TestProvider.class).getTestParams()
-            : null;
-    this.postedAfter = postedAfterBuilder.build();
-    this.tags = targetAndData.getRuleTags();
-  }
-
-  @Nullable
-  /** Construct a successful target completion event. */
-  public static TargetCompleteEvent successfulBuild(
-      ConfiguredTargetAndData ct,
-      CompletionContext completionContext,
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      boolean announceTargetSummary) {
-    return new TargetCompleteEvent(
-        ct, null, completionContext, outputs, false, announceTargetSummary);
-  }
-
-  /** Construct a successful target completion event for a target that will be tested. */
-  public static TargetCompleteEvent successfulBuildSchedulingTest(
-      ConfiguredTargetAndData ct,
-      CompletionContext completionContext,
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      boolean announceTargetSummary) {
-    return new TargetCompleteEvent(
-        ct, null, completionContext, outputs, true, announceTargetSummary);
-  }
-
-  /**
-   * Construct a target completion event for a failed target, with the given non-empty root causes.
-   */
-  public static TargetCompleteEvent createFailed(
-      ConfiguredTargetAndData ct,
-      CompletionContext completionContext,
-      NestedSet<Cause> rootCauses,
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      boolean announceTargetSummary) {
-    Preconditions.checkArgument(!rootCauses.isEmpty());
-    return new TargetCompleteEvent(
-        ct, rootCauses, completionContext, outputs, false, announceTargetSummary);
-  }
-
-  /** Returns the label of the target associated with the event. */
-  public Label getLabel() {
-    return label;
-  }
-
-  /**
-   * Returns the original label of the target.
-   *
-   * <p>See {@link ConfiguredTarget#getOriginalLabel()}.
-   */
-  public Label getOriginalLabel() {
-    return originalLabel;
-  }
-
-  public ConfiguredTargetKey getConfiguredTargetKey() {
-    return configuredTargetKey;
-  }
-
-  public ExecutableTargetData getExecutableTargetData() {
-    return executableTargetData;
-  }
-
-  /** Determines whether the target has failed or succeeded. */
-  public boolean failed() {
-    return !rootCauses.isEmpty();
-  }
-
-  /** Get the root causes of the target. May be empty. */
-  public NestedSet<Cause> getRootCauses() {
-    return rootCauses;
-  }
-
-  public Iterable<Artifact> getLegacyFilteredImportantArtifacts() {
-    // TODO(ulfjack): This duplicates code in ArtifactsToBuild.
-    NestedSetBuilder<Artifact> builder = NestedSetBuilder.stableOrder();
-    for (ArtifactsInOutputGroup artifactsInOutputGroup : outputs.values()) {
-      if (artifactsInOutputGroup.areImportant()) {
-        builder.addTransitive(artifactsInOutputGroup.getArtifacts());
-      }
-    }
-    return Iterables.filter(
-        builder.build().toList(),
-        (artifact) -> !artifact.isSourceArtifact() && !artifact.isRunfilesTree());
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.targetCompleted(originalLabel, configEventId);
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    ImmutableList.Builder<BuildEventId> childrenBuilder = ImmutableList.builder();
-    for (Cause cause : rootCauses.toList()) {
-      childrenBuilder.add(cause.getIdProto());
-    }
-    if (isTest) {
-      // For tests, announce all the test actions that will minimally happen (except for
-      // interruption). If after the result of a test action another attempt is necessary,
-      // it will be announced with the action that made the new attempt necessary.
-      for (int run = 0; run < Math.max(testParams.getRuns(), 1); run++) {
-        for (int shard = 0; shard < Math.max(testParams.getShards(), 1); shard++) {
-          childrenBuilder.add(BuildEventIdUtil.testResult(label, run, shard, configEventId));
-        }
-      }
-      childrenBuilder.add(BuildEventIdUtil.testSummary(label, configEventId));
-    }
-    if (announceTargetSummary) {
-      childrenBuilder.add(BuildEventIdUtil.targetSummary(originalLabel, configEventId));
-    }
-    return childrenBuilder.build();
-  }
-
-  public CompletionContext getCompletionContext() {
-    return completionContext;
-  }
-
-  @Nullable
-  public ArtifactsInOutputGroup getOutputGroup(String outputGroup) {
-    return outputs.get(outputGroup);
-  }
-
-  // TODO(aehlig): remove as soon as we managed to get rid of the deprecated "important_output"
-  // field.
-
-  private static void addFilesDirectlyToProtoField(
-      CompletionContext completionContext,
-      TargetComplete.Builder builder,
-      BuildEventContext converters,
-      Iterable<Artifact> artifacts) {
-    addFilesDirectlyToProtoField(
-        completionContext, builder::addImportantOutput, converters, artifacts);
-  }
-
-  private static void addFilesDirectlyToProtoField(
-      CompletionContext completionContext,
-      Consumer<BuildEventStreamProtos.File> addFile,
-      BuildEventContext converters,
-      Iterable<Artifact> artifacts) {
-    completionContext.visitArtifacts(
-        filterFilesets(artifacts),
-        new ArtifactReceiver() {
-          @Override
-          public void accept(Artifact artifact, FileArtifactValue metadata) {
-            String uri =
-                converters.pathConverter().apply(completionContext.pathResolver().toPath(artifact));
-            BuildEventStreamProtos.File file = newFile(artifact, metadata, uri);
-            // Omit files with unknown contents (e.g. if uploading failed).
-            if (file.getFileCase() != BuildEventStreamProtos.File.FileCase.FILE_NOT_SET) {
-              addFile.accept(file);
+        init {
+            val provider: FilesToRunProvider? =
+                targetAndData.getConfiguredTarget().getProvider(FilesToRunProvider::class.java)
+            if (provider != null) {
+                this.executable = provider.getExecutable()
+                this.runfilesSupport = provider.getRunfilesSupport()
+            } else {
+                this.executable = null
+                this.runfilesSupport = null
             }
-          }
-
-          @Override
-          public void acceptFilesetMapping(Artifact fileset, FilesetOutputSymlink link) {
-            throw new IllegalStateException(fileset + " should have been filtered out");
-          }
-        });
-  }
-
-  private static Iterable<Artifact> filterFilesets(Iterable<Artifact> artifacts) {
-    return Iterables.filter(artifacts, artifact -> !artifact.isFileset());
-  }
-
-  /**
-   * Creates a {@link BuildEventStreamProtos.File} proto for an artifact.
-   *
-   * @param artifact the artifact
-   * @param metadata the artifact's metadata
-   * @param uri the artifact's URI, or null if the artifact was not uploaded
-   */
-  public static BuildEventStreamProtos.File newFile(
-      Artifact artifact, FileArtifactValue metadata, @Nullable String uri) {
-    return newFile(artifact.getRoot(), artifact.getRootRelativePath(), metadata, uri);
-  }
-
-  /**
-   * Creates a {@link BuildEventStreamProtos.File} proto for an artifact.
-   *
-   * <p>Prefer calling {@link #newFile(Artifact, FileArtifactValue, String)} if a URI is available
-   * for this artifact.
-   *
-   * @param artifact the artifact
-   * @param metadata the artifact's metadata
-   */
-  public static BuildEventStreamProtos.File newFile(Artifact artifact, FileArtifactValue metadata) {
-    return newFile(artifact, metadata, /* uri= */ null);
-  }
-
-  /**
-   * Creates a {@link BuildEventStreamProtos.File} proto for a path.
-   *
-   * <p>Prefer calling {@link #newFile(Artifact, FileArtifactValue, String)} if an {@link Artifact}
-   * is available for this path.
-   *
-   * @param root the root the path resides under
-   * @param rootRelativePath the path relative to the root
-   * @param metadata the path's metadata
-   * @param uri the path's URI, or null if the artifact was not uploaded
-   */
-  public static BuildEventStreamProtos.File newFile(
-      ArtifactRoot root,
-      PathFragment rootRelativePath,
-      FileArtifactValue metadata,
-      @Nullable String uri) {
-    File.Builder file =
-        File.newBuilder()
-            .setName(StringEncoding.internalToUnicode(rootRelativePath.getPathString()))
-            .addAllPathPrefix(
-                Iterables.transform(
-                    root.getExecPath().segments(), StringEncoding::internalToUnicode));
-    if (metadata.getType().isSymlink()) {
-      file.setSymlinkTargetPath(
-          StringEncoding.internalToUnicode(metadata.getUnresolvedSymlinkTarget()));
-    } else if (metadata.getType().exists()) {
-      byte[] digest = metadata.getDigest();
-      if (digest != null) {
-        file.setDigest(LOWERCASE_HEX_ENCODING.encode(digest));
-      }
-      file.setLength(metadata.getSize());
-    }
-    if (uri != null) {
-      file.setUri(StringEncoding.internalToUnicode(uri));
-    }
-    return file.build();
-  }
-
-  @Override
-  public ImmutableList<LocalFile> referencedLocalFiles() {
-    ImmutableList.Builder<LocalFile> builder = ImmutableList.builder();
-    for (ArtifactsInOutputGroup group : outputs.values()) {
-      if (group.areImportant()) {
-        completionContext.visitArtifacts(
-            filterFilesets(group.getArtifacts().toList()),
-            new ArtifactReceiver() {
-              @Override
-              public void accept(Artifact artifact, FileArtifactValue metadata) {
-                builder.add(
-                    new LocalFile(
-                        completionContext.pathResolver().toPath(artifact),
-                        LocalFileType.forArtifact(artifact, metadata),
-                        metadata));
-              }
-
-              @Override
-              public void acceptFilesetMapping(Artifact fileset, FilesetOutputSymlink link) {
-                throw new IllegalStateException(fileset + " should have been filtered out");
-              }
-            });
-      }
-    }
-    return builder.build();
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.TargetComplete.Builder builder =
-        BuildEventStreamProtos.TargetComplete.newBuilder();
-
-    boolean failed = failed();
-    builder.setSuccess(!failed);
-    if (detailedExitCode != null) {
-      if (!failed) {
-        BugReport.sendBugReport(
-            new IllegalStateException("Detailed exit code with success? " + detailedExitCode));
-      }
-      FailureDetails.FailureDetail failureDetail = detailedExitCode.getFailureDetail();
-      if (failureDetail != null) {
-        builder.setFailureDetail(failureDetail);
-      }
-    }
-    builder.addAllTag(tags).addAllOutputGroup(getOutputFilesByGroup(converters));
-
-    if (isTest) {
-      builder.setTestTimeout(Durations.fromSeconds(testTimeoutSeconds));
-      builder.setTestTimeoutSeconds(testTimeoutSeconds);
-    }
-
-    Iterable<Artifact> filteredImportantArtifacts = getLegacyFilteredImportantArtifacts();
-    for (Artifact artifact : filteredImportantArtifacts) {
-      if (artifact.isDirectory()) {
-        FileArtifactValue metadata =
-            checkNotNull(
-                completionContext.getFileArtifactValue(artifact),
-                "missing metadata for artifact: %s",
-                artifact);
-        builder.addDirectoryOutput(newFile(artifact, metadata));
-      }
-    }
-    // TODO(aehlig): remove direct reporting of artifacts as soon as clients no longer need it.
-    if (converters.getOptions().getLegacyImportantOutputs()) {
-      addFilesDirectlyToProtoField(
-          completionContext, builder, converters, filteredImportantArtifacts);
-    }
-
-    BuildEventStreamProtos.TargetComplete complete = builder.build();
-    return GenericBuildEvent.protoChaining(this).setCompleted(complete).build();
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> postedAfter() {
-    return postedAfter;
-  }
-
-  @Override
-  public ReportedArtifacts reportedArtifacts(OutputGroupFileModes outputGroupFileModes) {
-    return toReportedArtifacts(outputs, completionContext, outputGroupFileModes);
-  }
-
-  @Override
-  public boolean storeForReplay() {
-    return true;
-  }
-
-  static ReportedArtifacts toReportedArtifacts(
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      CompletionContext completionContext,
-      OutputGroupFileModes outputGroupFileModes) {
-    ImmutableSet.Builder<NestedSet<Artifact>> builder = ImmutableSet.builder();
-    for (var entry : outputs.entrySet()) {
-      String groupName = entry.getKey();
-      OutputGroupFileMode mode = outputGroupFileModes.getMode(groupName);
-      var artifactsInGroup = entry.getValue();
-      if (artifactsInGroup.areImportant()) {
-        if (mode == OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY
-            || mode == OutputGroupFileMode.BOTH) {
-          builder.add(artifactsInGroup.getArtifacts());
         }
-      }
+
+        fun getRunfilesDirectory(): Path? {
+            if (runfilesSupport != null) {
+                return runfilesSupport.getRunfilesDirectory()
+            }
+            return null
+        }
+
+        fun getExecutable(): Artifact? {
+            return executable
+        }
     }
-    return new ReportedArtifacts(builder.build(), completionContext);
-  }
 
-  @Override
-  public Collection<BuildEvent> getConfigurations() {
-    return configurationEvent != null ? ImmutableList.of(configurationEvent) : ImmutableList.of();
-  }
+    private val label: Label?
+    private val configuredTargetKey: ConfiguredTargetKey?
+    private val rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>
+    private val postedAfter: com.google.common.collect.ImmutableList<BuildEventId?>
+    private val completionContext: CompletionContext
+    private val outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>
 
-  private ImmutableList<OutputGroup> getOutputFilesByGroup(BuildEventContext converters) {
-    return toOutputGroupProtos(outputs, completionContext, converters);
-  }
+    // The label as appeared in the BUILD file.
+    private val originalLabel: Label?
+    private val isTest: Boolean
+    private val announceTargetSummary: Boolean
+    private val testTimeoutSeconds: Long?
+    private val testParams: TestParams?
+    private val configurationEvent: BuildEvent?
+    private val configEventId: BuildEventId?
+    private val tags: Iterable<String?>?
+    private val executableTargetData: ExecutableTargetData
+    private val detailedExitCode: DetailedExitCode?
 
-  /** Returns {@link OutputGroup} protos for given output groups and optional coverage artifacts. */
-  static ImmutableList<OutputGroup> toOutputGroupProtos(
-      ImmutableMap<String, ArtifactsInOutputGroup> outputs,
-      CompletionContext completionContext,
-      BuildEventContext converters) {
-    ImmutableList.Builder<OutputGroup> groups = ImmutableList.builder();
-    outputs.forEach(
-        (outputGroup, artifactsInOutputGroup) -> {
-          if (!artifactsInOutputGroup.areImportant()) {
-            return;
-          }
-          NestedSet<Artifact> artifacts = artifactsInOutputGroup.getArtifacts();
-          groups.add(
-              makeOutputGroupProto(
-                  completionContext,
-                  converters,
-                  outputGroup,
-                  artifactsInOutputGroup.isIncomplete(),
-                  () -> artifacts,
-                  artifacts::toList));
-        });
-    return groups.build();
-  }
-
-  /**
-   * Constructs an {@link OutputGroup} message based on how the group has been configured to report
-   * its artifacts on the command-line.
-   */
-  private static OutputGroup makeOutputGroupProto(
-      CompletionContext completionContext,
-      BuildEventContext converters,
-      String outputGroup,
-      boolean outputGroupIncomplete,
-      Supplier<NestedSet<Artifact>> artifactsToReport,
-      Supplier<List<Artifact>> artifactListSupplier) {
-    OutputGroup.Builder builder =
-        OutputGroup.newBuilder().setName(outputGroup).setIncomplete(outputGroupIncomplete);
-    OutputGroupFileMode fileMode = converters.getFileModeForOutputGroup(outputGroup);
-    if (fileMode == OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY
-        || fileMode == OutputGroupFileMode.BOTH) {
-      ArtifactGroupNamer namer = converters.artifactGroupNamer();
-      builder.addFileSets(namer.apply(artifactsToReport.get().toNode()));
+    init {
+        this.rootCauses =
+            if (rootCauses == null) NestedSetBuilder.emptySet(Order.STABLE_ORDER) else rootCauses
+        this.executableTargetData = ExecutableTargetData(targetAndData)
+        val postedAfterBuilder: com.google.common.collect.ImmutableList.Builder<BuildEventId?> =
+            com.google.common.collect.ImmutableList.builder<BuildEventId?>()
+        this.label = targetAndData.getConfiguredTarget().getLabel()
+        this.originalLabel = targetAndData.getConfiguredTarget().getOriginalLabel()
+        this.configuredTargetKey =
+            ConfiguredTargetKey.fromConfiguredTarget(targetAndData.getConfiguredTarget())
+        postedAfterBuilder.add(BuildEventIdUtil.targetConfigured(originalLabel))
+        var mostImportantDetailedExitCode: DetailedExitCode? = null
+        for (cause in this.rootCauses.toList()) {
+            mostImportantDetailedExitCode =
+                DetailedExitCodeComparator.chooseMoreImportantWithFirstIfTie(
+                    mostImportantDetailedExitCode, cause.detailedExitCode
+                )
+            postedAfterBuilder.add(cause.idProto)
+        }
+        detailedExitCode = mostImportantDetailedExitCode
+        this.completionContext = completionContext
+        this.outputs = outputs
+        this.isTest = isTest
+        this.announceTargetSummary = announceTargetSummary
+        this.testTimeoutSeconds = if (isTest) getTestTimeoutSeconds(targetAndData) else null
+        val configuration: BuildConfigurationValue? = targetAndData.getConfiguration()
+        this.configEventId = BuildConfigurationValue.Companion.configurationId(configuration)
+        this.configurationEvent = if (configuration != null) configuration.toBuildEvent() else null
+        this.testParams =
+            if (isTest)
+                targetAndData.getConfiguredTarget().getProvider(TestProvider::class.java).getTestParams()
+            else
+                null
+        this.postedAfter = postedAfterBuilder.build()
+        this.tags = targetAndData.getRuleTags()
     }
-    if (fileMode == OutputGroupFileMode.INLINE_ONLY || fileMode == OutputGroupFileMode.BOTH) {
-      addFilesDirectlyToProtoField(
-          completionContext, builder::addInlineFiles, converters, artifactListSupplier.get());
-    }
-    return builder.build();
-  }
 
-  /**
-   * Returns timeout value in seconds that should be used for all test actions under this configured
-   * target. We always use the "categorical timeouts" which are based on the --test_timeout flag. A
-   * rule picks its timeout but ends up with the same effective value as all other rules in that
-   * category and configuration.
-   */
-  private static Long getTestTimeoutSeconds(ConfiguredTargetAndData targetAndData) {
-    BuildConfigurationValue configuration = targetAndData.getConfiguration();
-    TestTimeout categoricalTimeout = targetAndData.getTestTimeout();
-    return configuration
-        .getFragment(TestConfiguration.class)
-        .getTestTimeout()
-        .get(categoricalTimeout)
-        .toSeconds();
-  }
+    /** Returns the label of the target associated with the event.  */
+    fun getLabel(): Label? {
+        return label
+    }
+
+    /**
+     * Returns the original label of the target.
+     * 
+     * 
+     * See [ConfiguredTarget.getOriginalLabel].
+     */
+    fun getOriginalLabel(): Label? {
+        return originalLabel
+    }
+
+    fun getConfiguredTargetKey(): ConfiguredTargetKey? {
+        return configuredTargetKey
+    }
+
+    fun getExecutableTargetData(): ExecutableTargetData {
+        return executableTargetData
+    }
+
+    /** Determines whether the target has failed or succeeded.  */
+    fun failed(): Boolean {
+        return !rootCauses.isEmpty()
+    }
+
+    /** Get the root causes of the target. May be empty.  */
+    fun getRootCauses(): NestedSet<com.google.devtools.build.lib.causes.Cause?> {
+        return rootCauses
+    }
+
+    fun getLegacyFilteredImportantArtifacts(): Iterable<Artifact> {
+        // TODO(ulfjack): This duplicates code in ArtifactsToBuild.
+        val builder: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+        for (artifactsInOutputGroup in outputs.values()) {
+            if (artifactsInOutputGroup.areImportant()) {
+                builder.addTransitive(artifactsInOutputGroup.getArtifacts())
+            }
+        }
+        return com.google.common.collect.Iterables.filter<T?>(
+            builder.build().toList(),
+            com.google.common.base.Predicate { artifact: T? -> !artifact.isSourceArtifact() && !artifact.isRunfilesTree() })
+    }
+
+    public override fun getEventId(): BuildEventId {
+        return BuildEventIdUtil.targetCompleted(originalLabel, configEventId)
+    }
+
+    public override fun getChildrenEvents(): com.google.common.collect.ImmutableList<BuildEventId?> {
+        val childrenBuilder: com.google.common.collect.ImmutableList.Builder<BuildEventId?> =
+            com.google.common.collect.ImmutableList.builder<BuildEventId?>()
+        for (cause in rootCauses.toList()) {
+            childrenBuilder.add(cause.idProto)
+        }
+        if (isTest) {
+            // For tests, announce all the test actions that will minimally happen (except for
+            // interruption). If after the result of a test action another attempt is necessary,
+            // it will be announced with the action that made the new attempt necessary.
+            for (run in 0..<java.lang.Math.max(testParams.getRuns(), 1)) {
+                for (shard in 0..<java.lang.Math.max(testParams.getShards(), 1)) {
+                    childrenBuilder.add(BuildEventIdUtil.testResult(label, run, shard, configEventId))
+                }
+            }
+            childrenBuilder.add(BuildEventIdUtil.testSummary(label, configEventId))
+        }
+        if (announceTargetSummary) {
+            childrenBuilder.add(BuildEventIdUtil.targetSummary(originalLabel, configEventId))
+        }
+        return childrenBuilder.build()
+    }
+
+    fun getCompletionContext(): CompletionContext {
+        return completionContext
+    }
+
+    fun getOutputGroup(outputGroup: String?): ArtifactsInOutputGroup? {
+        return outputs.get(outputGroup)
+    }
+
+    public override fun referencedLocalFiles(): com.google.common.collect.ImmutableList<LocalFile?> {
+        val builder: com.google.common.collect.ImmutableList.Builder<LocalFile?> =
+            com.google.common.collect.ImmutableList.builder<LocalFile?>()
+        for (group in outputs.values()) {
+            if (group.areImportant()) {
+                completionContext.visitArtifacts(
+                    filterFilesets(group.getArtifacts().toList()),
+                    object : ArtifactReceiver() {
+                        public override fun accept(artifact: Artifact?, metadata: FileArtifactValue?) {
+                            builder.add(
+                                LocalFile(
+                                    completionContext.pathResolver().toPath(artifact),
+                                    LocalFileType.forArtifact(artifact, metadata),
+                                    metadata
+                                )
+                            )
+                        }
+
+                        public override fun acceptFilesetMapping(fileset: Artifact?, link: FilesetOutputSymlink?) {
+                            throw java.lang.IllegalStateException(fileset.toString() + " should have been filtered out")
+                        }
+                    })
+            }
+        }
+        return builder.build()
+    }
+
+    public override fun asStreamProto(converters: BuildEventContext): BuildEventStreamProtos.BuildEvent {
+        val builder: BuildEventStreamProtos.TargetComplete.Builder =
+            BuildEventStreamProtos.TargetComplete.newBuilder()
+
+        val failed = failed()
+        builder.setSuccess(!failed)
+        if (detailedExitCode != null) {
+            if (!failed) {
+                BugReport.sendBugReport(
+                    java.lang.IllegalStateException("Detailed exit code with success? " + detailedExitCode)
+                )
+            }
+            val failureDetail: FailureDetails.FailureDetail? = detailedExitCode.getFailureDetail()
+            if (failureDetail != null) {
+                builder.setFailureDetail(failureDetail)
+            }
+        }
+        builder.addAllTag(tags).addAllOutputGroup(getOutputFilesByGroup(converters))
+
+        if (isTest) {
+            builder.setTestTimeout(Durations.fromSeconds(testTimeoutSeconds))
+            builder.setTestTimeoutSeconds(testTimeoutSeconds)
+        }
+
+        val filteredImportantArtifacts: Iterable<Artifact> = getLegacyFilteredImportantArtifacts()
+        for (artifact in filteredImportantArtifacts) {
+            if (artifact.isDirectory()) {
+                val metadata: FileArtifactValue =
+                    checkNotNull(
+                        completionContext.getFileArtifactValue(artifact),
+                        "missing metadata for artifact: %s",
+                        artifact
+                    )
+                builder.addDirectoryOutput(newFile(artifact, metadata))
+            }
+        }
+        // TODO(aehlig): remove direct reporting of artifacts as soon as clients no longer need it.
+        if (converters.getOptions().getLegacyImportantOutputs()) {
+            Companion.addFilesDirectlyToProtoField(
+                completionContext, builder, converters, filteredImportantArtifacts
+            )
+        }
+
+        val complete: BuildEventStreamProtos.TargetComplete? = builder.build()
+        return GenericBuildEvent.protoChaining(this).setCompleted(complete).build()
+    }
+
+    public override fun postedAfter(): com.google.common.collect.ImmutableList<BuildEventId?> {
+        return postedAfter
+    }
+
+    public override fun reportedArtifacts(outputGroupFileModes: OutputGroupFileModes): ReportedArtifacts {
+        return toReportedArtifacts(outputs, completionContext, outputGroupFileModes)
+    }
+
+    public override fun storeForReplay(): Boolean {
+        return true
+    }
+
+    public override fun getConfigurations(): MutableCollection<BuildEvent?> {
+        return if (configurationEvent != null) com.google.common.collect.ImmutableList.of<BuildEvent?>(
+            configurationEvent
+        ) else com.google.common.collect.ImmutableList.of<BuildEvent?>()
+    }
+
+    private fun getOutputFilesByGroup(converters: BuildEventContext): com.google.common.collect.ImmutableList<OutputGroup?> {
+        return toOutputGroupProtos(outputs, completionContext, converters)
+    }
+
+    companion object {
+        private val LOWERCASE_HEX_ENCODING: com.google.common.io.BaseEncoding =
+            com.google.common.io.BaseEncoding.base16().lowerCase()
+
+        /** Construct a successful target completion event.  */
+        fun successfulBuild(
+            ct: ConfiguredTargetAndData,
+            completionContext: CompletionContext,
+            outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>,
+            announceTargetSummary: Boolean
+        ): TargetCompleteEvent? {
+            return TargetCompleteEvent(
+                ct, null, completionContext, outputs, false, announceTargetSummary
+            )
+        }
+
+        /** Construct a successful target completion event for a target that will be tested.  */
+        fun successfulBuildSchedulingTest(
+            ct: ConfiguredTargetAndData,
+            completionContext: CompletionContext,
+            outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>,
+            announceTargetSummary: Boolean
+        ): TargetCompleteEvent {
+            return TargetCompleteEvent(
+                ct, null, completionContext, outputs, true, announceTargetSummary
+            )
+        }
+
+        /**
+         * Construct a target completion event for a failed target, with the given non-empty root causes.
+         */
+        fun createFailed(
+            ct: ConfiguredTargetAndData,
+            completionContext: CompletionContext,
+            rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>,
+            outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>,
+            announceTargetSummary: Boolean
+        ): TargetCompleteEvent {
+            com.google.common.base.Preconditions.checkArgument(!rootCauses.isEmpty())
+            return TargetCompleteEvent(
+                ct, rootCauses, completionContext, outputs, false, announceTargetSummary
+            )
+        }
+
+        // TODO(aehlig): remove as soon as we managed to get rid of the deprecated "important_output"
+        // field.
+        private fun addFilesDirectlyToProtoField(
+            completionContext: CompletionContext,
+            builder: TargetComplete.Builder,
+            converters: BuildEventContext,
+            artifacts: Iterable<Artifact>
+        ) {
+            Companion.addFilesDirectlyToProtoField(
+                completionContext, builder::addImportantOutput, converters, artifacts
+            )
+        }
+
+        private fun addFilesDirectlyToProtoField(
+            completionContext: CompletionContext,
+            addFile: java.util.function.Consumer<BuildEventStreamProtos.File?>,
+            converters: BuildEventContext,
+            artifacts: Iterable<Artifact>
+        ) {
+            completionContext.visitArtifacts(
+                filterFilesets(artifacts),
+                object : ArtifactReceiver() {
+                    public override fun accept(artifact: Artifact, metadata: FileArtifactValue) {
+                        val uri: String? =
+                            converters.pathConverter().apply(completionContext.pathResolver().toPath(artifact))
+                        val file: BuildEventStreamProtos.File = newFile(artifact, metadata, uri)
+                        // Omit files with unknown contents (e.g. if uploading failed).
+                        if (file.getFileCase() !== BuildEventStreamProtos.File.FileCase.FILE_NOT_SET) {
+                            addFile.accept(file)
+                        }
+                    }
+
+                    public override fun acceptFilesetMapping(fileset: Artifact?, link: FilesetOutputSymlink?) {
+                        throw java.lang.IllegalStateException(fileset.toString() + " should have been filtered out")
+                    }
+                })
+        }
+
+        private fun filterFilesets(artifacts: Iterable<Artifact>): Iterable<Artifact?> {
+            return com.google.common.collect.Iterables.filter<Artifact?>(
+                artifacts,
+                com.google.common.base.Predicate { artifact: Artifact? -> !artifact.isFileset() })
+        }
+
+        /**
+         * Creates a [BuildEventStreamProtos.File] proto for an artifact.
+         * 
+         * @param artifact the artifact
+         * @param metadata the artifact's metadata
+         * @param uri the artifact's URI, or null if the artifact was not uploaded
+         */
+        fun newFile(
+            artifact: Artifact, metadata: FileArtifactValue, uri: String?
+        ): BuildEventStreamProtos.File {
+            return newFile(artifact.getRoot(), artifact.getRootRelativePath(), metadata, uri)
+        }
+
+        /**
+         * Creates a [BuildEventStreamProtos.File] proto for an artifact.
+         * 
+         * 
+         * Prefer calling [.newFile] if a URI is available
+         * for this artifact.
+         * 
+         * @param artifact the artifact
+         * @param metadata the artifact's metadata
+         */
+        fun newFile(artifact: Artifact, metadata: FileArtifactValue): BuildEventStreamProtos.File {
+            return newFile(artifact, metadata,  /* uri= */null)
+        }
+
+        /**
+         * Creates a [BuildEventStreamProtos.File] proto for a path.
+         * 
+         * 
+         * Prefer calling [.newFile] if an [Artifact]
+         * is available for this path.
+         * 
+         * @param root the root the path resides under
+         * @param rootRelativePath the path relative to the root
+         * @param metadata the path's metadata
+         * @param uri the path's URI, or null if the artifact was not uploaded
+         */
+        fun newFile(
+            root: ArtifactRoot,
+            rootRelativePath: PathFragment,
+            metadata: FileArtifactValue,
+            uri: String?
+        ): BuildEventStreamProtos.File {
+            val file: File.Builder =
+                File.newBuilder()
+                    .setName(StringEncoding.internalToUnicode(rootRelativePath.getPathString()))
+                    .addAllPathPrefix(
+                        com.google.common.collect.Iterables.transform<F?, T?>(
+                            root.getExecPath().segments(), StringEncoding::internalToUnicode
+                        )
+                    )
+            if (metadata.getType().isSymlink()) {
+                file.setSymlinkTargetPath(
+                    StringEncoding.internalToUnicode(metadata.getUnresolvedSymlinkTarget())
+                )
+            } else if (metadata.getType().exists()) {
+                val digest: ByteArray? = metadata.getDigest()
+                if (digest != null) {
+                    file.setDigest(LOWERCASE_HEX_ENCODING.encode(digest))
+                }
+                file.setLength(metadata.getSize())
+            }
+            if (uri != null) {
+                file.setUri(StringEncoding.internalToUnicode(uri))
+            }
+            return file.build()
+        }
+
+        fun toReportedArtifacts(
+            outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>,
+            completionContext: CompletionContext?,
+            outputGroupFileModes: OutputGroupFileModes
+        ): ReportedArtifacts {
+            val builder: com.google.common.collect.ImmutableSet.Builder<NestedSet<Artifact?>?> =
+                com.google.common.collect.ImmutableSet.builder<NestedSet<Artifact?>?>()
+            for (entry in outputs.entrySet()) {
+                val groupName: String = entry.getKey()
+                val mode: OutputGroupFileMode? = outputGroupFileModes.getMode(groupName)
+                val artifactsInGroup: ArtifactsInOutputGroup = entry.getValue()
+                if (artifactsInGroup.areImportant()) {
+                    if (mode === OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY
+                        || mode === OutputGroupFileMode.BOTH
+                    ) {
+                        builder.add(artifactsInGroup.getArtifacts())
+                    }
+                }
+            }
+            return ReportedArtifacts(builder.build(), completionContext)
+        }
+
+        /** Returns [OutputGroup] protos for given output groups and optional coverage artifacts.  */
+        fun toOutputGroupProtos(
+            outputs: com.google.common.collect.ImmutableMap<String, ArtifactsInOutputGroup>,
+            completionContext: CompletionContext,
+            converters: BuildEventContext
+        ): com.google.common.collect.ImmutableList<OutputGroup?> {
+            val groups: com.google.common.collect.ImmutableList.Builder<OutputGroup?> =
+                com.google.common.collect.ImmutableList.builder<OutputGroup?>()
+            outputs.forEach(
+                java.util.function.BiConsumer { outputGroup: String?, artifactsInOutputGroup: ArtifactsInOutputGroup? ->
+                    if (!artifactsInOutputGroup.areImportant()) {
+                        return@forEach
+                    }
+                    val artifacts: NestedSet<Artifact?> = artifactsInOutputGroup.getArtifacts()
+                    groups.add(
+                        makeOutputGroupProto(
+                            completionContext,
+                            converters,
+                            outputGroup,
+                            artifactsInOutputGroup.isIncomplete(),
+                            java.util.function.Supplier { artifacts },
+                            artifacts::toList
+                        )
+                    )
+                })
+            return groups.build()
+        }
+
+        /**
+         * Constructs an [OutputGroup] message based on how the group has been configured to report
+         * its artifacts on the command-line.
+         */
+        private fun makeOutputGroupProto(
+            completionContext: CompletionContext,
+            converters: BuildEventContext,
+            outputGroup: String?,
+            outputGroupIncomplete: Boolean,
+            artifactsToReport: java.util.function.Supplier<NestedSet<Artifact?>?>,
+            artifactListSupplier: java.util.function.Supplier<MutableList<Artifact?>?>
+        ): OutputGroup {
+            val builder: OutputGroup.Builder =
+                OutputGroup.newBuilder().setName(outputGroup).setIncomplete(outputGroupIncomplete)
+            val fileMode: OutputGroupFileMode? = converters.getFileModeForOutputGroup(outputGroup)
+            if (fileMode === OutputGroupFileMode.NAMED_SET_OF_FILES_ONLY
+                || fileMode === OutputGroupFileMode.BOTH
+            ) {
+                val namer: ArtifactGroupNamer = converters.artifactGroupNamer()
+                builder.addFileSets(namer.apply(artifactsToReport.get().toNode()))
+            }
+            if (fileMode === OutputGroupFileMode.INLINE_ONLY || fileMode === OutputGroupFileMode.BOTH) {
+                Companion.addFilesDirectlyToProtoField(
+                    completionContext, builder::addInlineFiles, converters, artifactListSupplier.get()
+                )
+            }
+            return builder.build()
+        }
+
+        /**
+         * Returns timeout value in seconds that should be used for all test actions under this configured
+         * target. We always use the "categorical timeouts" which are based on the --test_timeout flag. A
+         * rule picks its timeout but ends up with the same effective value as all other rules in that
+         * category and configuration.
+         */
+        private fun getTestTimeoutSeconds(targetAndData: ConfiguredTargetAndData): Long {
+            val configuration: BuildConfigurationValue = targetAndData.getConfiguration()
+            val categoricalTimeout: TestTimeout? = targetAndData.getTestTimeout()
+            return configuration
+                .getFragment<T?>(TestConfiguration::class.java)
+                .getTestTimeout()
+                .get(categoricalTimeout)
+                .toSeconds()
+        }
+    }
 }

@@ -11,56 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.util.Fingerprint;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.util.Fingerprint
 
 /**
- * Partial implementation of a {@link CommandLine} suitable for when expansion eagerly materializes
+ * Partial implementation of a [CommandLine] suitable for when expansion eagerly materializes
  * strings.
  */
-public abstract class AbstractCommandLine extends CommandLine {
-
-  @Override
-  public final ArgChunk expand() throws CommandLineExpansionException, InterruptedException {
-    return new SimpleArgChunk(arguments());
-  }
-
-  @Override
-  public final ArgChunk expand(InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException, InterruptedException {
-    return new SimpleArgChunk(arguments(inputMetadataProvider, pathMapper));
-  }
-
-  /**
-   * Returns the expanded command line with enclosed artifacts expanded by an {@code
-   * InputMetadataProvider} at execution time.
-   *
-   * <p>By default, this method just delegates to {@link #arguments()}, without performing any
-   * artifact expansion. Subclasses should override this method if they contain tree artifacts and
-   * need to expand them for proper argument evaluation.
-   */
-  @Override
-  public Iterable<String> arguments(
-      InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException, InterruptedException {
-    return arguments();
-  }
-
-  @Override
-  public void addToFingerprint(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      CoreOptions.OutputPathsMode effectiveOutputPathsMode,
-      Fingerprint fingerprint)
-      throws CommandLineExpansionException, InterruptedException {
-    for (String s :
-        arguments(
-            /* inputMetadataProvider= */ null, PathMapper.forActionKey(effectiveOutputPathsMode))) {
-      fingerprint.addString(s);
+abstract class AbstractCommandLine : com.google.devtools.build.lib.actions.CommandLine() {
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    override fun expand(): ArgChunk {
+        return SimpleArgChunk(arguments())
     }
-  }
+
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    override fun expand(inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?): ArgChunk {
+        return SimpleArgChunk(arguments(inputMetadataProvider, pathMapper))
+    }
+
+    /**
+     * Returns the expanded command line with enclosed artifacts expanded by an `InputMetadataProvider` at execution time.
+     * 
+     * 
+     * By default, this method just delegates to [.arguments], without performing any
+     * artifact expansion. Subclasses should override this method if they contain tree artifacts and
+     * need to expand them for proper argument evaluation.
+     */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    override fun arguments(
+        inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?
+    ): Iterable<String?>? {
+        return arguments()
+    }
+
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    override fun addToFingerprint(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        effectiveOutputPathsMode: OutputPathsMode?,
+        fingerprint: Fingerprint
+    ) {
+        for (s in arguments( /* inputMetadataProvider= */
+            null, PathMapper.Companion.forActionKey(effectiveOutputPathsMode)
+        )!!) {
+            fingerprint.addString(s)
+        }
+    }
 }

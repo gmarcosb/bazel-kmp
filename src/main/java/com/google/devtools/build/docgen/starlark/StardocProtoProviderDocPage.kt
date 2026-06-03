@@ -11,144 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen.starlark
 
-package com.google.devtools.build.docgen.starlark;
-
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ModuleInfo;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ProviderFieldInfo;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ProviderInfo;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.ModuleInfo
 
 /**
- * A documentation page for a Starlark provider described by a Stardoc proto obtained via {@code
- * starlark_doc_extract} from a .bzl file.
+ * A documentation page for a Starlark provider described by a Stardoc proto obtained via `starlark_doc_extract` from a .bzl file.
  */
-public final class StardocProtoProviderDocPage extends StarlarkDocPage {
-  private final String sourceFileLabel;
-  private final ProviderInfo providerInfo;
+class StardocProtoProviderDocPage(expander: StarlarkDocExpander?, moduleInfo: ModuleInfo, providerInfo: ProviderInfo) :
+    StarlarkDocPage(expander) {
+    private val sourceFileLabel: String?
+    private val providerInfo: ProviderInfo
 
-  public StardocProtoProviderDocPage(
-      StarlarkDocExpander expander, ModuleInfo moduleInfo, ProviderInfo providerInfo) {
-    super(expander);
-    this.sourceFileLabel = moduleInfo.getFile();
-    this.providerInfo = providerInfo;
+    init {
+        this.sourceFileLabel = moduleInfo.getFile()
+        this.providerInfo = providerInfo
 
-    if (providerInfo.hasInit()) {
-      setConstructor(
-          new StardocProtoFunctionDoc(
-              expander,
-              moduleInfo,
-              providerInfo.getProviderName(),
-              providerInfo.getInit(),
-              providerInfo.getProviderName()));
-    }
-    for (ProviderFieldInfo fieldInfo : providerInfo.getFieldInfoList()) {
-      addMember(new ProviderFieldDoc(expander, sourceFileLabel, providerInfo, fieldInfo));
-    }
-  }
-
-  @Override
-  public String getName() {
-    return providerInfo.getProviderName();
-  }
-
-  @Override
-  public String getRawDocumentation() {
-    return providerInfo.getDocString();
-  }
-
-  @Override
-  public String getDeprecatedStanza() {
-    if (providerInfo.hasInit()
-        && !providerInfo.getInit().getDeprecated().getDocString().isEmpty()) {
-      return expander.expand(providerInfo.getInit().getDeprecated().getDocString());
-    }
-    return "";
-  }
-
-  @Override
-  public String getTitle() {
-    return providerInfo.getProviderName();
-  }
-
-  @Override
-  public String getSourceFile() {
-    return getSourceFileFromLabel(sourceFileLabel);
-  }
-
-  @Override
-  public String getLoadStatement() {
-    String loadableSymbol = Splitter.on('.').splitToList(providerInfo.getProviderName()).getFirst();
-    return String.format("load(\"%s\", \"%s\")", sourceFileLabel, loadableSymbol);
-  }
-
-  private static final class ProviderFieldDoc extends MemberDoc {
-    private final String sourceFileLabel; // for error reporting
-    private final ProviderInfo providerInfo; // for error reporting
-    private final ProviderFieldInfo fieldInfo;
-    private final TypeParser.TypedDocstring typedDocstring;
-
-    ProviderFieldDoc(
-        StarlarkDocExpander expander,
-        String sourceFileLabel,
-        ProviderInfo providerInfo,
-        ProviderFieldInfo fieldInfo) {
-      super(expander);
-      this.sourceFileLabel = sourceFileLabel;
-      this.providerInfo = providerInfo;
-      this.fieldInfo = fieldInfo;
-      this.typedDocstring = TypeParser.TypedDocstring.of(fieldInfo.getDocString());
+        if (providerInfo.hasInit()) {
+            setConstructor(
+                StardocProtoFunctionDoc(
+                    expander,
+                    moduleInfo,
+                    providerInfo.getProviderName(),
+                    providerInfo.getInit(),
+                    providerInfo.getProviderName()
+                )
+            )
+        }
+        for (fieldInfo in providerInfo.getFieldInfoList()) {
+            addMember(ProviderFieldDoc(expander, sourceFileLabel, providerInfo, fieldInfo))
+        }
     }
 
-    @Override
-    public String getName() {
-      return fieldInfo.getName();
-    }
+    val name: String
+        get() = providerInfo.getProviderName()
 
-    @Override
-    public boolean documented() {
-      return true;
-    }
+    val rawDocumentation: String
+        get() = providerInfo.getDocString()
 
-    @Override
-    public boolean isCallable() {
-      return false;
-    }
+    val deprecatedStanza: String?
+        get() {
+            if (providerInfo.hasInit()
+                && !providerInfo.getInit().getDeprecated().getDocString().isEmpty()
+            ) {
+                return expander.expand(providerInfo.getInit().getDeprecated().getDocString())
+            }
+            return ""
+        }
 
-    @Override
-    public ImmutableList<? extends ParamDoc> getParams() {
-      return ImmutableList.of();
-    }
+    val title: String
+        get() = providerInfo.getProviderName()
 
-    @Override
-    public String getReturnType() {
-      try {
-        // TODO(arostovtsev): the "unknown" fallback text should be provided by the template.
-        return expander.getTypeParser().getHtml(typedDocstring.typeExpression(), "unknown");
-      } catch (EvalException e) {
-        throw new IllegalStateException(
-            String.format(
-                "Failed to parse type for field %s of %s in %s",
-                getName(), providerInfo.getProviderName(), sourceFileLabel),
-            e);
-      }
-    }
+    val sourceFile: String?
+        get() = StarlarkDoc.Companion.getSourceFileFromLabel(sourceFileLabel)
 
-    @Override
-    public String getRawDocumentation() {
-      return fieldInfo.getDocString();
-    }
+    val loadStatement: String?
+        get() {
+            val loadableSymbol: String =
+                com.google.common.base.Splitter.on('.').splitToList(providerInfo.getProviderName()).getFirst()
+            return String.format("load(\"%s\", \"%s\")", sourceFileLabel, loadableSymbol)
+        }
 
-    @Override
-    public String getDocumentation() {
-      return expander.expand(typedDocstring.remainder());
-    }
+    private class ProviderFieldDoc(
+        expander: StarlarkDocExpander?,
+        // for error reporting
+        private val sourceFileLabel: String?,
+        providerInfo: ProviderInfo,
+        fieldInfo: ProviderFieldInfo
+    ) : MemberDoc(expander) {
+        private val providerInfo: ProviderInfo // for error reporting
+        private val fieldInfo: ProviderFieldInfo
+        private val typedDocstring: TypedDocstring
 
-    @Override
-    public String getSignature() {
-      return String.format("%s %s", getReturnType(), getName());
+        init {
+            this.providerInfo = providerInfo
+            this.fieldInfo = fieldInfo
+            this.typedDocstring = TypedDocstring.Companion.of(fieldInfo.getDocString())
+        }
+
+        val name: String
+            get() = fieldInfo.getName()
+
+        override fun documented(): Boolean {
+            return true
+        }
+
+        val isCallable: Boolean
+            get() = false
+
+        val params: com.google.common.collect.ImmutableList<out ParamDoc?>
+            get() = com.google.common.collect.ImmutableList.of<ParamDoc?>()
+
+        val returnType: String?
+            get() {
+                try {
+                    // TODO(arostovtsev): the "unknown" fallback text should be provided by the template.
+                    return expander.getTypeParser().getHtml(typedDocstring.typeExpression, "unknown")
+                } catch (e: net.starlark.java.eval.EvalException) {
+                    throw java.lang.IllegalStateException(
+                        java.lang.String.format(
+                            "Failed to parse type for field %s of %s in %s",
+                            this.name, providerInfo.getProviderName(), sourceFileLabel
+                        ),
+                        e
+                    )
+                }
+            }
+
+        val rawDocumentation: String
+            get() = fieldInfo.getDocString()
+
+        val documentation: String?
+            get() = expander.expand(typedDocstring.remainder)
+
+        val signature: String?
+            get() = String.format("%s %s", this.returnType, this.name)
     }
-  }
 }

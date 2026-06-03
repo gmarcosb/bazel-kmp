@@ -11,1401 +11,1426 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
+import com.google.devtools.build.lib.actions.AbstractCommandLine
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Interner;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.actions.AbstractCommandLine;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.CommandLineItem;
-import com.google.devtools.build.lib.actions.CommandLineItem.ExceptionlessMapFn;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.actions.SingleStringArgFormatter;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.OnDemandString;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.errorprone.annotations.CompileTimeConstant;
-import com.google.errorprone.annotations.ForOverride;
-import com.google.errorprone.annotations.FormatMethod;
-import com.google.errorprone.annotations.FormatString;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
-
-/** A customizable, serializable class for building memory efficient command lines. */
+/** A customizable, serializable class for building memory efficient command lines.  */
 @Immutable
-public class CustomCommandLine extends AbstractCommandLine {
-  private interface ArgvFragment {
+open class CustomCommandLine private constructor(
     /**
-     * Expands this fragment into the passed command line vector.
-     *
-     * @param arguments The command line's argument vector.
-     * @param argi The index of the next available argument.
-     * @param builder The command line builder to which we should add arguments.
-     * @param pathMapper Logic for stripping output path config prefixes
-     * @return The index of the next argument, after the ArgvFragment has consumed its args. If the
-     *     ArgvFragment doesn't have any args, it should return {@code argi} unmodified.
+     * Stored as an `Object[]` instead of an [ImmutableList] to save memory, but is never
+     * modified. Access via [.rawArgsAsList] for an unmodifiable [List] view.
      */
-    int eval(
-        List<Object> arguments,
-        int argi,
-        ImmutableList.Builder<String> builder,
-        PathMapper pathMapper)
-        throws CommandLineExpansionException, InterruptedException;
+    private val arguments: Array<Any?>
+) : AbstractCommandLine() {
+    private interface ArgvFragment {
+        /**
+         * Expands this fragment into the passed command line vector.
+         * 
+         * @param arguments The command line's argument vector.
+         * @param argi The index of the next available argument.
+         * @param builder The command line builder to which we should add arguments.
+         * @param pathMapper Logic for stripping output path config prefixes
+         * @return The index of the next argument, after the ArgvFragment has consumed its args. If the
+         * ArgvFragment doesn't have any args, it should return `argi` unmodified.
+         */
+        @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+        fun eval(
+            arguments: MutableList<Any?>?,
+            argi: Int,
+            builder: com.google.common.collect.ImmutableList.Builder<String?>?,
+            pathMapper: PathMapper?
+        ): Int
 
-    int addToFingerprint(
-        List<Object> arguments,
-        int argi,
-        ActionKeyContext actionKeyContext,
-        Fingerprint fingerprint)
-        throws CommandLineExpansionException, InterruptedException;
-  }
-
-  /**
-   * Helper base class for an ArgvFragment that doesn't use the input argument vector.
-   *
-   * <p>This can be used for any ArgvFragments that self-contain all the necessary state.
-   */
-  private abstract static class StandardArgvFragment implements ArgvFragment {
-    @Override
-    public final int eval(
-        List<Object> arguments,
-        int argi,
-        ImmutableList.Builder<String> builder,
-        PathMapper pathMapper) {
-      eval(builder);
-      return argi; // Doesn't consume any arguments, so return argi unmodified
-    }
-
-    abstract void eval(ImmutableList.Builder<String> builder);
-
-    @Override
-    public int addToFingerprint(
-        List<Object> arguments,
-        int argi,
-        ActionKeyContext actionKeyContext,
-        Fingerprint fingerprint) {
-      addToFingerprint(actionKeyContext, fingerprint);
-      return argi; // Doesn't consume any arguments, so return argi unmodified
-    }
-
-    abstract void addToFingerprint(ActionKeyContext actionKeyContext, Fingerprint fingerprint);
-  }
-
-  /**
-   * An ArgvFragment that expands a collection of objects in a user-specified way.
-   *
-   * <p>Vector args support formatting, interspersing args (adding strings before each value),
-   * joining, and mapping custom types. Please use this whenever you need to transform lists or
-   * nested sets instead of doing it manually, as use of this class is more memory efficient.
-   *
-   * <p>The order of evaluation is:
-   *
-   * <ul>
-   *   <li>Map the type T to a string using a custom map function, if any, or
-   *   <li>Map any non-string type {PathFragment, Artifact} to their path/exec path
-   *   <li>Format the string using the supplied format string, if any
-   *   <li>Add the arguments each prepended by the before string, if any, or
-   *   <li>Join the arguments with the join string, if any, or
-   *   <li>Simply add all arguments
-   * </ul>
-   *
-   * <pre>{@code
-   * Examples:
-   *
-   * List<String> values = ImmutableList.of("1", "2", "3");
-   *
-   * commandBuilder.addAll(VectorArg.format("-l%s").each(values))
-   * -> ["-l1", "-l2", "-l3"]
-   *
-   * commandBuilder.addAll(VectorArg.addBefore("-l").each(values))
-   * -> ["-l", "1", "-l", "2", "-l", "3"]
-   *
-   * commandBuilder.addAll(VectorArg.join(":").each(values))
-   * -> ["1:2:3"]
-   * }</pre>
-   */
-  public static class VectorArg<T> {
-    final boolean isNestedSet;
-    final boolean isEmpty;
-    final int count;
-    final String formatEach;
-    final String beforeEach;
-    final String joinWith;
-
-    private VectorArg(
-        boolean isNestedSet,
-        boolean isEmpty,
-        int count,
-        String formatEach,
-        String beforeEach,
-        String joinWith) {
-      this.isNestedSet = isNestedSet;
-      this.isEmpty = isEmpty;
-      this.count = count;
-      this.formatEach = formatEach;
-      this.beforeEach = beforeEach;
-      this.joinWith = joinWith;
+        @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+        fun addToFingerprint(
+            arguments: MutableList<Any?>?,
+            argi: Int,
+            actionKeyContext: ActionKeyContext?,
+            fingerprint: Fingerprint?
+        ): Int
     }
 
     /**
-     * A vector arg that doesn't map its parameters.
-     *
-     * <p>Call {@link SimpleVectorArg#mapped} to produce a vector arg that maps from a given type to
-     * a string.
+     * Helper base class for an ArgvFragment that doesn't use the input argument vector.
+     * 
+     * 
+     * This can be used for any ArgvFragments that self-contain all the necessary state.
      */
-    public static class SimpleVectorArg<T> extends VectorArg<T> {
-      private final Object values;
+    private abstract class StandardArgvFragment : ArgvFragment {
+        override fun eval(
+            arguments: MutableList<Any?>?,
+            argi: Int,
+            builder: com.google.common.collect.ImmutableList.Builder<String?>?,
+            pathMapper: PathMapper?
+        ): Int {
+            eval(builder)
+            return argi // Doesn't consume any arguments, so return argi unmodified
+        }
 
-      private SimpleVectorArg(Builder builder, @Nullable Collection<T> values) {
-        this(
-            /* isNestedSet= */ false,
-            values == null || values.isEmpty(),
-            values != null ? values.size() : 0,
-            builder.formatEach,
-            builder.beforeEach,
-            builder.joinWith,
-            values);
-      }
+        abstract fun eval(builder: com.google.common.collect.ImmutableList.Builder<String?>?)
 
-      private SimpleVectorArg(Builder builder, @Nullable NestedSet<T> values) {
-        this(
-            /* isNestedSet= */ true,
-            values == null || values.isEmpty(),
-            /* count= */ -1,
-            builder.formatEach,
-            builder.beforeEach,
-            builder.joinWith,
-            values);
-      }
+        override fun addToFingerprint(
+            arguments: MutableList<Any?>?,
+            argi: Int,
+            actionKeyContext: ActionKeyContext?,
+            fingerprint: Fingerprint?
+        ): Int {
+            addToFingerprint(actionKeyContext, fingerprint)
+            return argi // Doesn't consume any arguments, so return argi unmodified
+        }
 
-      private SimpleVectorArg(
-          boolean isNestedSet,
-          boolean isEmpty,
-          int count,
-          String formatEach,
-          String beforeEach,
-          String joinWith,
-          @Nullable Object values) {
-        super(isNestedSet, isEmpty, count, formatEach, beforeEach, joinWith);
-        this.values = values;
-      }
-
-      /** Each argument is mapped using the supplied map function */
-      public MappedVectorArg<T> mapped(CommandLineItem.MapFn<? super T> mapFn) {
-        return new MappedVectorArg<>(this, mapFn);
-      }
+        abstract fun addToFingerprint(actionKeyContext: ActionKeyContext?, fingerprint: Fingerprint?)
     }
 
-    /** A vector arg that maps some type T to strings. */
-    static class MappedVectorArg<T> extends VectorArg<String> {
-      private final Object values;
-      private final CommandLineItem.MapFn<? super T> mapFn;
+    /**
+     * An ArgvFragment that expands a collection of objects in a user-specified way.
+     * 
+     * 
+     * Vector args support formatting, interspersing args (adding strings before each value),
+     * joining, and mapping custom types. Please use this whenever you need to transform lists or
+     * nested sets instead of doing it manually, as use of this class is more memory efficient.
+     * 
+     * 
+     * The order of evaluation is:
+     * 
+     * 
+     *  * Map the type T to a string using a custom map function, if any, or
+     *  * Map any non-string type {PathFragment, Artifact} to their path/exec path
+     *  * Format the string using the supplied format string, if any
+     *  * Add the arguments each prepended by the before string, if any, or
+     *  * Join the arguments with the join string, if any, or
+     *  * Simply add all arguments
+     * 
+     * 
+     * <pre>`Examples: List<String> values = ImmutableList.of("1", "2", "3"); commandBuilder.addAll(VectorArg.format("-l%s").each(values)) -> ["-l1", "-l2", "-l3"] commandBuilder.addAll(VectorArg.addBefore("-l").each(values)) -> ["-l", "1", "-l", "2", "-l", "3"] commandBuilder.addAll(VectorArg.join(":").each(values)) -> ["1:2:3"] `</pre>
+     */
+    open class VectorArg<T> private constructor(
+        val isNestedSet: Boolean,
+        val isEmpty: Boolean,
+        val count: Int,
+        val formatEach: String?,
+        val beforeEach: String?,
+        val joinWith: String?
+    ) {
+        /**
+         * A vector arg that doesn't map its parameters.
+         * 
+         * 
+         * Call [SimpleVectorArg.mapped] to produce a vector arg that maps from a given type to
+         * a string.
+         */
+        class SimpleVectorArg<T> private constructor(
+            isNestedSet: Boolean,
+            isEmpty: Boolean,
+            count: Int,
+            formatEach: String?,
+            beforeEach: String?,
+            joinWith: String?,
+            private val values: Any?
+        ) : VectorArg<T?>(isNestedSet, isEmpty, count, formatEach, beforeEach, joinWith) {
+            private constructor(builder: Builder, values: MutableCollection<T?>?) : this( /* isNestedSet= */
+                false,
+                values == null || values.isEmpty(),
+                if (values != null) values.size else 0,
+                builder.formatEach,
+                builder.beforeEach,
+                builder.joinWith,
+                values
+            )
 
-      private MappedVectorArg(SimpleVectorArg<T> other, CommandLineItem.MapFn<? super T> mapFn) {
-        super(
+            private constructor(builder: Builder, values: NestedSet<T?>?) : this( /* isNestedSet= */
+                true,
+                values == null || values.isEmpty(),  /* count= */
+                -1,
+                builder.formatEach,
+                builder.beforeEach,
+                builder.joinWith,
+                values
+            )
+
+            /** Each argument is mapped using the supplied map function  */
+            fun mapped(mapFn: CommandLineItem.MapFn<in T?>?): MappedVectorArg<T?> {
+                return MappedVectorArg<T?>(this, mapFn)
+            }
+        }
+
+        /** A vector arg that maps some type T to strings.  */
+        internal class MappedVectorArg<T> private constructor(
+            other: SimpleVectorArg<T?>,
+            mapFn: CommandLineItem.MapFn<in T?>?
+        ) : VectorArg<String?>(
             other.isNestedSet,
             other.isEmpty,
             other.count,
             other.formatEach,
             other.beforeEach,
-            other.joinWith);
-        this.values = other.values;
-        this.mapFn = mapFn;
-      }
-    }
+            other.joinWith
+        ) {
+            private val values: Any?
+            private val mapFn: CommandLineItem.MapFn<in T?>?
 
-    public static <T> SimpleVectorArg<T> of(Collection<T> values) {
-      return new Builder().each(values);
-    }
-
-    public static <T> SimpleVectorArg<T> of(NestedSet<T> values) {
-      return new Builder().each(values);
-    }
-
-    /** Each argument is formatted via {@link SingleStringArgFormatter#format}. */
-    public static Builder format(@CompileTimeConstant String formatEach) {
-      return new Builder().format(formatEach);
-    }
-    /** Each argument is prepended by the beforeEach param. */
-    public static Builder addBefore(@CompileTimeConstant String beforeEach) {
-      return new Builder().addBefore(beforeEach);
-    }
-
-    /** Once all arguments have been evaluated, they are joined with this delimiter */
-    public static Builder join(String delimiter) {
-      return new Builder().join(delimiter);
-    }
-
-    /** Builder for {@link VectorArg}. */
-    public static class Builder {
-      private String formatEach;
-      private String beforeEach;
-      private String joinWith;
-
-      /** Each argument is formatted via {@link SingleStringArgFormatter#format}. */
-      @CanIgnoreReturnValue
-      public Builder format(@CompileTimeConstant String formatEach) {
-        Preconditions.checkNotNull(formatEach);
-        this.formatEach = formatEach;
-        return this;
-      }
-
-      /** Each argument is prepended by the beforeEach param. */
-      @CanIgnoreReturnValue
-      public Builder addBefore(@CompileTimeConstant String beforeEach) {
-        Preconditions.checkNotNull(beforeEach);
-        this.beforeEach = beforeEach;
-        return this;
-      }
-
-      /** Once all arguments have been evaluated, they are joined with this delimiter */
-      @CanIgnoreReturnValue
-      public Builder join(String delimiter) {
-        Preconditions.checkNotNull(delimiter);
-        this.joinWith = delimiter;
-        return this;
-      }
-
-      public <T> SimpleVectorArg<T> each(Collection<T> values) {
-        return new SimpleVectorArg<>(this, values);
-      }
-
-      public <T> SimpleVectorArg<T> each(NestedSet<T> values) {
-        return new SimpleVectorArg<>(this, values);
-      }
-    }
-
-    private static void push(List<Object> arguments, VectorArg<?> vectorArg) {
-      // This is either a Collection or a NestedSet.
-      Object values;
-      CommandLineItem.MapFn<?> mapFn;
-      if (vectorArg instanceof SimpleVectorArg) {
-        values = ((SimpleVectorArg<?>) vectorArg).values;
-        mapFn = null;
-      } else {
-        values = ((MappedVectorArg<?>) vectorArg).values;
-        mapFn = ((MappedVectorArg<?>) vectorArg).mapFn;
-      }
-      VectorArgFragment vectorArgFragment =
-          new VectorArgFragment(
-              vectorArg.isNestedSet,
-              mapFn != null,
-              vectorArg.formatEach != null,
-              vectorArg.beforeEach != null,
-              vectorArg.joinWith != null);
-      if (vectorArgFragment.hasBeforeEach && vectorArgFragment.hasJoinWith) {
-        throw new IllegalArgumentException("Cannot use both 'before' and 'join' in vector arg.");
-      }
-      vectorArgFragment = VectorArgFragment.interner.intern(vectorArgFragment);
-      arguments.add(vectorArgFragment);
-      if (vectorArgFragment.hasMapEach) {
-        arguments.add(mapFn);
-      }
-      if (vectorArgFragment.isNestedSet) {
-        arguments.add(values);
-      } else {
-        // Simply expand any ordinary collection into the argv
-        arguments.add(vectorArg.count);
-        arguments.addAll((Collection<?>) values);
-      }
-      if (vectorArgFragment.hasFormatEach) {
-        arguments.add(vectorArg.formatEach);
-      }
-      if (vectorArgFragment.hasBeforeEach) {
-        arguments.add(vectorArg.beforeEach);
-      }
-      if (vectorArgFragment.hasJoinWith) {
-        arguments.add(vectorArg.joinWith);
-      }
-    }
-
-    private static final class VectorArgFragment implements ArgvFragment {
-      private static final Interner<VectorArgFragment> interner =
-          BlazeInterners.newStrongInterner();
-      private static final UUID FORMAT_EACH_UUID =
-          UUID.fromString("f830781f-2e0d-4e3b-9b99-ece7f249e0f3");
-      private static final UUID BEFORE_EACH_UUID =
-          UUID.fromString("07d22a0d-2691-4f1c-9f47-5294de1f94e4");
-      private static final UUID JOIN_WITH_UUID =
-          UUID.fromString("c96ed6f0-9220-40f6-9e0c-1c0c5e0b47e4");
-
-      private final boolean isNestedSet;
-      private final boolean hasMapEach;
-      private final boolean hasFormatEach;
-      private final boolean hasBeforeEach;
-      private final boolean hasJoinWith;
-
-      VectorArgFragment(
-          boolean isNestedSet,
-          boolean hasMapEach,
-          boolean hasFormatEach,
-          boolean hasBeforeEach,
-          boolean hasJoinWith) {
-        this.isNestedSet = isNestedSet;
-        this.hasMapEach = hasMapEach;
-        this.hasFormatEach = hasFormatEach;
-        this.hasBeforeEach = hasBeforeEach;
-        this.hasJoinWith = hasJoinWith;
-      }
-
-      private static String expandToCommandLine(Object object, PathMapper pathMapper) {
-        // It'd be nice to build this into ActionInput's CommandLine interface so we don't have
-        // to explicitly check if an object is a ActionInput. Unfortunately that would require
-        // a lot more dependencies on the Java library ActionInput is built into.
-        return pathMapper != null && object instanceof ActionInput actionInput
-            ? pathMapper.getMappedExecPathString(actionInput)
-            : CommandLineItem.expandToCommandLine(object);
-      }
-
-      @Override
-      @SuppressWarnings("unchecked")
-      public int eval(
-          List<Object> arguments,
-          int argi,
-          ImmutableList.Builder<String> builder,
-          PathMapper pathMapper)
-          throws CommandLineExpansionException, InterruptedException {
-        final List<String> mutatedValues;
-        CommandLineItem.MapFn<Object> mapFn;
-        if (hasMapEach) {
-          mapFn = (CommandLineItem.MapFn<Object>) arguments.get(argi++);
-        } else if (!pathMapper.isNoop() && !isNestedSet) {
-          // Allow the PathMapper to apply a map function to string arguments depending on the
-          // previous argument (e.g. to modify exec paths obtained in string form from location
-          // expansion).
-          String previousArg;
-          if (argi > 0 && arguments.get(argi - 1) instanceof String) {
-            previousArg = (String) arguments.get(argi - 1);
-          } else {
-            previousArg = null;
-          }
-          mapFn = pathMapper.getMapFn(previousArg);
-        } else {
-          mapFn = null;
-        }
-        if (isNestedSet) {
-          NestedSet<Object> values = (NestedSet<Object>) arguments.get(argi++);
-          ImmutableList<Object> list = values.toList();
-          mutatedValues = new ArrayList<>(list.size());
-          if (mapFn != null) {
-            Consumer<String> args = mutatedValues::add; // Hoist out of loop to reduce GC
-            for (Object object : list) {
-              mapFn.expandToCommandLine(object, args);
+            init {
+                this.values = other.values
+                this.mapFn = mapFn
             }
-          } else {
-            for (Object object : list) {
-              mutatedValues.add(expandToCommandLine(object, pathMapper));
+        }
+
+        /** Builder for [VectorArg].  */
+        class Builder {
+            private var formatEach: String? = null
+            private var beforeEach: String? = null
+            private var joinWith: String? = null
+
+            /** Each argument is formatted via [SingleStringArgFormatter.format].  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun format(@com.google.errorprone.annotations.CompileTimeConstant formatEach: String?): Builder {
+                com.google.common.base.Preconditions.checkNotNull<String?>(formatEach)
+                this.formatEach = formatEach
+                return this
             }
-          }
-        } else {
-          int count = (Integer) arguments.get(argi++);
-          mutatedValues = new ArrayList<>(count);
-          if (mapFn != null) {
-            Consumer<String> args = mutatedValues::add; // Hoist out of loop to reduce GC
-            for (int i = 0; i < count; ++i) {
-              mapFn.expandToCommandLine(arguments.get(argi++), args);
+
+            /** Each argument is prepended by the beforeEach param.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addBefore(@com.google.errorprone.annotations.CompileTimeConstant beforeEach: String?): Builder {
+                com.google.common.base.Preconditions.checkNotNull<String?>(beforeEach)
+                this.beforeEach = beforeEach
+                return this
             }
-          } else {
-            for (int i = 0; i < count; ++i) {
-              mutatedValues.add(expandToCommandLine(arguments.get(argi++), pathMapper));
+
+            /** Once all arguments have been evaluated, they are joined with this delimiter  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun join(delimiter: String?): Builder {
+                com.google.common.base.Preconditions.checkNotNull<String?>(delimiter)
+                this.joinWith = delimiter
+                return this
             }
-          }
-        }
-        final int count = mutatedValues.size();
-        if (hasFormatEach) {
-          String formatStr = (String) arguments.get(argi++);
-          for (int i = 0; i < count; ++i) {
-            mutatedValues.set(i, SingleStringArgFormatter.format(formatStr, mutatedValues.get(i)));
-          }
-        }
-        if (hasBeforeEach) {
-          String beforeEach = (String) arguments.get(argi++);
-          for (int i = 0; i < count; ++i) {
-            builder.add(beforeEach);
-            builder.add(mutatedValues.get(i));
-          }
-        } else if (hasJoinWith) {
-          String joinWith = (String) arguments.get(argi++);
-          builder.add(Joiner.on(joinWith).join(mutatedValues));
-        } else {
-          builder.addAll(mutatedValues);
-        }
-        return argi;
-      }
 
-      @SuppressWarnings("unchecked")
-      @Override
-      public int addToFingerprint(
-          List<Object> arguments,
-          int argi,
-          ActionKeyContext actionKeyContext,
-          Fingerprint fingerprint)
-          throws CommandLineExpansionException, InterruptedException {
-        CommandLineItem.MapFn<Object> mapFn =
-            hasMapEach ? (CommandLineItem.MapFn<Object>) arguments.get(argi++) : null;
-        if (isNestedSet) {
-          NestedSet<Object> values = (NestedSet<Object>) arguments.get(argi++);
-          if (mapFn != null) {
-            actionKeyContext.addNestedSetToFingerprint(mapFn, fingerprint, values);
-          } else {
-            actionKeyContext.addNestedSetToFingerprint(fingerprint, values);
-          }
-        } else {
-          int count = (Integer) arguments.get(argi++);
-          if (mapFn != null) {
-            for (int i = 0; i < count; ++i) {
-              mapFn.expandToCommandLine(arguments.get(argi++), fingerprint::addString);
+            fun <T> each(values: MutableCollection<T?>?): SimpleVectorArg<T?> {
+                return SimpleVectorArg<T?>(this, values)
             }
-          } else {
-            for (int i = 0; i < count; ++i) {
-              fingerprint.addString(CommandLineItem.expandToCommandLine(arguments.get(argi++)));
+
+            fun <T> each(values: NestedSet<T?>?): SimpleVectorArg<T?> {
+                return SimpleVectorArg<Any?>(this, values)
             }
-          }
         }
-        if (hasFormatEach) {
-          fingerprint.addUUID(FORMAT_EACH_UUID);
-          fingerprint.addString((String) arguments.get(argi++));
+
+        private class VectorArgFragment(
+            private val isNestedSet: Boolean,
+            private val hasMapEach: Boolean,
+            private val hasFormatEach: Boolean,
+            private val hasBeforeEach: Boolean,
+            private val hasJoinWith: Boolean
+        ) : ArgvFragment {
+            @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+            override fun eval(
+                arguments: MutableList<Any?>,
+                argi: Int,
+                builder: com.google.common.collect.ImmutableList.Builder<String?>,
+                pathMapper: PathMapper
+            ): Int {
+                var argi = argi
+                val mutatedValues: MutableList<String?>
+                val mapFn: CommandLineItem.MapFn<Any?>?
+                if (hasMapEach) {
+                    mapFn = arguments.get(argi++) as CommandLineItem.MapFn<Any?>?
+                } else if (!pathMapper.isNoop() && !isNestedSet) {
+                    // Allow the PathMapper to apply a map function to string arguments depending on the
+                    // previous argument (e.g. to modify exec paths obtained in string form from location
+                    // expansion).
+                    val previousArg: String?
+                    if (argi > 0 && arguments.get(argi - 1) is String) {
+                        previousArg = arguments.get(argi - 1) as String?
+                    } else {
+                        previousArg = null
+                    }
+                    mapFn = pathMapper.getMapFn(previousArg)
+                } else {
+                    mapFn = null
+                }
+                if (isNestedSet) {
+                    val values: NestedSet<Any?> = arguments.get(argi++) as NestedSet<Any?>
+                    val list: com.google.common.collect.ImmutableList<Any?> = values.toList()
+                    mutatedValues = java.util.ArrayList<String?>(list.size)
+                    if (mapFn != null) {
+                        val args: java.util.function.Consumer<String?> =
+                            java.util.function.Consumer { e: String? -> mutatedValues.add(e) } // Hoist out of loop to reduce GC
+                        for (`object` in list) {
+                            mapFn.expandToCommandLine(`object`, args)
+                        }
+                    } else {
+                        for (`object` in list) {
+                            mutatedValues.add(expandToCommandLine(`object`, pathMapper))
+                        }
+                    }
+                } else {
+                    val count = arguments.get(argi++) as Int
+                    mutatedValues = java.util.ArrayList<String?>(count)
+                    if (mapFn != null) {
+                        val args: java.util.function.Consumer<String?> =
+                            java.util.function.Consumer { e: String? -> mutatedValues.add(e) } // Hoist out of loop to reduce GC
+                        for (i in 0..<count) {
+                            mapFn.expandToCommandLine(arguments.get(argi++), args)
+                        }
+                    } else {
+                        for (i in 0..<count) {
+                            mutatedValues.add(expandToCommandLine(arguments.get(argi++), pathMapper))
+                        }
+                    }
+                }
+                val count = mutatedValues.size
+                if (hasFormatEach) {
+                    val formatStr = arguments.get(argi++) as String?
+                    for (i in 0..<count) {
+                        mutatedValues.set(i, SingleStringArgFormatter.format(formatStr, mutatedValues.get(i)))
+                    }
+                }
+                if (hasBeforeEach) {
+                    val beforeEach = arguments.get(argi++) as String
+                    for (i in 0..<count) {
+                        builder.add(beforeEach)
+                        builder.add(mutatedValues.get(i))
+                    }
+                } else if (hasJoinWith) {
+                    val joinWith = arguments.get(argi++) as String
+                    builder.add(com.google.common.base.Joiner.on(joinWith).join(mutatedValues))
+                } else {
+                    builder.addAll(mutatedValues)
+                }
+                return argi
+            }
+
+            @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+            override fun addToFingerprint(
+                arguments: MutableList<Any?>,
+                argi: Int,
+                actionKeyContext: ActionKeyContext,
+                fingerprint: Fingerprint
+            ): Int {
+                var argi = argi
+                val mapFn: CommandLineItem.MapFn<Any?>? =
+                    if (hasMapEach) arguments.get(argi++) as CommandLineItem.MapFn<Any?>? else null
+                if (isNestedSet) {
+                    val values: NestedSet<Any?>? = arguments.get(argi++) as NestedSet<Any?>?
+                    if (mapFn != null) {
+                        actionKeyContext.addNestedSetToFingerprint(mapFn, fingerprint, values)
+                    } else {
+                        actionKeyContext.addNestedSetToFingerprint(fingerprint, values)
+                    }
+                } else {
+                    val count = arguments.get(argi++) as Int
+                    if (mapFn != null) {
+                        for (i in 0..<count) {
+                            mapFn.expandToCommandLine(arguments.get(argi++), fingerprint::addString)
+                        }
+                    } else {
+                        for (i in 0..<count) {
+                            fingerprint.addString(CommandLineItem.expandToCommandLine(arguments.get(argi++)))
+                        }
+                    }
+                }
+                if (hasFormatEach) {
+                    fingerprint.addUUID(FORMAT_EACH_UUID)
+                    fingerprint.addString(arguments.get(argi++) as String?)
+                }
+                if (hasBeforeEach) {
+                    fingerprint.addUUID(BEFORE_EACH_UUID)
+                    fingerprint.addString(arguments.get(argi++) as String?)
+                } else if (hasJoinWith) {
+                    fingerprint.addUUID(JOIN_WITH_UUID)
+                    fingerprint.addString(arguments.get(argi++) as String?)
+                }
+                return argi
+            }
+
+            override fun equals(o: Any?): Boolean {
+                if (this === o) {
+                    return true
+                }
+                if (o == null || javaClass != o.javaClass) {
+                    return false
+                }
+                val vectorArgFragment = o as VectorArgFragment
+                return isNestedSet == vectorArgFragment.isNestedSet && hasMapEach == vectorArgFragment.hasMapEach && hasFormatEach == vectorArgFragment.hasFormatEach && hasBeforeEach == vectorArgFragment.hasBeforeEach && hasJoinWith == vectorArgFragment.hasJoinWith
+            }
+
+            override fun hashCode(): Int {
+                return com.google.common.base.Objects.hashCode(
+                    isNestedSet,
+                    hasMapEach,
+                    hasFormatEach,
+                    hasBeforeEach,
+                    hasJoinWith
+                )
+            }
+
+            companion object {
+                private val interner: com.google.common.collect.Interner<VectorArgFragment> =
+                    BlazeInterners.newStrongInterner()
+                private val FORMAT_EACH_UUID: UUID = UUID.fromString("f830781f-2e0d-4e3b-9b99-ece7f249e0f3")
+                private val BEFORE_EACH_UUID: UUID = UUID.fromString("07d22a0d-2691-4f1c-9f47-5294de1f94e4")
+                private val JOIN_WITH_UUID: UUID = UUID.fromString("c96ed6f0-9220-40f6-9e0c-1c0c5e0b47e4")
+
+                private fun expandToCommandLine(`object`: Any?, pathMapper: PathMapper?): String {
+                    // It'd be nice to build this into ActionInput's CommandLine interface so we don't have
+                    // to explicitly check if an object is a ActionInput. Unfortunately that would require
+                    // a lot more dependencies on the Java library ActionInput is built into.
+                    return if (pathMapper != null && `object` is ActionInput)
+                        pathMapper.getMappedExecPathString(`object`)
+                    else
+                        CommandLineItem.expandToCommandLine(`object`)
+                }
+            }
         }
-        if (hasBeforeEach) {
-          fingerprint.addUUID(BEFORE_EACH_UUID);
-          fingerprint.addString((String) arguments.get(argi++));
-        } else if (hasJoinWith) {
-          fingerprint.addUUID(JOIN_WITH_UUID);
-          fingerprint.addString((String) arguments.get(argi++));
+
+        companion object {
+            fun <T> of(values: MutableCollection<T?>?): SimpleVectorArg<T?> {
+                return com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg.Builder()
+                    .each<T?>(values)
+            }
+
+            fun <T> of(values: NestedSet<T?>?): SimpleVectorArg<T?>? {
+                return com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg.Builder().each(values)
+            }
+
+            /** Each argument is formatted via [SingleStringArgFormatter.format].  */
+            fun format(@com.google.errorprone.annotations.CompileTimeConstant formatEach: String?): Builder {
+                return com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg.Builder()
+                    .format(formatEach)
+            }
+
+            /** Each argument is prepended by the beforeEach param.  */
+            fun addBefore(@com.google.errorprone.annotations.CompileTimeConstant beforeEach: String?): Builder {
+                return com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg.Builder()
+                    .addBefore(beforeEach)
+            }
+
+            /** Once all arguments have been evaluated, they are joined with this delimiter  */
+            fun join(delimiter: String?): Builder {
+                return com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg.Builder()
+                    .join(delimiter)
+            }
+
+            private fun push(arguments: MutableList<Any?>, vectorArg: VectorArg<*>) {
+                // This is either a Collection or a NestedSet.
+                val values: Any?
+                val mapFn: CommandLineItem.MapFn<*>?
+                if (vectorArg is SimpleVectorArg<*>) {
+                    values = vectorArg.values
+                    mapFn = null
+                } else {
+                    values = (vectorArg as MappedVectorArg<*>).values
+                    mapFn = vectorArg.mapFn
+                }
+                var vectorArgFragment =
+                    VectorArgFragment(
+                        vectorArg.isNestedSet,
+                        mapFn != null,
+                        vectorArg.formatEach != null,
+                        vectorArg.beforeEach != null,
+                        vectorArg.joinWith != null
+                    )
+                require(!(vectorArgFragment.hasBeforeEach && vectorArgFragment.hasJoinWith)) { "Cannot use both 'before' and 'join' in vector arg." }
+                vectorArgFragment = VectorArgFragment.Companion.interner.intern(vectorArgFragment)
+                arguments.add(vectorArgFragment)
+                if (vectorArgFragment.hasMapEach) {
+                    arguments.add(mapFn)
+                }
+                if (vectorArgFragment.isNestedSet) {
+                    arguments.add(values)
+                } else {
+                    // Simply expand any ordinary collection into the argv
+                    arguments.add(vectorArg.count)
+                    arguments.addAll((values as kotlin.collections.MutableCollection<*>?)!!)
+                }
+                if (vectorArgFragment.hasFormatEach) {
+                    arguments.add(vectorArg.formatEach)
+                }
+                if (vectorArgFragment.hasBeforeEach) {
+                    arguments.add(vectorArg.beforeEach)
+                }
+                if (vectorArgFragment.hasJoinWith) {
+                    arguments.add(vectorArg.joinWith)
+                }
+            }
         }
-        return argi;
-      }
+    }
 
-      @Override
-      public boolean equals(Object o) {
-        if (this == o) {
-          return true;
+    @VisibleForSerialization
+    internal class FormatArg : ArgvFragment {
+        override fun eval(
+            arguments: MutableList<Any?>,
+            argi: Int,
+            builder: com.google.common.collect.ImmutableList.Builder<String?>,
+            pathMapper: PathMapper?
+        ): Int {
+            var argi = argi
+            val argCount = arguments.get(argi++) as Int
+            val formatStr = arguments.get(argi++) as String
+            val args = arrayOfNulls<Any>(argCount)
+            for (i in 0..<argCount) {
+                args[i] = CommandLineItem.expandToCommandLine(arguments.get(argi++))
+            }
+            builder.add(String.format(formatStr, *args))
+            return argi
         }
-        if (o == null || getClass() != o.getClass()) {
-          return false;
+
+        override fun addToFingerprint(
+            arguments: MutableList<Any?>,
+            argi: Int,
+            actionKeyContext: ActionKeyContext?,
+            fingerprint: Fingerprint
+        ): Int {
+            var argi = argi
+            val argCount = arguments.get(argi++) as Int
+            fingerprint.addUUID(FORMAT_UUID)
+            fingerprint.addString(arguments.get(argi++) as String?)
+            for (i in 0..<argCount) {
+                fingerprint.addString(CommandLineItem.expandToCommandLine(arguments.get(argi++)))
+            }
+            return argi
         }
-        VectorArgFragment vectorArgFragment = (VectorArgFragment) o;
-        return isNestedSet == vectorArgFragment.isNestedSet
-            && hasMapEach == vectorArgFragment.hasMapEach
-            && hasFormatEach == vectorArgFragment.hasFormatEach
-            && hasBeforeEach == vectorArgFragment.hasBeforeEach
-            && hasJoinWith == vectorArgFragment.hasJoinWith;
-      }
 
-      @Override
-      public int hashCode() {
-        return Objects.hashCode(isNestedSet, hasMapEach, hasFormatEach, hasBeforeEach, hasJoinWith);
-      }
-    }
-  }
-
-  @VisibleForSerialization
-  static class FormatArg implements ArgvFragment {
-    @SerializationConstant @VisibleForSerialization
-    static final FormatArg INSTANCE = new FormatArg();
-
-    private static final UUID FORMAT_UUID = UUID.fromString("377cee34-e947-49e0-94a2-6ab95b396ec4");
-
-    private static void push(List<Object> arguments, String formatStr, Object[] args) {
-      arguments.add(INSTANCE);
-      arguments.add(args.length);
-      arguments.add(formatStr);
-      Collections.addAll(arguments, args);
-    }
-
-    @Override
-    public int eval(
-        List<Object> arguments,
-        int argi,
-        ImmutableList.Builder<String> builder,
-        PathMapper pathMapper) {
-      int argCount = (Integer) arguments.get(argi++);
-      String formatStr = (String) arguments.get(argi++);
-      Object[] args = new Object[argCount];
-      for (int i = 0; i < argCount; ++i) {
-        args[i] = CommandLineItem.expandToCommandLine(arguments.get(argi++));
-      }
-      builder.add(String.format(formatStr, args));
-      return argi;
-    }
-
-    @Override
-    public int addToFingerprint(
-        List<Object> arguments,
-        int argi,
-        ActionKeyContext actionKeyContext,
-        Fingerprint fingerprint) {
-      int argCount = (Integer) arguments.get(argi++);
-      fingerprint.addUUID(FORMAT_UUID);
-      fingerprint.addString((String) arguments.get(argi++));
-      for (int i = 0; i < argCount; ++i) {
-        fingerprint.addString(CommandLineItem.expandToCommandLine(arguments.get(argi++)));
-      }
-      return argi;
-    }
-  }
-
-  @VisibleForSerialization
-  static class PrefixArg implements ArgvFragment {
-    @SerializationConstant @VisibleForSerialization
-    static final PrefixArg INSTANCE = new PrefixArg();
-
-    private static final UUID PREFIX_UUID = UUID.fromString("a95eccdf-4f54-46fc-b925-c8c7e1f50c95");
-
-    private static void push(
-        List<Object> arguments,
-        String before,
-        Object arg,
-        @Nullable RepositoryMapping mainRepoMapping) {
-      arguments.add(INSTANCE);
-      arguments.add(before);
-      if (mainRepoMapping != null) {
-        arguments.add(mainRepoMapping);
-      }
-      arguments.add(arg);
-    }
-
-    @Override
-    public int eval(
-        List<Object> arguments,
-        int argi,
-        ImmutableList.Builder<String> builder,
-        PathMapper pathMapper) {
-      String before = (String) arguments.get(argi++);
-      Object arg = arguments.get(argi++);
-      if (arg instanceof RepositoryMapping mainRepoMapping) {
-        arg = ((Label) arguments.get(argi++)).getDisplayForm(mainRepoMapping);
-      }
-      builder.add(before + CommandLineItem.expandToCommandLine(arg));
-      return argi;
-    }
-
-    @Override
-    public int addToFingerprint(
-        List<Object> arguments,
-        int argi,
-        ActionKeyContext actionKeyContext,
-        Fingerprint fingerprint) {
-      fingerprint.addUUID(PREFIX_UUID);
-      fingerprint.addString((String) arguments.get(argi++));
-      Object arg = arguments.get(argi++);
-      if (arg instanceof RepositoryMapping mainRepoMapping) {
-        arg = ((Label) arguments.get(argi++)).getDisplayForm(mainRepoMapping);
-      }
-      fingerprint.addString(CommandLineItem.expandToCommandLine(arg));
-      return argi;
-    }
-  }
-
-  /**
-   * A command line argument for {@link TreeFileArtifact}.
-   *
-   * <p>Since {@link TreeFileArtifact} is not known or available at analysis time, subclasses should
-   * enclose its parent TreeFileArtifact instead at analysis time. This interface provides method
-   * {@link #substituteTreeArtifact} to generate another argument object that replaces the enclosed
-   * TreeArtifact with one of its {@link TreeFileArtifact} at execution time.
-   */
-  private abstract static class TreeFileArtifactArgvFragment {
-    /**
-     * Substitutes this ArgvFragment with another arg object, with the original TreeArtifacts
-     * contained in this ArgvFragment replaced by their associated TreeFileArtifacts.
-     *
-     * @param substitutionMap A map between TreeArtifacts and their associated TreeFileArtifacts
-     *     used to replace them.
-     */
-    abstract Object substituteTreeArtifact(Map<Artifact, TreeFileArtifact> substitutionMap);
-  }
-
-  /**
-   * A command line argument that can expand enclosed TreeArtifacts into a list of child {@link
-   * TreeFileArtifact}s at execution time before argument evaluation.
-   *
-   * <p>The main difference between this class and {@link TreeFileArtifactArgvFragment} is that
-   * {@link TreeFileArtifactArgvFragment} is used in {@link SpawnActionTemplate} to substitutes a
-   * TreeArtifact with *one* of its child TreeFileArtifacts, while this class expands a TreeArtifact
-   * into *all* of its child TreeFileArtifacts.
-   */
-  private abstract static class TreeArtifactExpansionArgvFragment extends StandardArgvFragment {
-    /**
-     * Evaluates this argument fragment into an argument string and adds it into {@code builder}.
-     * The enclosed TreeArtifact will be expanded using {@code inputMetadataProvider}.
-     */
-    abstract void eval(
-        ImmutableList.Builder<String> builder, InputMetadataProvider inputMetadataProvider);
-
-    /**
-     * Evaluates this argument fragment by serializing it into a string. Note that the returned
-     * argument is not suitable to be used as part of an actual command line. The purpose of this
-     * method is to provide a unique command line argument string to be used as part of an action
-     * key at analysis time.
-     *
-     * <p>Internally this method just calls {@link #describe}.
-     */
-    @Override
-    void eval(ImmutableList.Builder<String> builder) {
-      builder.add(describe());
-    }
-
-    /**
-     * Returns a string that describes this argument fragment. The string can be used as part of an
-     * action key for the command line at analysis time.
-     */
-    abstract String describe();
-  }
-
-  private static final class ExpandedTreeArtifactArg extends TreeArtifactExpansionArgvFragment {
-    private static final UUID TREE_UUID = UUID.fromString("13b7626b-c77d-4a30-ad56-ff08c06b1cee");
-    private final Artifact treeArtifact;
-
-    ExpandedTreeArtifactArg(Artifact treeArtifact) {
-      Preconditions.checkArgument(
-          treeArtifact.isTreeArtifact(), "%s is not a TreeArtifact", treeArtifact);
-      this.treeArtifact = treeArtifact;
-    }
-
-    @Override
-    void eval(ImmutableList.Builder<String> builder, InputMetadataProvider inputMetadataProvider) {
-      TreeArtifactValue treeArtifactValue = inputMetadataProvider.getTreeMetadata(treeArtifact);
-      if (treeArtifactValue == null) {
-        return;
-      }
-      for (TreeFileArtifact child : treeArtifactValue.getChildren()) {
-        builder.add(child.getExecPathString());
-      }
-    }
-
-    @Override
-    public String describe() {
-      return String.format(
-          "ExpandedTreeArtifactArg{ treeArtifact: %s}", treeArtifact.getExecPathString());
-    }
-
-    @Override
-    void addToFingerprint(ActionKeyContext actionKeyContext, Fingerprint fingerprint) {
-      fingerprint.addUUID(TREE_UUID);
-      fingerprint.addPath(treeArtifact.getExecPath());
-    }
-  }
-
-  /**
-   * An argument object that evaluates to the exec path of a {@link TreeFileArtifact}, enclosing the
-   * associated {@link TreeFileArtifact}.
-   */
-  private static final class TreeFileArtifactExecPathArg extends TreeFileArtifactArgvFragment {
-    private final Artifact placeHolderTreeArtifact;
-
-    private TreeFileArtifactExecPathArg(Artifact artifact) {
-      Preconditions.checkArgument(artifact.isTreeArtifact(), "%s must be a TreeArtifact", artifact);
-      placeHolderTreeArtifact = artifact;
-    }
-
-    @Override
-    Object substituteTreeArtifact(Map<Artifact, TreeFileArtifact> substitutionMap) {
-      Artifact artifact = substitutionMap.get(placeHolderTreeArtifact);
-      Preconditions.checkNotNull(artifact, "Artifact to substitute: %s", placeHolderTreeArtifact);
-      return artifact.getExecPath();
-    }
-  }
-
-  /**
-   * A Builder class for CustomCommandLine with the appropriate methods.
-   *
-   * <p>{@link Collection} instances passed to {@code add*} methods will copied internally. If you
-   * have a {@link NestedSet}, these should never be flattened to a collection before being passed
-   * to the command line.
-   *
-   * <p>Try to avoid coercing items to strings unnecessarily. Instead, use a more memory-efficient
-   * form that defers the string coercion until the last moment. In particular, avoid flattening
-   * lists and nested sets (see {@link VectorArg}).
-   *
-   * <p>Three types are given special consideration:
-   *
-   * <ul>
-   *   <li>Any labels added will be added using {@link Label#getCanonicalForm()}
-   *   <li>Path fragments will be added using {@link PathFragment#toString}
-   *   <li>Artifacts will be added using {@link Artifact#getExecPathString()}.
-   * </ul>
-   *
-   * <p>Any other type must be mapped to a string. For collections, please use {@link
-   * VectorArg.SimpleVectorArg#mapped}.
-   */
-  public static final class Builder {
-    // In order to avoid unnecessary wrapping, we keep raw objects here, but these objects are
-    // always either ArgvFragments or objects whose desired string representations are just their
-    // toString() results.
-    private final List<Object> arguments = new ArrayList<>();
-
-    /**
-     * Adds a constant-value string.
-     *
-     * <p>Prefer this over its dynamic cousin, as using static strings saves memory.
-     */
-    @CanIgnoreReturnValue
-    public Builder add(@CompileTimeConstant String value) {
-      return addObjectInternal(value);
-    }
-
-    /**
-     * Adds a string argument to the command line.
-     *
-     * <p>If the value is null, neither the arg nor the value is added.
-     */
-    @CanIgnoreReturnValue
-    public Builder add(@CompileTimeConstant String arg, @Nullable String value) {
-      return addObjectInternal(arg, value);
-    }
-
-    /**
-     * Adds a single argument to the command line, which is lazily converted to string.
-     *
-     * <p>If the value is null, this method is a no-op.
-     *
-     * <p>Passing a {@link Collection} containing multiple elements to this method instead of {@link
-     * #addAll(Collection)} and similar is preferable if the caller knows that the given instance
-     * will be retained elsewhere. This method spends a single array slot on the {@link Collection}
-     * instead of copying over all of its elements, potentially saving memory if it is retained
-     * elsewhere.
-     */
-    @CanIgnoreReturnValue
-    public Builder addObject(@Nullable Object value) {
-      return addObjectInternal(value);
-    }
-
-    /**
-     * Adds a dynamically calculated string.
-     *
-     * <p>Consider whether using another method could be more efficient. For instance, rather than
-     * calling this method with an Artifact's exec path, just add the artifact itself. It will
-     * lazily get converted to its exec path. Same with labels, path fragments, and many other
-     * objects.
-     *
-     * <p>If you are joining some list into a single argument, consider using {@link VectorArg}.
-     *
-     * <p>If you are formatting a string, consider using {@link Builder#addFormatted(String,
-     * Object...)}.
-     *
-     * <p>There are many other ways you can try to avoid calling this. In general, try to use
-     * constants or objects that are already on the heap elsewhere.
-     */
-    @CanIgnoreReturnValue
-    public Builder addDynamicString(@Nullable String value) {
-      return addObjectInternal(value);
-    }
-
-    /**
-     * Adds a label value by calling {@link Label#getCanonicalForm}.
-     *
-     * <p>Prefer this over manually calling {@link Label#getCanonicalForm}, as it avoids a copy of
-     * the label value.
-     */
-    @CanIgnoreReturnValue
-    public Builder addLabel(@Nullable Label value) {
-      return addObjectInternal(value);
-    }
-
-    /**
-     * Adds a label value by calling {@link Label#getCanonicalForm}.
-     *
-     * <p>Prefer this over manually calling {@link Label#getCanonicalForm}, as it avoids storing a
-     * copy of the label value.
-     *
-     * <p>If the value is null, neither the arg nor the value is added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addLabel(@CompileTimeConstant String arg, @Nullable Label value) {
-      return addObjectInternal(arg, value);
-    }
-
-    /**
-     * Adds an artifact by calling {@link PathFragment#getPathString}.
-     *
-     * <p>Prefer this over manually calling {@link PathFragment#getPathString}, as it avoids storing
-     * a copy of the path string.
-     */
-    @CanIgnoreReturnValue
-    public Builder addPath(@Nullable PathFragment value) {
-      return addObjectInternal(value);
-    }
-
-    /**
-     * Adds an artifact by calling {@link PathFragment#getPathString}.
-     *
-     * <p>Prefer this over manually calling {@link PathFragment#getPathString}, as it avoids storing
-     * a copy of the path string.
-     *
-     * <p>If the value is null, neither the arg nor the value is added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addPath(@CompileTimeConstant String arg, @Nullable PathFragment value) {
-      return addObjectInternal(arg, value);
-    }
-
-    /**
-     * Adds an artifact by calling {@link Artifact#getExecPath}.
-     *
-     * <p>Prefer this over manually calling {@link Artifact#getExecPath}, as it avoids storing a
-     * copy of the artifact path string.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExecPath(@Nullable Artifact value) {
-      return addObjectInternal(value);
-    }
-
-    /**
-     * Adds an artifact by calling {@link Artifact#getExecPath}.
-     *
-     * <p>Prefer this over manually calling {@link Artifact#getExecPath}, as it avoids storing a
-     * copy of the artifact path string.
-     *
-     * <p>If the value is null, neither the arg nor the value is added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExecPath(@CompileTimeConstant String arg, @Nullable Artifact value) {
-      return addObjectInternal(arg, value);
-    }
-
-    /** Adds a lazily expanded string. */
-    @CanIgnoreReturnValue
-    public Builder addLazyString(@Nullable OnDemandString value) {
-      return addObjectInternal(value);
-    }
-
-    /** Adds a lazily expanded string. */
-    @CanIgnoreReturnValue
-    public Builder addLazyString(@CompileTimeConstant String arg, @Nullable OnDemandString value) {
-      return addObjectInternal(arg, value);
-    }
-
-    /** Calls {@link String#format} at command line expansion time. */
-    @CanIgnoreReturnValue
-    @FormatMethod
-    public Builder addFormatted(@FormatString String formatStr, Object... args) {
-      Preconditions.checkNotNull(formatStr);
-      FormatArg.push(arguments, formatStr, args);
-      return this;
-    }
-
-    /** Concatenates the passed prefix string and the string. */
-    @CanIgnoreReturnValue
-    public Builder addPrefixed(@CompileTimeConstant String prefix, @Nullable String arg) {
-      return addPrefixedInternal(prefix, arg, /* mainRepoMapping= */ null);
-    }
-
-    /**
-     * Concatenates the passed prefix string and the label using {@link Label#getDisplayForm}, which
-     * is identical to {@link Label#getCanonicalForm()} for main repo labels.
-     */
-    @CanIgnoreReturnValue
-    public Builder addPrefixedLabel(
-        @CompileTimeConstant String prefix,
-        @Nullable Label arg,
-        RepositoryMapping mainRepoMapping) {
-      return addPrefixedInternal(prefix, arg, mainRepoMapping);
-    }
-
-    /** Concatenates the passed prefix string and the path. */
-    @CanIgnoreReturnValue
-    public Builder addPrefixedPath(@CompileTimeConstant String prefix, @Nullable PathFragment arg) {
-      return addPrefixedInternal(prefix, arg, /* mainRepoMapping= */ null);
-    }
-
-    /** Concatenates the passed prefix string and the artifact's exec path. */
-    @CanIgnoreReturnValue
-    public Builder addPrefixedExecPath(@CompileTimeConstant String prefix, @Nullable Artifact arg) {
-      return addPrefixedInternal(prefix, arg, /* mainRepoMapping= */ null);
-    }
-
-    /**
-     * Adds the passed strings to the command line.
-     *
-     * <p>If you are converting long lists or nested sets of a different type to string lists,
-     * please try to use a different method that supports what you are trying to do directly.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(@Nullable Collection<String> values) {
-      return addCollectionInternal(values);
-    }
-
-    /**
-     * Adds the passed strings to the command line.
-     *
-     * <p>If you are converting long lists or nested sets of a different type to string lists,
-     * please try to use a different method that supports what you are trying to do directly.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(@Nullable NestedSet<String> values) {
-      return addNestedSetInternal(values);
-    }
-
-    /**
-     * Adds the arg followed by the passed strings.
-     *
-     * <p>If you are converting long lists or nested sets of a different type to string lists,
-     * please try to use a different method that supports what you are trying to do directly.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(@CompileTimeConstant String arg, @Nullable Collection<String> values) {
-      return addCollectionInternal(arg, values);
-    }
-
-    /**
-     * Adds the arg followed by the passed strings.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(@CompileTimeConstant String arg, @Nullable NestedSet<String> values) {
-      return addNestedSetInternal(arg, values);
-    }
-
-    /** Adds the passed vector arg. See {@link VectorArg}. */
-    @CanIgnoreReturnValue
-    public Builder addAll(VectorArg<String> vectorArg) {
-      return addVectorArgInternal(vectorArg);
-    }
-
-    /**
-     * Adds the arg followed by the passed vector arg. See {@link VectorArg}.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(@CompileTimeConstant String arg, VectorArg<String> vectorArg) {
-      return addVectorArgInternal(arg, vectorArg);
-    }
-
-    /** Adds the passed paths to the command line. */
-    @CanIgnoreReturnValue
-    public Builder addPaths(@Nullable Collection<PathFragment> values) {
-      return addCollectionInternal(values);
-    }
-
-    /** Adds the passed paths to the command line. */
-    @CanIgnoreReturnValue
-    public Builder addPaths(@Nullable NestedSet<PathFragment> values) {
-      return addNestedSetInternal(values);
-    }
-
-    /**
-     * Adds the arg followed by the path strings.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addPaths(
-        @CompileTimeConstant String arg, @Nullable Collection<PathFragment> values) {
-      return addCollectionInternal(arg, values);
-    }
-
-    /**
-     * Adds the arg followed by the path fragments.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addPaths(
-        @CompileTimeConstant String arg, @Nullable NestedSet<PathFragment> values) {
-      return addNestedSetInternal(arg, values);
-    }
-
-    /** Adds the passed vector arg. See {@link VectorArg}. */
-    @CanIgnoreReturnValue
-    public Builder addPaths(VectorArg<PathFragment> vectorArg) {
-      return addVectorArgInternal(vectorArg);
-    }
-
-    /**
-     * Adds the arg followed by the passed vector arg. See {@link VectorArg}.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addPaths(@CompileTimeConstant String arg, VectorArg<PathFragment> vectorArg) {
-      return addVectorArgInternal(arg, vectorArg);
-    }
-
-    /**
-     * Adds the artifacts' exec paths to the command line.
-     *
-     * <p>Do not use this method if the list is derived from a flattened nested set. Instead, figure
-     * out how to avoid flattening the set and use {@link #addExecPaths(NestedSet)}.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExecPaths(@Nullable Collection<Artifact> values) {
-      return addCollectionInternal(values);
-    }
-
-    /** Adds the artifacts' exec paths to the command line. */
-    @CanIgnoreReturnValue
-    public Builder addExecPaths(@Nullable NestedSet<Artifact> values) {
-      return addNestedSetInternal(values);
-    }
-
-    /**
-     * Adds the arg followed by the artifacts' exec paths.
-     *
-     * <p>Do not use this method if the list is derived from a flattened nested set. Instead, figure
-     * out how to avoid flattening the set and use {@link #addExecPaths(String, NestedSet)}.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExecPaths(
-        @CompileTimeConstant String arg, @Nullable Collection<Artifact> values) {
-      return addCollectionInternal(arg, values);
-    }
-
-    /**
-     * Adds the arg followed by the artifacts' exec paths.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExecPaths(
-        @CompileTimeConstant String arg, @Nullable NestedSet<Artifact> values) {
-      return addNestedSetInternal(arg, values);
-    }
-
-    /** Adds the passed vector arg. See {@link VectorArg}. */
-    @CanIgnoreReturnValue
-    public Builder addExecPaths(VectorArg<Artifact> vectorArg) {
-      return addVectorArgInternal(vectorArg);
-    }
-
-    /**
-     * Adds the arg followed by the passed vector arg. See {@link VectorArg}.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExecPaths(@CompileTimeConstant String arg, VectorArg<Artifact> vectorArg) {
-      return addVectorArgInternal(arg, vectorArg);
-    }
-
-    /**
-     * Adds a placeholder TreeArtifact exec path. When the command line is used in an action
-     * template, the placeholder will be replaced by the exec path of a {@link TreeFileArtifact}
-     * inside the TreeArtifact at execution time for each expanded action.
-     *
-     * @param treeArtifact the TreeArtifact that will be evaluated to one of its child {@link
-     *     TreeFileArtifact} at execution time
-     */
-    @CanIgnoreReturnValue
-    public Builder addPlaceholderTreeArtifactExecPath(@Nullable Artifact treeArtifact) {
-      if (treeArtifact != null) {
-        arguments.add(new TreeFileArtifactExecPathArg(treeArtifact));
-      }
-      return this;
-    }
-
-    /**
-     * Adds a flag with the exec path of a placeholder TreeArtifact. When the command line is used
-     * in an action template, the placeholder will be replaced by the exec path of a {@link
-     * TreeFileArtifact} inside the TreeArtifact at execution time for each expanded action.
-     *
-     * @param arg the name of the argument
-     * @param treeArtifact the TreeArtifact that will be evaluated to one of its child {@link
-     *     TreeFileArtifact} at execution time
-     */
-    @CanIgnoreReturnValue
-    public Builder addPlaceholderTreeArtifactExecPath(String arg, @Nullable Artifact treeArtifact) {
-      Preconditions.checkNotNull(arg);
-      if (treeArtifact != null) {
-        arguments.add(arg);
-        arguments.add(new TreeFileArtifactExecPathArg(treeArtifact));
-      }
-      return this;
-    }
-
-    /**
-     * Adds the exec paths (one argument per exec path) of all {@link TreeFileArtifact}s under
-     * {@code treeArtifact}.
-     *
-     * @param treeArtifact the TreeArtifact containing the {@link TreeFileArtifact}s to add.
-     */
-    @CanIgnoreReturnValue
-    public Builder addExpandedTreeArtifactExecPaths(Artifact treeArtifact) {
-      Preconditions.checkNotNull(treeArtifact);
-      arguments.add(new ExpandedTreeArtifactArg(treeArtifact));
-      return this;
-    }
-
-    public CustomCommandLine build() {
-      return new CustomCommandLine(arguments.toArray());
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addObjectInternal(@Nullable Object value) {
-      if (value != null) {
-        arguments.add(value);
-      }
-      return this;
-    }
-
-    /** Adds the arg and the passed value if the value is non-null. */
-    @CanIgnoreReturnValue
-    private Builder addObjectInternal(@CompileTimeConstant String arg, @Nullable Object value) {
-      Preconditions.checkNotNull(arg);
-      if (value != null) {
-        arguments.add(arg);
-        addObjectInternal(value);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addPrefixedInternal(
-        String prefix, @Nullable Object arg, @Nullable RepositoryMapping mainRepoMapping) {
-      Preconditions.checkNotNull(prefix);
-      if (arg != null) {
-        PrefixArg.push(arguments, prefix, arg, mainRepoMapping);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addCollectionInternal(@Nullable Collection<?> values) {
-      if (values != null) {
-        arguments.addAll(values);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addCollectionInternal(
-        @CompileTimeConstant String arg, @Nullable Collection<?> values) {
-      Preconditions.checkNotNull(arg);
-      if (values != null && !values.isEmpty()) {
-        arguments.add(arg);
-        addCollectionInternal(values);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addNestedSetInternal(@Nullable NestedSet<?> values) {
-      if (values != null) {
-        arguments.add(values);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addNestedSetInternal(
-        @CompileTimeConstant String arg, @Nullable NestedSet<?> values) {
-      Preconditions.checkNotNull(arg);
-      if (values != null && !values.isEmpty()) {
-        arguments.add(arg);
-        addNestedSetInternal(values);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addVectorArgInternal(VectorArg<?> vectorArg) {
-      if (!vectorArg.isEmpty) {
-        VectorArg.push(arguments, vectorArg);
-      }
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    private Builder addVectorArgInternal(@CompileTimeConstant String arg, VectorArg<?> vectorArg) {
-      Preconditions.checkNotNull(arg);
-      if (!vectorArg.isEmpty) {
-        arguments.add(arg);
-        addVectorArgInternal(vectorArg);
-      }
-      return this;
-    }
-  }
-
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  /**
-   * Stored as an {@code Object[]} instead of an {@link ImmutableList} to save memory, but is never
-   * modified. Access via {@link #rawArgsAsList} for an unmodifiable {@link List} view.
-   */
-  private final Object[] arguments;
-
-  private CustomCommandLine(Object[] arguments) {
-    this.arguments = arguments;
-  }
-
-  /** Wraps {@link #arguments} in an unmodifiable {@link List} view. */
-  private List<Object> rawArgsAsList() {
-    return Collections.unmodifiableList(Arrays.asList(arguments));
-  }
-
-  /**
-   * Given the list of {@link TreeFileArtifact}s, returns another CustomCommandLine that replaces
-   * their parent TreeArtifacts with the TreeFileArtifacts in all {@link
-   * TreeFileArtifactArgvFragment} argument objects.
-   */
-  @VisibleForTesting
-  public CustomCommandLine evaluateTreeFileArtifacts(Iterable<TreeFileArtifact> treeFileArtifacts) {
-    return new TreeArtifactSubstitutionCustomCommandLine(
-        arguments, Maps.uniqueIndex(treeFileArtifacts, TreeFileArtifact::getParent));
-  }
-
-  @Override
-  public ImmutableList<String> arguments()
-      throws CommandLineExpansionException, InterruptedException {
-    return arguments(null, PathMapper.NOOP);
-  }
-
-  /**
-   * @param pathMapper a {@link PathMapper} that rewrites the config parts of artifact paths to
-   *     improve caching. This only affects {@link Builder#addExecPath} and {@link
-   *     Builder#addPath(PathFragment)} entries. Output paths embedded in larger strings and added
-   *     via {@link Builder#add(String)} or other variants must be handled separately.
-   */
-  @Override
-  public ImmutableList<String> arguments(
-      @Nullable InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException, InterruptedException {
-    ImmutableList.Builder<String> builder = ImmutableList.builder();
-    List<Object> arguments = rawArgsAsList();
-    int count = arguments.size();
-    // Track the last scalar, non-path argument (e.g. "--javacopts") so that the PathMapper can
-    // heuristically map subsequent argument collections that contain paths.
-    String previousFlag = null;
-    for (int i = 0; i < count; ) {
-      Object arg = arguments.get(i++);
-      if (arg instanceof TreeFileArtifactArgvFragment treeFileArtifactArgvFragment) {
-        arg = substituteTreeFileArtifactArgvFragment(treeFileArtifactArgvFragment);
-      }
-      if (arg instanceof NestedSet<?> nestedSet) {
-        evalSimpleVectorArg(nestedSet.toList(), builder, pathMapper, previousFlag);
-      } else if (arg instanceof Iterable) {
-        evalSimpleVectorArg((Iterable<?>) arg, builder, pathMapper, previousFlag);
-      } else if (arg instanceof ArgvFragment) {
-        if (inputMetadataProvider != null
-            && arg instanceof TreeArtifactExpansionArgvFragment expansionArg) {
-          expansionArg.eval(builder, inputMetadataProvider);
-        } else {
-          i = ((ArgvFragment) arg).eval(arguments, i, builder, pathMapper);
+        companion object {
+            @SerializationConstant
+            @VisibleForSerialization
+            val INSTANCE: FormatArg = FormatArg()
+
+            private val FORMAT_UUID: UUID = UUID.fromString("377cee34-e947-49e0-94a2-6ab95b396ec4")
+
+            private fun push(arguments: MutableList<Any?>, formatStr: String?, args: Array<Any?>) {
+                arguments.add(INSTANCE)
+                arguments.add(args.size)
+                arguments.add(formatStr)
+                Collections.addAll<Any?>(arguments, *args)
+            }
         }
-      } else if (arg instanceof ActionInput actionInput) {
-        builder.add(pathMapper.getMappedExecPathString(actionInput));
-      } else if (arg instanceof PathFragment pathFragment) {
-        builder.add(pathMapper.map(pathFragment).getPathString());
-      } else {
-        builder.add(CommandLineItem.expandToCommandLine(arg));
-      }
-      // Track the last scalar string argument (e.g. "--javacopts") so that the PathMapper can
-      // heuristically map subsequent argument collections that contain paths.
-      if (arg instanceof String string) {
-        previousFlag = string;
-      } else {
-        previousFlag = null;
-      }
     }
-    return builder.build();
-  }
 
-  private void evalSimpleVectorArg(
-      Iterable<?> arg,
-      ImmutableList.Builder<String> builder,
-      PathMapper pathMapper,
-      String previousFlag) {
-    ExceptionlessMapFn<Object> mapFn = pathMapper.getMapFn(previousFlag);
-    for (Object value : arg) {
-      if (value instanceof ActionInput actionInput) {
-        builder.add(pathMapper.getMappedExecPathString(actionInput));
-      } else {
-        mapFn.expandToCommandLine(value, builder::add);
-      }
-    }
-  }
-
-  /**
-   * Returns another argument object that has its enclosing tree artifact substituted by a {@link
-   * TreeFileArtifact}.
-   */
-  @ForOverride
-  Object substituteTreeFileArtifactArgvFragment(TreeFileArtifactArgvFragment argvFragment) {
-    throw new IllegalStateException("Unexpected " + argvFragment);
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public void addToFingerprint(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      CoreOptions.OutputPathsMode effectiveOutputPathsMode,
-      Fingerprint fingerprint)
-      throws CommandLineExpansionException, InterruptedException {
-    List<Object> arguments = rawArgsAsList();
-    int count = arguments.size();
-    for (int i = 0; i < count; ) {
-      Object arg = arguments.get(i++);
-      if (arg instanceof TreeFileArtifactArgvFragment treeFileArtifactArgvFragment) {
-        arg = substituteTreeFileArtifactArgvFragment(treeFileArtifactArgvFragment);
-      }
-      if (arg instanceof NestedSet) {
-        actionKeyContext.addNestedSetToFingerprint(fingerprint, (NestedSet<Object>) arg);
-      } else if (arg instanceof Iterable) {
-        for (Object value : (Iterable<Object>) arg) {
-          fingerprint.addString(CommandLineItem.expandToCommandLine(value));
+    @VisibleForSerialization
+    internal class PrefixArg : ArgvFragment {
+        override fun eval(
+            arguments: MutableList<Any?>,
+            argi: Int,
+            builder: com.google.common.collect.ImmutableList.Builder<String?>,
+            pathMapper: PathMapper?
+        ): Int {
+            var argi = argi
+            val before = arguments.get(argi++) as String?
+            var arg = arguments.get(argi++)
+            if (arg is RepositoryMapping) {
+                arg = (arguments.get(argi++) as Label).getDisplayForm(arg)
+            }
+            builder.add(before + CommandLineItem.expandToCommandLine(arg))
+            return argi
         }
-      } else if (arg instanceof ArgvFragment argvFragment) {
-        i = argvFragment.addToFingerprint(arguments, i, actionKeyContext, fingerprint);
-      } else {
-        fingerprint.addString(CommandLineItem.expandToCommandLine(arg));
-      }
-    }
-  }
 
-  /**
-   * Supports {@link #substituteTreeFileArtifactArgvFragment} by maintaining a map from tree
-   * artifact to {@link TreeFileArtifact}.
-   */
-  private static final class TreeArtifactSubstitutionCustomCommandLine extends CustomCommandLine {
-    private final ImmutableMap<Artifact, TreeFileArtifact> substitutionMap;
+        override fun addToFingerprint(
+            arguments: MutableList<Any?>,
+            argi: Int,
+            actionKeyContext: ActionKeyContext?,
+            fingerprint: Fingerprint
+        ): Int {
+            var argi = argi
+            fingerprint.addUUID(PREFIX_UUID)
+            fingerprint.addString(arguments.get(argi++) as String?)
+            var arg = arguments.get(argi++)
+            if (arg is RepositoryMapping) {
+                arg = (arguments.get(argi++) as Label).getDisplayForm(arg)
+            }
+            fingerprint.addString(CommandLineItem.expandToCommandLine(arg))
+            return argi
+        }
 
-    private TreeArtifactSubstitutionCustomCommandLine(
-        Object[] arguments, ImmutableMap<Artifact, TreeFileArtifact> substitutionMap) {
-      super(arguments);
-      this.substitutionMap = substitutionMap;
+        companion object {
+            @SerializationConstant
+            @VisibleForSerialization
+            val INSTANCE: PrefixArg = PrefixArg()
+
+            private val PREFIX_UUID: UUID = UUID.fromString("a95eccdf-4f54-46fc-b925-c8c7e1f50c95")
+
+            private fun push(
+                arguments: MutableList<Any?>,
+                before: String?,
+                arg: Any?,
+                mainRepoMapping: RepositoryMapping?
+            ) {
+                arguments.add(INSTANCE)
+                arguments.add(before)
+                if (mainRepoMapping != null) {
+                    arguments.add(mainRepoMapping)
+                }
+                arguments.add(arg)
+            }
+        }
     }
 
-    @Override
-    Object substituteTreeFileArtifactArgvFragment(TreeFileArtifactArgvFragment argvFragment) {
-      return argvFragment.substituteTreeArtifact(substitutionMap);
+    /**
+     * A command line argument for [TreeFileArtifact].
+     * 
+     * 
+     * Since [TreeFileArtifact] is not known or available at analysis time, subclasses should
+     * enclose its parent TreeFileArtifact instead at analysis time. This interface provides method
+     * [.substituteTreeArtifact] to generate another argument object that replaces the enclosed
+     * TreeArtifact with one of its [TreeFileArtifact] at execution time.
+     */
+    private abstract class TreeFileArtifactArgvFragment {
+        /**
+         * Substitutes this ArgvFragment with another arg object, with the original TreeArtifacts
+         * contained in this ArgvFragment replaced by their associated TreeFileArtifacts.
+         * 
+         * @param substitutionMap A map between TreeArtifacts and their associated TreeFileArtifacts
+         * used to replace them.
+         */
+        abstract fun substituteTreeArtifact(substitutionMap: MutableMap<Artifact?, TreeFileArtifact?>?): Any?
     }
-  }
+
+    /**
+     * A command line argument that can expand enclosed TreeArtifacts into a list of child [ ]s at execution time before argument evaluation.
+     * 
+     * 
+     * The main difference between this class and [TreeFileArtifactArgvFragment] is that
+     * [TreeFileArtifactArgvFragment] is used in [SpawnActionTemplate] to substitutes a
+     * TreeArtifact with *one* of its child TreeFileArtifacts, while this class expands a TreeArtifact
+     * into *all* of its child TreeFileArtifacts.
+     */
+    private abstract class TreeArtifactExpansionArgvFragment : StandardArgvFragment() {
+        /**
+         * Evaluates this argument fragment into an argument string and adds it into `builder`.
+         * The enclosed TreeArtifact will be expanded using `inputMetadataProvider`.
+         */
+        abstract fun eval(
+            builder: com.google.common.collect.ImmutableList.Builder<String?>?,
+            inputMetadataProvider: InputMetadataProvider?
+        )
+
+        /**
+         * Evaluates this argument fragment by serializing it into a string. Note that the returned
+         * argument is not suitable to be used as part of an actual command line. The purpose of this
+         * method is to provide a unique command line argument string to be used as part of an action
+         * key at analysis time.
+         * 
+         * 
+         * Internally this method just calls [.describe].
+         */
+        override fun eval(builder: com.google.common.collect.ImmutableList.Builder<String?>) {
+            builder.add(describe())
+        }
+
+        /**
+         * Returns a string that describes this argument fragment. The string can be used as part of an
+         * action key for the command line at analysis time.
+         */
+        abstract fun describe(): String?
+    }
+
+    private class ExpandedTreeArtifactArg(treeArtifact: Artifact) : TreeArtifactExpansionArgvFragment() {
+        private val treeArtifact: Artifact
+
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                treeArtifact.isTreeArtifact(), "%s is not a TreeArtifact", treeArtifact
+            )
+            this.treeArtifact = treeArtifact
+        }
+
+        override fun eval(
+            builder: com.google.common.collect.ImmutableList.Builder<String?>,
+            inputMetadataProvider: InputMetadataProvider
+        ) {
+            val treeArtifactValue: TreeArtifactValue? = inputMetadataProvider.getTreeMetadata(treeArtifact)
+            if (treeArtifactValue == null) {
+                return
+            }
+            for (child in treeArtifactValue.getChildren()) {
+                builder.add(child.getExecPathString())
+            }
+        }
+
+        public override fun describe(): String? {
+            return java.lang.String.format(
+                "ExpandedTreeArtifactArg{ treeArtifact: %s}", treeArtifact.getExecPathString()
+            )
+        }
+
+        override fun addToFingerprint(actionKeyContext: ActionKeyContext?, fingerprint: Fingerprint) {
+            fingerprint.addUUID(TREE_UUID)
+            fingerprint.addPath(treeArtifact.getExecPath())
+        }
+
+        companion object {
+            private val TREE_UUID: UUID = UUID.fromString("13b7626b-c77d-4a30-ad56-ff08c06b1cee")
+        }
+    }
+
+    /**
+     * An argument object that evaluates to the exec path of a [TreeFileArtifact], enclosing the
+     * associated [TreeFileArtifact].
+     */
+    private class TreeFileArtifactExecPathArg(artifact: Artifact) : TreeFileArtifactArgvFragment() {
+        private val placeHolderTreeArtifact: Artifact
+
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                artifact.isTreeArtifact(),
+                "%s must be a TreeArtifact",
+                artifact
+            )
+            placeHolderTreeArtifact = artifact
+        }
+
+        override fun substituteTreeArtifact(substitutionMap: MutableMap<Artifact?, TreeFileArtifact?>): Any {
+            val artifact: Artifact? = substitutionMap.get(placeHolderTreeArtifact)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(
+                artifact,
+                "Artifact to substitute: %s",
+                placeHolderTreeArtifact
+            )
+            return artifact.getExecPath()
+        }
+    }
+
+    /**
+     * A Builder class for CustomCommandLine with the appropriate methods.
+     * 
+     * 
+     * [Collection] instances passed to `add*` methods will copied internally. If you
+     * have a [NestedSet], these should never be flattened to a collection before being passed
+     * to the command line.
+     * 
+     * 
+     * Try to avoid coercing items to strings unnecessarily. Instead, use a more memory-efficient
+     * form that defers the string coercion until the last moment. In particular, avoid flattening
+     * lists and nested sets (see [VectorArg]).
+     * 
+     * 
+     * Three types are given special consideration:
+     * 
+     * 
+     *  * Any labels added will be added using [Label.getCanonicalForm]
+     *  * Path fragments will be added using [PathFragment.toString]
+     *  * Artifacts will be added using [Artifact.getExecPathString].
+     * 
+     * 
+     * 
+     * Any other type must be mapped to a string. For collections, please use [ ][VectorArg.SimpleVectorArg.mapped].
+     */
+    class Builder {
+        // In order to avoid unnecessary wrapping, we keep raw objects here, but these objects are
+        // always either ArgvFragments or objects whose desired string representations are just their
+        // toString() results.
+        private val arguments: MutableList<Any?> = java.util.ArrayList<Any?>()
+
+        /**
+         * Adds a constant-value string.
+         * 
+         * 
+         * Prefer this over its dynamic cousin, as using static strings saves memory.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun add(@com.google.errorprone.annotations.CompileTimeConstant value: String?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /**
+         * Adds a string argument to the command line.
+         * 
+         * 
+         * If the value is null, neither the arg nor the value is added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun add(@com.google.errorprone.annotations.CompileTimeConstant arg: String?, value: String?): Builder {
+            return addObjectInternal(arg, value)
+        }
+
+        /**
+         * Adds a single argument to the command line, which is lazily converted to string.
+         * 
+         * 
+         * If the value is null, this method is a no-op.
+         * 
+         * 
+         * Passing a [Collection] containing multiple elements to this method instead of [ ][.addAll] and similar is preferable if the caller knows that the given instance
+         * will be retained elsewhere. This method spends a single array slot on the [Collection]
+         * instead of copying over all of its elements, potentially saving memory if it is retained
+         * elsewhere.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addObject(value: Any?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /**
+         * Adds a dynamically calculated string.
+         * 
+         * 
+         * Consider whether using another method could be more efficient. For instance, rather than
+         * calling this method with an Artifact's exec path, just add the artifact itself. It will
+         * lazily get converted to its exec path. Same with labels, path fragments, and many other
+         * objects.
+         * 
+         * 
+         * If you are joining some list into a single argument, consider using [VectorArg].
+         * 
+         * 
+         * If you are formatting a string, consider using [Builder.addFormatted].
+         * 
+         * 
+         * There are many other ways you can try to avoid calling this. In general, try to use
+         * constants or objects that are already on the heap elsewhere.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addDynamicString(value: String?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /**
+         * Adds a label value by calling [Label.getCanonicalForm].
+         * 
+         * 
+         * Prefer this over manually calling [Label.getCanonicalForm], as it avoids a copy of
+         * the label value.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLabel(value: Label?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /**
+         * Adds a label value by calling [Label.getCanonicalForm].
+         * 
+         * 
+         * Prefer this over manually calling [Label.getCanonicalForm], as it avoids storing a
+         * copy of the label value.
+         * 
+         * 
+         * If the value is null, neither the arg nor the value is added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLabel(@com.google.errorprone.annotations.CompileTimeConstant arg: String?, value: Label?): Builder {
+            return addObjectInternal(arg, value)
+        }
+
+        /**
+         * Adds an artifact by calling [PathFragment.getPathString].
+         * 
+         * 
+         * Prefer this over manually calling [PathFragment.getPathString], as it avoids storing
+         * a copy of the path string.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPath(value: PathFragment?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /**
+         * Adds an artifact by calling [PathFragment.getPathString].
+         * 
+         * 
+         * Prefer this over manually calling [PathFragment.getPathString], as it avoids storing
+         * a copy of the path string.
+         * 
+         * 
+         * If the value is null, neither the arg nor the value is added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPath(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            value: PathFragment?
+        ): Builder {
+            return addObjectInternal(arg, value)
+        }
+
+        /**
+         * Adds an artifact by calling [Artifact.getExecPath].
+         * 
+         * 
+         * Prefer this over manually calling [Artifact.getExecPath], as it avoids storing a
+         * copy of the artifact path string.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPath(value: Artifact?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /**
+         * Adds an artifact by calling [Artifact.getExecPath].
+         * 
+         * 
+         * Prefer this over manually calling [Artifact.getExecPath], as it avoids storing a
+         * copy of the artifact path string.
+         * 
+         * 
+         * If the value is null, neither the arg nor the value is added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPath(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            value: Artifact?
+        ): Builder {
+            return addObjectInternal(arg, value)
+        }
+
+        /** Adds a lazily expanded string.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLazyString(value: OnDemandString?): Builder {
+            return addObjectInternal(value)
+        }
+
+        /** Adds a lazily expanded string.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addLazyString(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            value: OnDemandString?
+        ): Builder {
+            return addObjectInternal(arg, value)
+        }
+
+        /** Calls [String.format] at command line expansion time.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @com.google.errorprone.annotations.FormatMethod
+        fun addFormatted(
+            @com.google.errorprone.annotations.FormatString formatStr: String?,
+            vararg args: Any?
+        ): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(formatStr)
+            FormatArg.Companion.push(arguments, formatStr, args)
+            return this
+        }
+
+        /** Concatenates the passed prefix string and the string.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPrefixed(@com.google.errorprone.annotations.CompileTimeConstant prefix: String?, arg: String?): Builder {
+            return addPrefixedInternal(prefix, arg,  /* mainRepoMapping= */null)
+        }
+
+        /**
+         * Concatenates the passed prefix string and the label using [Label.getDisplayForm], which
+         * is identical to [Label.getCanonicalForm] for main repo labels.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPrefixedLabel(
+            @com.google.errorprone.annotations.CompileTimeConstant prefix: String?,
+            arg: Label?,
+            mainRepoMapping: RepositoryMapping?
+        ): Builder {
+            return addPrefixedInternal(prefix, arg, mainRepoMapping)
+        }
+
+        /** Concatenates the passed prefix string and the path.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPrefixedPath(
+            @com.google.errorprone.annotations.CompileTimeConstant prefix: String?,
+            arg: PathFragment?
+        ): Builder {
+            return addPrefixedInternal(prefix, arg,  /* mainRepoMapping= */null)
+        }
+
+        /** Concatenates the passed prefix string and the artifact's exec path.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPrefixedExecPath(
+            @com.google.errorprone.annotations.CompileTimeConstant prefix: String?,
+            arg: Artifact?
+        ): Builder {
+            return addPrefixedInternal(prefix, arg,  /* mainRepoMapping= */null)
+        }
+
+        /**
+         * Adds the passed strings to the command line.
+         * 
+         * 
+         * If you are converting long lists or nested sets of a different type to string lists,
+         * please try to use a different method that supports what you are trying to do directly.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(values: MutableCollection<String?>?): Builder {
+            return addCollectionInternal(values)
+        }
+
+        /**
+         * Adds the passed strings to the command line.
+         * 
+         * 
+         * If you are converting long lists or nested sets of a different type to string lists,
+         * please try to use a different method that supports what you are trying to do directly.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(values: NestedSet<String?>?): Builder {
+            return addNestedSetInternal(values)
+        }
+
+        /**
+         * Adds the arg followed by the passed strings.
+         * 
+         * 
+         * If you are converting long lists or nested sets of a different type to string lists,
+         * please try to use a different method that supports what you are trying to do directly.
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            values: MutableCollection<String?>?
+        ): Builder {
+            return addCollectionInternal(arg, values)
+        }
+
+        /**
+         * Adds the arg followed by the passed strings.
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            values: NestedSet<String?>?
+        ): Builder {
+            return addNestedSetInternal(arg, values)
+        }
+
+        /** Adds the passed vector arg. See [VectorArg].  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(vectorArg: VectorArg<String?>): Builder {
+            return addVectorArgInternal(vectorArg)
+        }
+
+        /**
+         * Adds the arg followed by the passed vector arg. See [VectorArg].
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAll(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            vectorArg: VectorArg<String?>
+        ): Builder {
+            return addVectorArgInternal(arg, vectorArg)
+        }
+
+        /** Adds the passed paths to the command line.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPaths(values: MutableCollection<PathFragment?>?): Builder {
+            return addCollectionInternal(values)
+        }
+
+        /** Adds the passed paths to the command line.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPaths(values: NestedSet<PathFragment?>?): Builder {
+            return addNestedSetInternal(values)
+        }
+
+        /**
+         * Adds the arg followed by the path strings.
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPaths(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            values: MutableCollection<PathFragment?>?
+        ): Builder {
+            return addCollectionInternal(arg, values)
+        }
+
+        /**
+         * Adds the arg followed by the path fragments.
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPaths(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?, values: NestedSet<PathFragment?>?
+        ): Builder {
+            return addNestedSetInternal(arg, values)
+        }
+
+        /** Adds the passed vector arg. See [VectorArg].  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPaths(vectorArg: VectorArg<PathFragment?>): Builder {
+            return addVectorArgInternal(vectorArg)
+        }
+
+        /**
+         * Adds the arg followed by the passed vector arg. See [VectorArg].
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPaths(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            vectorArg: VectorArg<PathFragment?>
+        ): Builder {
+            return addVectorArgInternal(arg, vectorArg)
+        }
+
+        /**
+         * Adds the artifacts' exec paths to the command line.
+         * 
+         * 
+         * Do not use this method if the list is derived from a flattened nested set. Instead, figure
+         * out how to avoid flattening the set and use [.addExecPaths].
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPaths(values: MutableCollection<Artifact?>?): Builder {
+            return addCollectionInternal(values)
+        }
+
+        /** Adds the artifacts' exec paths to the command line.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPaths(values: NestedSet<Artifact?>?): Builder {
+            return addNestedSetInternal(values)
+        }
+
+        /**
+         * Adds the arg followed by the artifacts' exec paths.
+         * 
+         * 
+         * Do not use this method if the list is derived from a flattened nested set. Instead, figure
+         * out how to avoid flattening the set and use [.addExecPaths].
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPaths(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?, values: MutableCollection<Artifact?>?
+        ): Builder {
+            return addCollectionInternal(arg, values)
+        }
+
+        /**
+         * Adds the arg followed by the artifacts' exec paths.
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPaths(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?, values: NestedSet<Artifact?>?
+        ): Builder {
+            return addNestedSetInternal(arg, values)
+        }
+
+        /** Adds the passed vector arg. See [VectorArg].  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPaths(vectorArg: VectorArg<Artifact?>): Builder {
+            return addVectorArgInternal(vectorArg)
+        }
+
+        /**
+         * Adds the arg followed by the passed vector arg. See [VectorArg].
+         * 
+         * 
+         * If values is empty, the arg isn't added.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExecPaths(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            vectorArg: VectorArg<Artifact?>
+        ): Builder {
+            return addVectorArgInternal(arg, vectorArg)
+        }
+
+        /**
+         * Adds a placeholder TreeArtifact exec path. When the command line is used in an action
+         * template, the placeholder will be replaced by the exec path of a [TreeFileArtifact]
+         * inside the TreeArtifact at execution time for each expanded action.
+         * 
+         * @param treeArtifact the TreeArtifact that will be evaluated to one of its child [     ] at execution time
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPlaceholderTreeArtifactExecPath(treeArtifact: Artifact?): Builder {
+            if (treeArtifact != null) {
+                arguments.add(TreeFileArtifactExecPathArg(treeArtifact))
+            }
+            return this
+        }
+
+        /**
+         * Adds a flag with the exec path of a placeholder TreeArtifact. When the command line is used
+         * in an action template, the placeholder will be replaced by the exec path of a [ ] inside the TreeArtifact at execution time for each expanded action.
+         * 
+         * @param arg the name of the argument
+         * @param treeArtifact the TreeArtifact that will be evaluated to one of its child [     ] at execution time
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPlaceholderTreeArtifactExecPath(arg: String?, treeArtifact: Artifact?): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(arg)
+            if (treeArtifact != null) {
+                arguments.add(arg)
+                arguments.add(TreeFileArtifactExecPathArg(treeArtifact))
+            }
+            return this
+        }
+
+        /**
+         * Adds the exec paths (one argument per exec path) of all [TreeFileArtifact]s under
+         * `treeArtifact`.
+         * 
+         * @param treeArtifact the TreeArtifact containing the [TreeFileArtifact]s to add.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addExpandedTreeArtifactExecPaths(treeArtifact: Artifact?): Builder {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(treeArtifact)
+            arguments.add(ExpandedTreeArtifactArg(treeArtifact))
+            return this
+        }
+
+        fun build(): CustomCommandLine {
+            return CustomCommandLine(arguments.toTypedArray())
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addObjectInternal(value: Any?): Builder {
+            if (value != null) {
+                arguments.add(value)
+            }
+            return this
+        }
+
+        /** Adds the arg and the passed value if the value is non-null.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addObjectInternal(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            value: Any?
+        ): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(arg)
+            if (value != null) {
+                arguments.add(arg)
+                addObjectInternal(value)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addPrefixedInternal(
+            prefix: String?, arg: Any?, mainRepoMapping: RepositoryMapping?
+        ): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(prefix)
+            if (arg != null) {
+                PrefixArg.Companion.push(arguments, prefix, arg, mainRepoMapping)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addCollectionInternal(values: MutableCollection<*>?): Builder {
+            if (values != null) {
+                arguments.addAll(values)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addCollectionInternal(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?, values: MutableCollection<*>?
+        ): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(arg)
+            if (values != null && !values.isEmpty()) {
+                arguments.add(arg)
+                addCollectionInternal(values)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addNestedSetInternal(values: NestedSet<*>?): Builder {
+            if (values != null) {
+                arguments.add(values)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addNestedSetInternal(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?, values: NestedSet<*>?
+        ): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(arg)
+            if (values != null && !values.isEmpty()) {
+                arguments.add(arg)
+                addNestedSetInternal(values)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addVectorArgInternal(vectorArg: VectorArg<*>): Builder {
+            if (!vectorArg.isEmpty) {
+                VectorArg.Companion.push(arguments, vectorArg)
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        private fun addVectorArgInternal(
+            @com.google.errorprone.annotations.CompileTimeConstant arg: String?,
+            vectorArg: VectorArg<*>
+        ): Builder {
+            com.google.common.base.Preconditions.checkNotNull<String?>(arg)
+            if (!vectorArg.isEmpty) {
+                arguments.add(arg)
+                addVectorArgInternal(vectorArg)
+            }
+            return this
+        }
+    }
+
+    /** Wraps [.arguments] in an unmodifiable [List] view.  */
+    private fun rawArgsAsList(): MutableList<Any?> {
+        return Collections.unmodifiableList<Any?>(java.util.Arrays.asList<Any?>(*arguments))
+    }
+
+    /**
+     * Given the list of [TreeFileArtifact]s, returns another CustomCommandLine that replaces
+     * their parent TreeArtifacts with the TreeFileArtifacts in all [ ] argument objects.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun evaluateTreeFileArtifacts(treeFileArtifacts: Iterable<TreeFileArtifact?>?): CustomCommandLine {
+        return TreeArtifactSubstitutionCustomCommandLine(
+            arguments, com.google.common.collect.Maps.uniqueIndex(treeFileArtifacts, TreeFileArtifact::getParent)
+        )
+    }
+
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    public override fun arguments(): com.google.common.collect.ImmutableList<String?> {
+        return arguments(null, PathMapper.NOOP)
+    }
+
+    /**
+     * @param pathMapper a [PathMapper] that rewrites the config parts of artifact paths to
+     * improve caching. This only affects [Builder.addExecPath] and [     ][Builder.addPath] entries. Output paths embedded in larger strings and added
+     * via [Builder.add] or other variants must be handled separately.
+     */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    public override fun arguments(
+        inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper
+    ): com.google.common.collect.ImmutableList<String?> {
+        val builder: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        val arguments = rawArgsAsList()
+        val count = arguments.size
+        // Track the last scalar, non-path argument (e.g. "--javacopts") so that the PathMapper can
+        // heuristically map subsequent argument collections that contain paths.
+        var previousFlag: String? = null
+        var i = 0
+        while (i < count) {
+            var arg = arguments.get(i++)
+            if (arg is TreeFileArtifactArgvFragment) {
+                arg = substituteTreeFileArtifactArgvFragment(arg)
+            }
+            if (arg is NestedSet<*>) {
+                evalSimpleVectorArg(arg.toList(), builder, pathMapper, previousFlag)
+            } else if (arg is Iterable<*>) {
+                evalSimpleVectorArg(arg, builder, pathMapper, previousFlag)
+            } else if (arg is ArgvFragment) {
+                if (inputMetadataProvider != null
+                    && arg is TreeArtifactExpansionArgvFragment
+                ) {
+                    arg.eval(builder, inputMetadataProvider)
+                } else {
+                    i = arg.eval(arguments, i, builder, pathMapper)
+                }
+            } else if (arg is ActionInput) {
+                builder.add(pathMapper.getMappedExecPathString(arg))
+            } else if (arg is PathFragment) {
+                builder.add(pathMapper.map(arg).getPathString())
+            } else {
+                builder.add(CommandLineItem.expandToCommandLine(arg))
+            }
+            // Track the last scalar string argument (e.g. "--javacopts") so that the PathMapper can
+            // heuristically map subsequent argument collections that contain paths.
+            if (arg is String) {
+                previousFlag = arg
+            } else {
+                previousFlag = null
+            }
+        }
+        return builder.build()
+    }
+
+    private fun evalSimpleVectorArg(
+        arg: Iterable<*>,
+        builder: com.google.common.collect.ImmutableList.Builder<String?>,
+        pathMapper: PathMapper,
+        previousFlag: String?
+    ) {
+        val mapFn: ExceptionlessMapFn<Any?> = pathMapper.getMapFn(previousFlag)
+        for (value in arg) {
+            if (value is ActionInput) {
+                builder.add(pathMapper.getMappedExecPathString(value))
+            } else {
+                mapFn.expandToCommandLine(value, builder::add)
+            }
+        }
+    }
+
+    /**
+     * Returns another argument object that has its enclosing tree artifact substituted by a [ ].
+     */
+    @com.google.errorprone.annotations.ForOverride
+    open fun substituteTreeFileArtifactArgvFragment(argvFragment: TreeFileArtifactArgvFragment?): Any? {
+        throw java.lang.IllegalStateException("Unexpected " + argvFragment)
+    }
+
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    public override fun addToFingerprint(
+        actionKeyContext: ActionKeyContext,
+        inputMetadataProvider: InputMetadataProvider?,
+        effectiveOutputPathsMode: OutputPathsMode?,
+        fingerprint: Fingerprint
+    ) {
+        val arguments = rawArgsAsList()
+        val count = arguments.size
+        var i = 0
+        while (i < count) {
+            var arg = arguments.get(i++)
+            if (arg is TreeFileArtifactArgvFragment) {
+                arg = substituteTreeFileArtifactArgvFragment(arg)
+            }
+            if (arg is NestedSet) {
+                actionKeyContext.addNestedSetToFingerprint(fingerprint, arg as NestedSet<Any?>?)
+            } else if (arg is Iterable<*>) {
+                for (value in arg) {
+                    fingerprint.addString(CommandLineItem.expandToCommandLine(value))
+                }
+            } else if (arg is ArgvFragment) {
+                i = arg.addToFingerprint(arguments, i, actionKeyContext, fingerprint)
+            } else {
+                fingerprint.addString(CommandLineItem.expandToCommandLine(arg))
+            }
+        }
+    }
+
+    /**
+     * Supports [.substituteTreeFileArtifactArgvFragment] by maintaining a map from tree
+     * artifact to [TreeFileArtifact].
+     */
+    private class TreeArtifactSubstitutionCustomCommandLine(
+        arguments: Array<Any?>,
+        substitutionMap: com.google.common.collect.ImmutableMap<Artifact?, TreeFileArtifact?>?
+    ) : CustomCommandLine(arguments) {
+        private val substitutionMap: com.google.common.collect.ImmutableMap<Artifact?, TreeFileArtifact?>?
+
+        init {
+            this.substitutionMap = substitutionMap
+        }
+
+        override fun substituteTreeFileArtifactArgvFragment(argvFragment: TreeFileArtifactArgvFragment): Any? {
+            return argvFragment.substituteTreeArtifact(substitutionMap)
+        }
+    }
+
+    companion object {
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.analysis.actions.CustomCommandLine.Builder()
+        }
+    }
 }

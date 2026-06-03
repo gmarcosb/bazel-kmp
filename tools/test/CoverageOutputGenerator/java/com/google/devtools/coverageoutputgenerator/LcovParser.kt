@@ -11,417 +11,430 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
-
-import static com.google.devtools.coverageoutputgenerator.Constants.BA_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.BRDA_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.BRF_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.BRH_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.DA_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.DELIMITER;
-import static com.google.devtools.coverageoutputgenerator.Constants.END_OF_RECORD_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.FNDA_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.FNF_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.FNH_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.FN_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.LF_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.LH_MARKER;
-import static com.google.devtools.coverageoutputgenerator.Constants.NEVER_EVALUATED;
-import static com.google.devtools.coverageoutputgenerator.Constants.SF_MARKER;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import java.io.BufferedReader
+import java.io.IOException
 
 /**
- * A parser for the lcov tracefile format used by geninfo. See <a
- * href="http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php">lcov documentation</a>
+ * A parser for the lcov tracefile format used by geninfo. See [lcov documentation](http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php)
  */
-class LcovParser {
+internal class LcovParser private constructor(inputStream: java.io.InputStream) {
+    private val inputStream: java.io.InputStream
+    private var currentSourceFileCoverage: SourceFileCoverage? = null
+    private var baBranchesAtLine = 0
+    private var lastBaLine = -1
 
-  private static final Logger logger = Logger.getLogger(LcovParser.class.getName());
-  private final InputStream inputStream;
-  private SourceFileCoverage currentSourceFileCoverage;
-  private int baBranchesAtLine = 0;
-  private int lastBaLine = -1;
+    init {
+        this.inputStream = inputStream
+    }
 
-  private LcovParser(InputStream inputStream) {
-    this.inputStream = inputStream;
-  }
+    /**
+     * Reads the tracefile line by line and creates a SourceFileCoverage object for each section of
+     * the file between a SF:<source file></source> line and an end_of_record line.
+     * 
+     * @return a list of each source file path found in the tracefile
+     */
+    @Throws(IOException::class)
+    private fun parse(): MutableList<SourceFileCoverage?> {
+        val allSourceFiles: MutableList<SourceFileCoverage?> = java.util.ArrayList<SourceFileCoverage?>()
+        BufferedReader(
+            java.io.InputStreamReader(
+                inputStream,
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+        ).use { bufferedReader ->
+            var line: String?
+            while ((bufferedReader.readLine().also { line = it }) != null) {
+                parseLine(line!!, allSourceFiles)
+            }
+            bufferedReader.close()
+        }
+        return allSourceFiles
+    }
 
-  public static List<SourceFileCoverage> parse(InputStream inputStream) throws IOException {
-    return new LcovParser(inputStream).parse();
-  }
+    /**
+     * Merges `currentSourceFileCoverage` into `allSourceFilesCoverageData` and resets
+     * `currentSourceFileCoverage` to null.
+     */
+    private fun reset(allSourceFiles: MutableList<SourceFileCoverage?>) {
+        allSourceFiles.add(currentSourceFileCoverage)
+        currentSourceFileCoverage = null
+    }
 
-  /**
-   * Reads the tracefile line by line and creates a SourceFileCoverage object for each section of
-   * the file between a SF:<source file> line and an end_of_record line.
-   *
-   * @return a list of each source file path found in the tracefile
-   */
-  private List<SourceFileCoverage> parse() throws IOException {
-    List<SourceFileCoverage> allSourceFiles = new ArrayList<>();
-    try (BufferedReader bufferedReader =
-        new BufferedReader(new InputStreamReader(inputStream, UTF_8))) {
-      String line;
-      while ((line = bufferedReader.readLine()) != null) {
-        parseLine(line, allSourceFiles);
-      }
-      bufferedReader.close();
+    /**
+     * Reads the line and redirects the parsing to the corresponding `parseXLine` method. Every
+     * `parseXLine` methods fills in data to `currentSourceFileCoverage` accordingly.
+     */
+    private fun parseLine(line: String, allSourceFiles: MutableList<SourceFileCoverage?>): Boolean {
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.SF_MARKER)) {
+            return parseSFLine(line)
+        }
+        // currentSourceFileCoverage should be null only before calling an SF line, otherwise
+        // the object should have been created in parseSFLine. If currentSourceFileCoverage is null
+        // here it means the parser arrived in an invalid state.
+        if (currentSourceFileCoverage == null) {
+            return false
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.FN_MARKER)) {
+            return parseFNLine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.FNDA_MARKER)) {
+            return parseFNDALine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.FNF_MARKER)) {
+            return parseFNFLine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.FNH_MARKER)) {
+            return parseFNHLine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.BRDA_MARKER)) {
+            return parseBRDALine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.BA_MARKER)) {
+            return parseBALine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.BRF_MARKER)) {
+            return parseBRFLine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.BRH_MARKER)) {
+            return parseBRHLine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.DA_MARKER)) {
+            return parseDALine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.LH_MARKER)) {
+            return parseLHLine(line)
+        }
+        if (line.startsWith(com.google.devtools.coverageoutputgenerator.Constants.LF_MARKER)) {
+            return parseLFLine(line)
+        }
+        if (line == com.google.devtools.coverageoutputgenerator.Constants.END_OF_RECORD_MARKER) {
+            reset(allSourceFiles)
+            return true
+        }
+        logger.log(java.util.logging.Level.WARNING, "Tracefile includes invalid line: " + line)
+        return false
     }
-    return allSourceFiles;
-  }
 
-  /**
-   * Merges {@code currentSourceFileCoverage} into {@code allSourceFilesCoverageData} and resets
-   * {@code currentSourceFileCoverage} to null.
-   */
-  private void reset(List<SourceFileCoverage> allSourceFiles) {
-    allSourceFiles.add(currentSourceFileCoverage);
-    currentSourceFileCoverage = null;
-  }
+    // SF:<path to source file name>
+    private fun parseSFLine(line: String): Boolean {
+        lastBaLine = -1
+        if (currentSourceFileCoverage != null) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile doesn't have SF:<source file> line before" + line)
+            return false
+        }
+        val sourcefile: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.SF_MARKER.length())
+        if (sourcefile.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile doesn't contain source file name on line: " + line)
+            return false
+        }
+        currentSourceFileCoverage = SourceFileCoverage(sourcefile)
+        return true
+    }
 
-  /**
-   * Reads the line and redirects the parsing to the corresponding {@code parseXLine} method. Every
-   * {@code parseXLine} methods fills in data to {@code currentSourceFileCoverage} accordingly.
-   */
-  private boolean parseLine(String line, List<SourceFileCoverage> allSourceFiles) {
-    if (line.startsWith(SF_MARKER)) {
-      return parseSFLine(line);
+    // FN:<line number of function start>,[<line number of function end>,]<function name>
+    private fun parseFNLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.FN_MARKER.length())
+        val funcData: Array<String> =
+            lineContent.split(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER, -1)
+        if (funcData.size < 2 || funcData.size > 3 || (funcData.size == 3 && funcData[2].isEmpty())
+            || funcData[0].isEmpty()
+            || funcData[1].isEmpty()
+        ) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid FN line " + line)
+            return false
+        }
+        try {
+            val lineNrFunctionStart: Int = java.lang.Integer.parseInt(funcData[0])
+            // Line number of function end is optional and not used.
+            val functionName: String? = funcData[funcData.size - 1]
+            currentSourceFileCoverage.addFunctionLineNumber(functionName, lineNrFunctionStart)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid line number on FN line " + line)
+            return false
+        }
+        return true
     }
-    // currentSourceFileCoverage should be null only before calling an SF line, otherwise
-    // the object should have been created in parseSFLine. If currentSourceFileCoverage is null
-    // here it means the parser arrived in an invalid state.
-    if (currentSourceFileCoverage == null) {
-      return false;
-    }
-    if (line.startsWith(FN_MARKER)) {
-      return parseFNLine(line);
-    }
-    if (line.startsWith(FNDA_MARKER)) {
-      return parseFNDALine(line);
-    }
-    if (line.startsWith(FNF_MARKER)) {
-      return parseFNFLine(line);
-    }
-    if (line.startsWith(FNH_MARKER)) {
-      return parseFNHLine(line);
-    }
-    if (line.startsWith(BRDA_MARKER)) {
-      return parseBRDALine(line);
-    }
-    if (line.startsWith(BA_MARKER)) {
-      return parseBALine(line);
-    }
-    if (line.startsWith(BRF_MARKER)) {
-      return parseBRFLine(line);
-    }
-    if (line.startsWith(BRH_MARKER)) {
-      return parseBRHLine(line);
-    }
-    if (line.startsWith(DA_MARKER)) {
-      return parseDALine(line);
-    }
-    if (line.startsWith(LH_MARKER)) {
-      return parseLHLine(line);
-    }
-    if (line.startsWith(LF_MARKER)) {
-      return parseLFLine(line);
-    }
-    if (line.equals(END_OF_RECORD_MARKER)) {
-      reset(allSourceFiles);
-      return true;
-    }
-    logger.log(Level.WARNING, "Tracefile includes invalid line: " + line);
-    return false;
-  }
 
-  // SF:<path to source file name>
-  private boolean parseSFLine(String line) {
-    lastBaLine = -1;
-    if (currentSourceFileCoverage != null) {
-      logger.log(Level.WARNING, "Tracefile doesn't have SF:<source file> line before" + line);
-      return false;
+    // FNDA:<execution count>,<function name>
+    private fun parseFNDALine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.FNDA_MARKER.length())
+        val funcData: Array<String> =
+            lineContent.split(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER, -1)
+        if (funcData.size != 2 || funcData[0].isEmpty() || funcData[1].isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid FNDA line " + line)
+            return false
+        }
+        try {
+            val executionCount: Long = java.lang.Long.parseLong(funcData[0])
+            val functionName: String? = funcData[1]
+            currentSourceFileCoverage.addFunctionExecution(functionName, executionCount)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid execution count on FN line " + line)
+            return false
+        }
+        return true
     }
-    String sourcefile = line.substring(SF_MARKER.length());
-    if (sourcefile.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile doesn't contain source file name on line: " + line);
-      return false;
-    }
-    currentSourceFileCoverage = new SourceFileCoverage(sourcefile);
-    return true;
-  }
 
-  // FN:<line number of function start>,[<line number of function end>,]<function name>
-  private boolean parseFNLine(String line) {
-    String lineContent = line.substring(FN_MARKER.length());
-    String[] funcData = lineContent.split(DELIMITER, -1);
-    if (funcData.length < 2
-        || funcData.length > 3
-        || (funcData.length == 3 && funcData[2].isEmpty())
-        || funcData[0].isEmpty()
-        || funcData[1].isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid FN line " + line);
-      return false;
+    // FNF:<number of functions found>
+    private fun parseFNFLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.FNF_MARKER.length())
+        if (lineContent.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid FNF line " + line)
+            return false
+        }
+        try {
+            val nrFunctionsFound: Int = java.lang.Integer.parseInt(lineContent)
+            assert(currentSourceFileCoverage.nrFunctionsFound() == nrFunctionsFound)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(
+                java.util.logging.Level.WARNING, "Tracefile contains invalid number of functions on FNF line " + line
+            )
+            return false
+        }
+        return true
     }
-    try {
-      int lineNrFunctionStart = Integer.parseInt(funcData[0]);
-      // Line number of function end is optional and not used.
-      String functionName = funcData[funcData.length - 1];
-      currentSourceFileCoverage.addFunctionLineNumber(functionName, lineNrFunctionStart);
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains invalid line number on FN line " + line);
-      return false;
-    }
-    return true;
-  }
 
-  // FNDA:<execution count>,<function name>
-  private boolean parseFNDALine(String line) {
-    String lineContent = line.substring(FNDA_MARKER.length());
-    String[] funcData = lineContent.split(DELIMITER, -1);
-    if (funcData.length != 2 || funcData[0].isEmpty() || funcData[1].isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid FNDA line " + line);
-      return false;
+    // FNH:<number of function hit>
+    private fun parseFNHLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.FNH_MARKER.length())
+        if (lineContent.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid FNH line " + line)
+            return false
+        }
+        try {
+            val nrFunctionsHit: Int = java.lang.Integer.parseInt(lineContent)
+            assert(currentSourceFileCoverage.nrFunctionsHit() == nrFunctionsHit)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(
+                java.util.logging.Level.WARNING,
+                "Tracefile contains invalid number of functions hit on FNH line " + line
+            )
+            return false
+        }
+        return true
     }
-    try {
-      long executionCount = Long.parseLong(funcData[0]);
-      String functionName = funcData[1];
-      currentSourceFileCoverage.addFunctionExecution(functionName, executionCount);
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains invalid execution count on FN line " + line);
-      return false;
-    }
-    return true;
-  }
 
-  // FNF:<number of functions found>
-  private boolean parseFNFLine(String line) {
-    String lineContent = line.substring(FNF_MARKER.length());
-    if (lineContent.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid FNF line " + line);
-      return false;
-    }
-    try {
-      int nrFunctionsFound = Integer.parseInt(lineContent);
-      assert currentSourceFileCoverage.nrFunctionsFound() == nrFunctionsFound;
-    } catch (NumberFormatException e) {
-      logger.log(
-          Level.WARNING, "Tracefile contains invalid number of functions on FNF line " + line);
-      return false;
-    }
-    return true;
-  }
+    // BA:<line number>,<taken>
+    private fun parseBALine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.BA_MARKER.length())
+        val lineData: Array<String> =
+            lineContent.split(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER, -1)
+        if (lineData.size != 2) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid BA line " + line)
+            return false
+        }
+        for (data in lineData) {
+            if (data.isEmpty()) {
+                logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid BA line " + line)
+                return false
+            }
+        }
+        try {
+            val lineNumber: Int = java.lang.Integer.parseInt(lineData[0])
+            val execValue: Int = java.lang.Integer.parseInt(lineData[1])
+            var evaluated = false
+            var execCount: Long = 0
+            when (execValue) {
+                0 -> {
+                    // Branch was never evaluated.
+                    evaluated = false
+                    execCount = 0
+                }
 
-  // FNH:<number of function hit>
-  private boolean parseFNHLine(String line) {
-    String lineContent = line.substring(FNH_MARKER.length());
-    if (lineContent.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid FNH line " + line);
-      return false;
-    }
-    try {
-      int nrFunctionsHit = Integer.parseInt(lineContent);
-      assert currentSourceFileCoverage.nrFunctionsHit() == nrFunctionsHit;
-    } catch (NumberFormatException e) {
-      logger.log(
-          Level.WARNING, "Tracefile contains invalid number of functions hit on FNH line " + line);
-      return false;
-    }
-    return true;
-  }
+                1 -> {
+                    // Branch was evaluated, but not taken.
+                    evaluated = true
+                    execCount = 0
+                }
 
-  // BA:<line number>,<taken>
-  private boolean parseBALine(String line) {
-    String lineContent = line.substring(BA_MARKER.length());
-    String[] lineData = lineContent.split(DELIMITER, -1);
-    if (lineData.length != 2) {
-      logger.log(Level.WARNING, "Tracefile contains invalid BA line " + line);
-      return false;
-    }
-    for (String data : lineData) {
-      if (data.isEmpty()) {
-        logger.log(Level.WARNING, "Tracefile contains invalid BA line " + line);
-        return false;
-      }
-    }
-    try {
-      int lineNumber = Integer.parseInt(lineData[0]);
-      int execValue = Integer.parseInt(lineData[1]);
-      boolean evaluated = false;
-      long execCount = 0;
-      switch (execValue) {
-        case 0:
-          // Branch was never evaluated.
-          evaluated = false;
-          execCount = 0;
-          break;
-        case 1:
-          // Branch was evaluated, but not taken.
-          evaluated = true;
-          execCount = 0;
-          break;
-        case 2:
-          // Branch was taken. We don't know how often, so simply record "1".
-          evaluated = true;
-          execCount = 1;
-          break;
-        default:
-          logger.log(
-              Level.WARNING,
-              "Tracefile contains invalid BA " + line + " - value not one of {0, 1, 2}");
-          return false;
-      }
-      if (lastBaLine == lineNumber) {
-        baBranchesAtLine++;
-      } else {
-        baBranchesAtLine = 0;
-        lastBaLine = lineNumber;
-      }
-      currentSourceFileCoverage.addBranch(
-          lineNumber, "0", Integer.toString(baBranchesAtLine), evaluated, execCount);
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains an invalid number BA line " + line);
-      return false;
-    }
-    return true;
-  }
+                2 -> {
+                    // Branch was taken. We don't know how often, so simply record "1".
+                    evaluated = true
+                    execCount = 1
+                }
 
-  // BRDA:<line number>,<block number>,<branch number>,<taken>
-  private boolean parseBRDALine(String line) {
-    String lineContent = line.substring(BRDA_MARKER.length());
-    String[] lineData = lineContent.split(DELIMITER, -1);
-    if (lineData.length != 4) {
-      logger.log(Level.WARNING, "Tracefile contains invalid BRDA line " + line);
-      return false;
+                else -> {
+                    logger.log(
+                        java.util.logging.Level.WARNING,
+                        "Tracefile contains invalid BA " + line + " - value not one of {0, 1, 2}"
+                    )
+                    return false
+                }
+            }
+            if (lastBaLine == lineNumber) {
+                baBranchesAtLine++
+            } else {
+                baBranchesAtLine = 0
+                lastBaLine = lineNumber
+            }
+            currentSourceFileCoverage.addBranch(
+                lineNumber, "0", java.lang.Integer.toString(baBranchesAtLine), evaluated, execCount
+            )
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains an invalid number BA line " + line)
+            return false
+        }
+        return true
     }
-    for (String data : lineData) {
-      if (data.isEmpty()) {
-        logger.log(Level.WARNING, "Tracefile contains invalid BRDA line " + line);
-        return false;
-      }
-    }
-    try {
-      int lineNumber = Integer.parseInt(lineData[0]);
-      String blockNumber = lineData[1];
-      String branchNumber = lineData[2];
-      String taken = lineData[3];
 
-      long executionCount = 0;
-      boolean wasEvaluated = false;
-      if (!taken.equals(NEVER_EVALUATED)) {
-        executionCount = Long.parseLong(taken);
-        wasEvaluated = true;
-      }
-      currentSourceFileCoverage.addBranch(
-          lineNumber, blockNumber, branchNumber, wasEvaluated, executionCount);
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains an invalid number BRDA line " + line);
-      return false;
-    }
-    return true;
-  }
+    // BRDA:<line number>,<block number>,<branch number>,<taken>
+    private fun parseBRDALine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.BRDA_MARKER.length())
+        val lineData: Array<String> =
+            lineContent.split(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER, -1)
+        if (lineData.size != 4) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid BRDA line " + line)
+            return false
+        }
+        for (data in lineData) {
+            if (data.isEmpty()) {
+                logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid BRDA line " + line)
+                return false
+            }
+        }
+        try {
+            val lineNumber: Int = java.lang.Integer.parseInt(lineData[0])
+            val blockNumber: String? = lineData[1]
+            val branchNumber: String? = lineData[2]
+            val taken = lineData[3]
 
-  // BRF:<number of branches found>
-  private boolean parseBRFLine(String line) {
-    String lineContent = line.substring(BRF_MARKER.length());
-    if (lineContent.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid BRF line " + line);
-      return false;
+            var executionCount: Long = 0
+            var wasEvaluated = false
+            if (taken != com.google.devtools.coverageoutputgenerator.Constants.NEVER_EVALUATED) {
+                executionCount = java.lang.Long.parseLong(taken)
+                wasEvaluated = true
+            }
+            currentSourceFileCoverage.addBranch(
+                lineNumber, blockNumber, branchNumber, wasEvaluated, executionCount
+            )
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains an invalid number BRDA line " + line)
+            return false
+        }
+        return true
     }
-    try {
-      int nrBranchesFound = Integer.parseInt(lineContent);
-      assert currentSourceFileCoverage.nrBranchesFound() == nrBranchesFound;
-    } catch (NumberFormatException e) {
-      logger.log(
-          Level.WARNING, "Tracefile contains invalid number of branches in BRDA line " + line);
-      return false;
-    }
-    return true;
-  }
 
-  // BRH:<number of branches hit>
-  private boolean parseBRHLine(String line) {
-    String lineContent = line.substring(BRH_MARKER.length());
-    if (lineContent.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid BRH line " + line);
-      return false;
+    // BRF:<number of branches found>
+    private fun parseBRFLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.BRF_MARKER.length())
+        if (lineContent.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid BRF line " + line)
+            return false
+        }
+        try {
+            val nrBranchesFound: Int = java.lang.Integer.parseInt(lineContent)
+            assert(currentSourceFileCoverage.nrBranchesFound() == nrBranchesFound)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(
+                java.util.logging.Level.WARNING, "Tracefile contains invalid number of branches in BRDA line " + line
+            )
+            return false
+        }
+        return true
     }
-    try {
-      int nrBranchesHit = Integer.parseInt(lineContent);
-      assert currentSourceFileCoverage.nrBranchesHit() == nrBranchesHit;
-    } catch (NumberFormatException e) {
-      logger.log(
-          Level.WARNING, "Tracefile contains invalid number of branches hit in BRH line " + line);
-      return false;
-    }
-    return true;
-  }
 
-  // DA:<line number>,<execution count>,[,<checksum>]
-  private boolean parseDALine(String line) {
-    String lineContent = line.substring(DA_MARKER.length());
-    String[] lineData = lineContent.split(DELIMITER, -1);
-    if (lineData.length != 2 && lineData.length != 3) {
-      logger.log(Level.WARNING, "Tracefile contains invalid DA line " + line);
-      return false;
+    // BRH:<number of branches hit>
+    private fun parseBRHLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.BRH_MARKER.length())
+        if (lineContent.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid BRH line " + line)
+            return false
+        }
+        try {
+            val nrBranchesHit: Int = java.lang.Integer.parseInt(lineContent)
+            assert(currentSourceFileCoverage.nrBranchesHit() == nrBranchesHit)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(
+                java.util.logging.Level.WARNING, "Tracefile contains invalid number of branches hit in BRH line " + line
+            )
+            return false
+        }
+        return true
     }
-    for (String data : lineData) {
-      if (data.isEmpty()) {
-        logger.log(Level.WARNING, "Tracefile contains invalid DA line " + line);
-        return false;
-      }
-    }
-    try {
-      int lineNumber = Integer.parseInt(lineData[0]);
-      long executionCount = Long.parseLong(lineData[1]);
-      // Ignore the optional checksum
-      currentSourceFileCoverage.addLine(lineNumber, executionCount);
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains an invalid number on DA line " + line);
-      return false;
-    }
-    return true;
-  }
 
-  // LH:<nr of lines with non-zero exec count>
-  private boolean parseLHLine(String line) {
-    String lineContent = line.substring(LH_MARKER.length());
-    if (lineContent.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid LHL line " + line);
-      return false;
+    // DA:<line number>,<execution count>,[,<checksum>]
+    private fun parseDALine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.DA_MARKER.length())
+        val lineData: Array<String> =
+            lineContent.split(com.google.devtools.coverageoutputgenerator.Constants.DELIMITER, -1)
+        if (lineData.size != 2 && lineData.size != 3) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid DA line " + line)
+            return false
+        }
+        for (data in lineData) {
+            if (data.isEmpty()) {
+                logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid DA line " + line)
+                return false
+            }
+        }
+        try {
+            val lineNumber: Int = java.lang.Integer.parseInt(lineData[0])
+            val executionCount: Long = java.lang.Long.parseLong(lineData[1])
+            // Ignore the optional checksum
+            currentSourceFileCoverage.addLine(lineNumber, executionCount)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains an invalid number on DA line " + line)
+            return false
+        }
+        return true
     }
-    try {
-      int nrLines = Integer.parseInt(lineContent);
-      assert currentSourceFileCoverage.nrOfLinesWithNonZeroExecution() == nrLines;
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains an invalid number on LHL line " + line);
-      return false;
-    }
-    return true;
-  }
 
-  // LF:<number of instrumented lines>
-  private boolean parseLFLine(String line) {
-    String lineContent = line.substring(LF_MARKER.length());
-    if (lineContent.isEmpty()) {
-      logger.log(Level.WARNING, "Tracefile contains invalid LF line " + line);
-      return false;
+    // LH:<nr of lines with non-zero exec count>
+    private fun parseLHLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.LH_MARKER.length())
+        if (lineContent.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid LHL line " + line)
+            return false
+        }
+        try {
+            val nrLines: Int = java.lang.Integer.parseInt(lineContent)
+            assert(currentSourceFileCoverage.nrOfLinesWithNonZeroExecution() == nrLines)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains an invalid number on LHL line " + line)
+            return false
+        }
+        return true
     }
-    try {
-      int nrLines = Integer.parseInt(lineContent);
-      assert currentSourceFileCoverage.nrOfInstrumentedLines() == nrLines;
-    } catch (NumberFormatException e) {
-      logger.log(Level.WARNING, "Tracefile contains an invalid number on LF line " + line);
-      return false;
+
+    // LF:<number of instrumented lines>
+    private fun parseLFLine(line: String): Boolean {
+        val lineContent: String =
+            line.substring(com.google.devtools.coverageoutputgenerator.Constants.LF_MARKER.length())
+        if (lineContent.isEmpty()) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains invalid LF line " + line)
+            return false
+        }
+        try {
+            val nrLines: Int = java.lang.Integer.parseInt(lineContent)
+            assert(currentSourceFileCoverage.nrOfInstrumentedLines() == nrLines)
+        } catch (e: java.lang.NumberFormatException) {
+            logger.log(java.util.logging.Level.WARNING, "Tracefile contains an invalid number on LF line " + line)
+            return false
+        }
+        return true
     }
-    return true;
-  }
+
+    companion object {
+        private val logger: java.util.logging.Logger =
+            java.util.logging.Logger.getLogger(LcovParser::class.java.getName())
+
+        @Throws(IOException::class)
+        fun parse(inputStream: java.io.InputStream): MutableList<SourceFileCoverage?> {
+            return LcovParser(inputStream).parse()
+        }
+    }
 }

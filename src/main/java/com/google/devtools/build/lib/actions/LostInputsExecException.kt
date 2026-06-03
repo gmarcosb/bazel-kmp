@@ -11,70 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.server.FailureDetails.Execution
 
 /**
- * An {@link ExecException} thrown when an action fails to execute because one or more of its inputs
+ * An [ExecException] thrown when an action fails to execute because one or more of its inputs
  * was lost. In some cases, Bazel may know how to fix this on its own.
  */
-public final class LostInputsExecException extends ExecException {
+class LostInputsExecException @kotlin.jvm.JvmOverloads constructor(
+    lostInputs: com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?>,
+    cause: Throwable? = null
+) : ExecException("lost inputs with digests: " + java.lang.String.join(",", lostInputs.keySet()), cause) {
+    /** Maps lost input digests to their [ActionInput]s.  */
+    private val lostInputs: com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?>
 
-  /** Maps lost input digests to their {@link ActionInput}s. */
-  private final ImmutableSetMultimap<String, ActionInput> lostInputs;
+    init {
+        com.google.common.base.Preconditions.checkArgument(!lostInputs.isEmpty(), "No inputs were lost")
+        this.lostInputs = lostInputs
+    }
 
-  public LostInputsExecException(ImmutableSetMultimap<String, ActionInput> lostInputs) {
-    this(lostInputs, /* cause= */ null);
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun getLostInputs(): com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?> {
+        return lostInputs
+    }
 
-  public LostInputsExecException(
-      ImmutableSetMultimap<String, ActionInput> lostInputs, @Nullable Throwable cause) {
-    super("lost inputs with digests: " + String.join(",", lostInputs.keySet()), cause);
-    checkArgument(!lostInputs.isEmpty(), "No inputs were lost");
-    this.lostInputs = lostInputs;
-  }
+    fun fromExecException(
+        message: String?,
+        action: com.google.devtools.build.lib.actions.Action?,
+        code: DetailedExitCode?
+    ): ActionExecutionException {
+        return LostInputsActionExecutionException(
+            message, lostInputs, action,  /* cause= */this, code
+        )
+    }
 
-  @VisibleForTesting
-  public ImmutableSetMultimap<String, ActionInput> getLostInputs() {
-    return lostInputs;
-  }
+    protected override fun getFailureDetail(message: String?): FailureDetail {
+        return FailureDetail.newBuilder()
+            .setExecution(Execution.newBuilder().setCode(Code.ACTION_INPUT_LOST))
+            .setMessage(message)
+            .build()
+    }
 
-  ActionExecutionException fromExecException(String message, Action action, DetailedExitCode code) {
-    return new LostInputsActionExecutionException(
-        message, lostInputs, action, /* cause= */ this, code);
-  }
+    fun combine(other: LostInputsExecException): LostInputsExecException {
+        val combinedLostInputs: com.google.common.collect.ImmutableSetMultimap<String?, ActionInput?> =
+            com.google.common.collect.ImmutableSetMultimap.builder<String?, ActionInput?>()
+                .putAll(lostInputs)
+                .putAll(other.lostInputs)
+                .build()
+        val combined =
+            LostInputsExecException(combinedLostInputs,  /* cause= */this)
+        combined.addSuppressed(other)
+        return combined
+    }
 
-  @Override
-  protected FailureDetail getFailureDetail(String message) {
-    return FailureDetail.newBuilder()
-        .setExecution(Execution.newBuilder().setCode(Code.ACTION_INPUT_LOST))
-        .setMessage(message)
-        .build();
-  }
-
-  public LostInputsExecException combine(LostInputsExecException other) {
-    ImmutableSetMultimap<String, ActionInput> combinedLostInputs =
-        ImmutableSetMultimap.<String, ActionInput>builder()
-            .putAll(lostInputs)
-            .putAll(other.lostInputs)
-            .build();
-    LostInputsExecException combined =
-        new LostInputsExecException(combinedLostInputs, /* cause= */ this);
-    combined.addSuppressed(other);
-    return combined;
-  }
-
-  public void combineAndThrow(LostInputsExecException other) throws LostInputsExecException {
-    throw combine(other);
-  }
+    @Throws(LostInputsExecException::class)
+    fun combineAndThrow(other: LostInputsExecException) {
+        throw combine(other)
+    }
 }

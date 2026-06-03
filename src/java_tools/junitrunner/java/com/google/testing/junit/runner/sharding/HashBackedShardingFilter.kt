@@ -11,47 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.testing.junit.runner.sharding;
-
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+package com.google.testing.junit.runner.sharding
 
 /**
  * Sharding filter that uses the hashcode of the test description to
  * assign it to a shard.
  */
-final class HashBackedShardingFilter extends Filter {
-  private final int shardIndex;
-  private final int totalShards;
+internal class HashBackedShardingFilter(shardIndex: Int, totalShards: Int) : org.junit.runner.manipulation.Filter() {
+    private val shardIndex: Int
+    private val totalShards: Int
 
-  public HashBackedShardingFilter(int shardIndex, int totalShards) {
-    if (shardIndex < 0 || totalShards <= shardIndex) {
-      throw new IllegalArgumentException();
-    }
-    this.shardIndex = shardIndex;
-    this.totalShards = totalShards;
-  }
-
-  @Override
-  public boolean shouldRun(Description description) {
-    if (description.isSuite()) {
-      return true;
-    }
-    int mod = description.getDisplayName().hashCode() % totalShards;
-    if (mod < 0) {
-      mod += totalShards;
-    }
-    if (mod < 0 || mod >= totalShards) {
-      throw new IllegalStateException();
+    init {
+        require(!(shardIndex < 0 || totalShards <= shardIndex))
+        this.shardIndex = shardIndex
+        this.totalShards = totalShards
     }
 
-    return mod == shardIndex;
-  }
+    override fun shouldRun(description: org.junit.runner.Description): Boolean {
+        if (description.isSuite()) {
+            return true
+        }
+        var mod: Int = description.getDisplayName().hashCode() % totalShards
+        if (mod < 0) {
+            mod += totalShards
+        }
+        check(!(mod < 0 || mod >= totalShards))
 
-  @Override
-  public String describe() {
-    return "hash-backed sharding filter";
-  }
+        return mod == shardIndex
+    }
 
+    override fun describe(): String {
+        return "hash-backed sharding filter"
+    }
 }

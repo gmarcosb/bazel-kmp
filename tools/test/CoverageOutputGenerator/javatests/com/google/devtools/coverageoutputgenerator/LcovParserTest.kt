@@ -11,204 +11,244 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
+import com.google.common.truth.Truth
+import com.google.devtools.coverageoutputgenerator.BranchCoverageItem
+import com.google.devtools.coverageoutputgenerator.LcovParser
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.util.stream.Collectors
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+/** Unit tests for [LcovParser].  */
+@RunWith(JUnit4::class)
+class LcovParserTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseInvalidTracefile() {
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(ByteArrayInputStream("Invalid lcov tracefile".getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+        Truth.assertThat(sourceFiles).isEmpty()
+    }
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseTracefile() {
+        val lcovLines: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "SF:src1.foo",
+                "FN:4,bar",
+                "FN:2,foo",
+                "FNDA:0,bar",
+                "FNDA:3,foo",
+                "FNF:2",
+                "FNH:1",
+                "DA:2,3",
+                "DA:4,0",
+                "LH:1",
+                "LF:2",
+                "end_of_record",
+                "SF:src2.foo",
+                "FN:3,foo",
+                "FNDA:1,foo",
+                "FNF:1",
+                "FNH:1",
+                "DA:3,1",
+                "DA:4,1",
+                "LH:2",
+                "LF:2",
+                "end_of_record"
+            )
 
-/** Unit tests for {@link LcovParser}. */
-@RunWith(JUnit4.class)
-public class LcovParserTest {
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(
+                ByteArrayInputStream(
+                    com.google.common.base.Joiner.on("\n").join(lcovLines)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
 
-  @Test
-  public void testParseInvalidTracefile() throws IOException {
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream("Invalid lcov tracefile".getBytes(UTF_8)));
-    assertThat(sourceFiles).isEmpty();
-  }
+        Truth.assertThat(sourceFiles).hasSize(2)
+        Truth.assertThat(sourceFiles.get(0).sourceFileName()).isEqualTo("src1.foo")
+        Truth.assertThat(sourceFiles.get(1).sourceFileName()).isEqualTo("src2.foo")
+        Truth.assertThat(sourceFiles.get(0).getLines())
+            .containsExactly(
+                2, 3L,
+                4, 0L
+            )
+        Truth.assertThat(sourceFiles.get(1).getLines()).containsExactly(3, 1L, 4, 1L)
+        Truth.assertThat(sourceFiles.get(0).getFunctionLineNumbers()).containsExactly("bar", 4, "foo", 2)
+        Truth.assertThat(sourceFiles.get(1).getFunctionLineNumbers()).containsExactly("foo", 3)
+        Truth.assertThat(sourceFiles.get(0).getFunctionsExecution()).containsExactly("bar", 0L, "foo", 3L)
+        Truth.assertThat(sourceFiles.get(1).getFunctionsExecution()).containsExactly("foo", 1L)
+        Truth.assertThat(sourceFiles.get(0).getAllBranches()).isEmpty()
+        Truth.assertThat(sourceFiles.get(1).getAllBranches()).isEmpty()
+    }
 
-  @Test
-  public void testParseTracefile() throws IOException {
-    ImmutableList<String> lcovLines =
-        ImmutableList.of(
-            "SF:src1.foo",
-            "FN:4,bar",
-            "FN:2,foo",
-            "FNDA:0,bar",
-            "FNDA:3,foo",
-            "FNF:2",
-            "FNH:1",
-            "DA:2,3",
-            "DA:4,0",
-            "LH:1",
-            "LF:2",
-            "end_of_record",
-            "SF:src2.foo",
-            "FN:3,foo",
-            "FNDA:1,foo",
-            "FNF:1",
-            "FNH:1",
-            "DA:3,1",
-            "DA:4,1",
-            "LH:2",
-            "LF:2",
-            "end_of_record");
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseTracefileWithLargeCounts() {
+        val tracefile: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "SF:SOURCE_FILENAME",
+                "FN:4,file1-func1",
+                "FNDA:1000000000000,file1-func1",
+                "FNF:1",
+                "FNH:1",
+                "DA:4,1000000000000",
+                "DA:5,1000000000000",
+                "LH:2",
+                "LF:2",
+                "end_of_record"
+            )
 
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream(Joiner.on("\n").join(lcovLines).getBytes(UTF_8)));
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(
+                ByteArrayInputStream(
+                    com.google.common.base.Joiner.on("\n").join(tracefile)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
+        val sourceFile: SourceFileCoverage = sourceFiles.get(0)
 
-    assertThat(sourceFiles).hasSize(2);
-    assertThat(sourceFiles.get(0).sourceFileName()).isEqualTo("src1.foo");
-    assertThat(sourceFiles.get(1).sourceFileName()).isEqualTo("src2.foo");
-    assertThat(sourceFiles.get(0).getLines())
-        .containsExactly(
-            2, 3L,
-            4, 0L);
-    assertThat(sourceFiles.get(1).getLines()).containsExactly(3, 1L, 4, 1L);
-    assertThat(sourceFiles.get(0).getFunctionLineNumbers()).containsExactly("bar", 4, "foo", 2);
-    assertThat(sourceFiles.get(1).getFunctionLineNumbers()).containsExactly("foo", 3);
-    assertThat(sourceFiles.get(0).getFunctionsExecution()).containsExactly("bar", 0L, "foo", 3L);
-    assertThat(sourceFiles.get(1).getFunctionsExecution()).containsExactly("foo", 1L);
-    assertThat(sourceFiles.get(0).getAllBranches()).isEmpty();
-    assertThat(sourceFiles.get(1).getAllBranches()).isEmpty();
-  }
+        val functions: MutableMap<String?, Long?>? = sourceFile.getFunctionsExecution()
+        Truth.assertThat(functions).containsEntry("file1-func1", 1000000000000L)
 
-  @Test
-  public void testParseTracefileWithLargeCounts() throws IOException {
-    List<String> tracefile =
-        ImmutableList.of(
-            "SF:SOURCE_FILENAME",
-            "FN:4,file1-func1",
-            "FNDA:1000000000000,file1-func1",
-            "FNF:1",
-            "FNH:1",
-            "DA:4,1000000000000",
-            "DA:5,1000000000000",
-            "LH:2",
-            "LF:2",
-            "end_of_record");
+        Truth.assertThat(sourceFile.getLines()).containsExactly(4, 1000000000000L, 5, 1000000000000L)
+    }
 
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream(Joiner.on("\n").join(tracefile).getBytes(UTF_8)));
-    SourceFileCoverage sourceFile = sourceFiles.get(0);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseBrdaBranches() {
+        val traceFile: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "SF:SOURCE_FILE",
+                "FN:2,func",
+                "FNDA:1,func",
+                "DA:2,1",
+                "DA:3,1",
+                "DA:4,1",
+                "DA:5,1",
+                "DA:6,1",
+                "BRDA:6,0,0,1",
+                "BRDA:6,0,1,0",
+                "DA:7,13",
+                "BRDA:7,0,0,12",
+                "BRDA:7,0,1,1",
+                "DA:8,12",
+                "DA:10,1",
+                "DA:12,0",
+                "BRDA:12,0,0,-",
+                "BRDA:12,0,1,-",
+                "DA:13,0",
+                "DA:14.0",
+                "DA:16,0",
+                "end_of_record"
+            )
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(
+                ByteArrayInputStream(
+                    com.google.common.base.Joiner.on("\n").join(traceFile)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
+        val sourceFile: SourceFileCoverage = sourceFiles.get(0)
 
-    Map<String, Long> functions = sourceFile.getFunctionsExecution();
-    assertThat(functions).containsEntry("file1-func1", 1000000000000L);
+        val branches: MutableList<BranchCoverageItem> =
+            sourceFile.getAllBranches().stream().collect(Collectors.toList())
+        Truth.assertThat(branches)
+            .containsExactly(
+                BranchCoverageItem.Companion.create(6, "0", "0", true, 1),
+                BranchCoverageItem.Companion.create(6, "0", "1", true, 0),
+                BranchCoverageItem.Companion.create(7, "0", "0", true, 12),
+                BranchCoverageItem.Companion.create(7, "0", "1", true, 1),
+                BranchCoverageItem.Companion.create(12, "0", "0", false, 0),
+                BranchCoverageItem.Companion.create(12, "0", "1", false, 0)
+            )
+    }
 
-    assertThat(sourceFile.getLines()).containsExactly(4, 1000000000000L, 5, 1000000000000L);
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseBaBranches() {
+        val traceFile: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "SF:SOURCE_FILE",
+                "FN:2,func",
+                "FNDA:1,func",
+                "DA:1,5",
+                "BA:2,1",
+                "BA:2,2",
+                "DA:3,0",
+                "BA:4,0",
+                "BA:4,0",
+                "DA:5,0",
+                "DA:6,5",
+                "BA:7,2",
+                "BA:7,1",
+                "BA:7,2",
+                "DA:8,1",
+                "DA:9,0",
+                "DA:10,4",
+                "end_of_record"
+            )
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(
+                ByteArrayInputStream(
+                    com.google.common.base.Joiner.on("\n").join(traceFile)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
+        val sourceFile: SourceFileCoverage = sourceFiles.get(0)
 
-  @Test
-  public void testParseBrdaBranches() throws IOException {
-    List<String> traceFile =
-        ImmutableList.of(
-            "SF:SOURCE_FILE",
-            "FN:2,func",
-            "FNDA:1,func",
-            "DA:2,1",
-            "DA:3,1",
-            "DA:4,1",
-            "DA:5,1",
-            "DA:6,1",
-            "BRDA:6,0,0,1",
-            "BRDA:6,0,1,0",
-            "DA:7,13",
-            "BRDA:7,0,0,12",
-            "BRDA:7,0,1,1",
-            "DA:8,12",
-            "DA:10,1",
-            "DA:12,0",
-            "BRDA:12,0,0,-",
-            "BRDA:12,0,1,-",
-            "DA:13,0",
-            "DA:14.0",
-            "DA:16,0",
-            "end_of_record");
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream(Joiner.on("\n").join(traceFile).getBytes(UTF_8)));
-    SourceFileCoverage sourceFile = sourceFiles.get(0);
+        val branches: MutableList<BranchCoverageItem> =
+            sourceFile.getAllBranches().stream().collect(Collectors.toList())
+        Truth.assertThat(branches)
+            .containsExactly(
+                BranchCoverageItem.Companion.create(2, "0", "0", true, 0),
+                BranchCoverageItem.Companion.create(2, "0", "1", true, 1),
+                BranchCoverageItem.Companion.create(4, "0", "0", false, 0),
+                BranchCoverageItem.Companion.create(4, "0", "1", false, 0),
+                BranchCoverageItem.Companion.create(7, "0", "0", true, 1),
+                BranchCoverageItem.Companion.create(7, "0", "1", true, 0),
+                BranchCoverageItem.Companion.create(7, "0", "2", true, 1)
+            )
+    }
 
-    List<BranchCoverageItem> branches =
-        sourceFile.getAllBranches().stream().collect(Collectors.toList());
-    assertThat(branches)
-        .containsExactly(
-            BranchCoverageItem.create(6, "0", "0", true, 1),
-            BranchCoverageItem.create(6, "0", "1", true, 0),
-            BranchCoverageItem.create(7, "0", "0", true, 12),
-            BranchCoverageItem.create(7, "0", "1", true, 1),
-            BranchCoverageItem.create(12, "0", "0", false, 0),
-            BranchCoverageItem.create(12, "0", "1", false, 0));
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseFnWithEnd() {
+        val traceFile: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("SF:SOURCE_FILE", "FN:2,3,func", "end_of_record")
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(
+                ByteArrayInputStream(
+                    com.google.common.base.Joiner.on("\n").join(traceFile)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
+        val sourceFile: SourceFileCoverage = sourceFiles.get(0)
 
-  @Test
-  public void testParseBaBranches() throws IOException {
-    List<String> traceFile =
-        ImmutableList.of(
-            "SF:SOURCE_FILE",
-            "FN:2,func",
-            "FNDA:1,func",
-            "DA:1,5",
-            "BA:2,1",
-            "BA:2,2",
-            "DA:3,0",
-            "BA:4,0",
-            "BA:4,0",
-            "DA:5,0",
-            "DA:6,5",
-            "BA:7,2",
-            "BA:7,1",
-            "BA:7,2",
-            "DA:8,1",
-            "DA:9,0",
-            "DA:10,4",
-            "end_of_record");
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream(Joiner.on("\n").join(traceFile).getBytes(UTF_8)));
-    SourceFileCoverage sourceFile = sourceFiles.get(0);
+        Truth.assertThat(sourceFile.getAllFunctionLineNumbers())
+            .containsExactly(java.util.Map.entry<String?, Int?>("func", 2))
+    }
 
-    List<BranchCoverageItem> branches =
-        sourceFile.getAllBranches().stream().collect(Collectors.toList());
-    assertThat(branches)
-        .containsExactly(
-            BranchCoverageItem.create(2, "0", "0", true, 0),
-            BranchCoverageItem.create(2, "0", "1", true, 1),
-            BranchCoverageItem.create(4, "0", "0", false, 0),
-            BranchCoverageItem.create(4, "0", "1", false, 0),
-            BranchCoverageItem.create(7, "0", "0", true, 1),
-            BranchCoverageItem.create(7, "0", "1", true, 0),
-            BranchCoverageItem.create(7, "0", "2", true, 1));
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testParseLineWithHash() {
+        val traceFile: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("SF:src.foo", "DA:1,1,hash", "end_of_record")
 
-  @Test
-  public void testParseFnWithEnd() throws IOException {
-    List<String> traceFile = ImmutableList.of("SF:SOURCE_FILE", "FN:2,3,func", "end_of_record");
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream(Joiner.on("\n").join(traceFile).getBytes(UTF_8)));
-    SourceFileCoverage sourceFile = sourceFiles.get(0);
+        val sourceFiles: MutableList<SourceFileCoverage> =
+            LcovParser.Companion.parse(
+                ByteArrayInputStream(
+                    com.google.common.base.Joiner.on("\n").join(traceFile)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                )
+            )
 
-    assertThat(sourceFile.getAllFunctionLineNumbers()).containsExactly(Map.entry("func", 2));
-  }
-
-  @Test
-  public void testParseLineWithHash() throws IOException {
-    ImmutableList<String> traceFile =
-        ImmutableList.of("SF:src.foo", "DA:1,1,hash", "end_of_record");
-
-    List<SourceFileCoverage> sourceFiles =
-        LcovParser.parse(new ByteArrayInputStream(Joiner.on("\n").join(traceFile).getBytes(UTF_8)));
-
-    assertThat(sourceFiles.get(0).getLines()).containsExactly(1, 1L);
-  }
+        Truth.assertThat(sourceFiles.get(0).getLines()).containsExactly(1, 1L)
+    }
 }

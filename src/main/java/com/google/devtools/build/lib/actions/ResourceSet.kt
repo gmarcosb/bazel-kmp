@@ -11,20 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.primitives.Doubles;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.worker.WorkerKey;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
  * Instances of this class represent an estimate of the resource consumption for a particular
@@ -33,191 +22,201 @@ import javax.annotation.Nullable;
  * much memory as to cause the machine to thrash.
  */
 @Immutable
-public class ResourceSet implements ResourceSetOrBuilder {
-  public static final String CPU = "cpu";
-  public static final String MEMORY = "memory";
+class ResourceSet private constructor(
+    resources: com.google.common.collect.ImmutableMap<String?, Double?>,
+    localTestCount: Int,
+    workerKey: WorkerKey?
+) : ResourceSetOrBuilder {
+    /**
+     * Map of extra resources (for example: GPUs, embedded boards, ...) mapping name of the resource
+     * to a value.
+     */
+    private val resources: com.google.common.collect.ImmutableMap<String?, Double?>
 
-  /** For actions that consume negligible resources. */
-  public static final ResourceSet ZERO = new ResourceSet(ImmutableMap.of(), 0, null);
+    /** The number of local tests.  */
+    private val localTestCount: Int
 
-  /**
-   * Map of extra resources (for example: GPUs, embedded boards, ...) mapping name of the resource
-   * to a value.
-   */
-  private final ImmutableMap<String, Double> resources;
+    /** The workerKey of used worker. Null if no worker is used.  */
+    private val workerKey: WorkerKey?
 
-  /** The number of local tests. */
-  private final int localTestCount;
-
-  /** The workerKey of used worker. Null if no worker is used. */
-  @Nullable private final WorkerKey workerKey;
-
-  private ResourceSet(
-      ImmutableMap<String, Double> resources, int localTestCount, @Nullable WorkerKey workerKey) {
-    this.resources = resources;
-    this.localTestCount = localTestCount;
-    this.workerKey = workerKey;
-  }
-
-  public static ResourceSet createWithRamCpu(double memoryMb, double cpu) {
-    return create(ImmutableMap.of(MEMORY, memoryMb, CPU, cpu));
-  }
-
-  public static ResourceSet createWithLocalTestCount(int localTestCount) {
-    return create(ImmutableMap.of(), localTestCount);
-  }
-
-  public static ResourceSet create(double memoryMb, double cpu, int localTestCount) {
-    return create(ImmutableMap.of(MEMORY, memoryMb, CPU, cpu), localTestCount);
-  }
-
-  public static ResourceSet create(ImmutableMap<String, Double> resources) {
-    return create(resources, 0);
-  }
-
-  public static ResourceSet create(ImmutableMap<String, Double> resources, int localTestCount) {
-    return create(resources, localTestCount, null);
-  }
-
-  public static ResourceSet create(
-      ImmutableMap<String, Double> resources, int localTestCount, @Nullable WorkerKey workerKey) {
-    return new ResourceSet(resources, localTestCount, workerKey);
-  }
-
-  /**
-   * Returns a new {@link ResourceSet} with the given overrides merged on top of this one's
-   * resources in order. Entries in later maps replace earlier ones and this set's resources; {@code
-   * localTestCount} and {@code workerKey} are preserved. Returns {@code this} if all override maps
-   * are empty.
-   */
-  @SafeVarargs
-  public final ResourceSet withResourceOverrides(ImmutableMap<String, Double>... overrides) {
-    boolean anyNonEmpty = false;
-    for (ImmutableMap<String, Double> override : overrides) {
-      if (!override.isEmpty()) {
-        anyNonEmpty = true;
-        break;
-      }
+    init {
+        this.resources = resources
+        this.localTestCount = localTestCount
+        this.workerKey = workerKey
     }
-    if (!anyNonEmpty) {
-      return this;
+
+    /**
+     * Returns a new [ResourceSet] with the given overrides merged on top of this one's
+     * resources in order. Entries in later maps replace earlier ones and this set's resources; `localTestCount` and `workerKey` are preserved. Returns `this` if all override maps
+     * are empty.
+     */
+    @java.lang.SafeVarargs
+    fun withResourceOverrides(vararg overrides: com.google.common.collect.ImmutableMap<String?, Double?>): ResourceSet {
+        var anyNonEmpty = false
+        for (override in overrides) {
+            if (!override.isEmpty()) {
+                anyNonEmpty = true
+                break
+            }
+        }
+        if (!anyNonEmpty) {
+            return this
+        }
+        val builder: com.google.common.collect.ImmutableMap.Builder<String?, Double?> =
+            com.google.common.collect.ImmutableMap.builderWithExpectedSize<String?, Double?>(resources.size)
+                .putAll(resources)
+        for (override in overrides) {
+            builder.putAll(override)
+        }
+        return create(builder.buildKeepingLast(), localTestCount, workerKey)
     }
-    ImmutableMap.Builder<String, Double> builder =
-        ImmutableMap.<String, Double>builderWithExpectedSize(resources.size()).putAll(resources);
-    for (ImmutableMap<String, Double> override : overrides) {
-      builder.putAll(override);
+
+    fun get(resource: String?): Double {
+        return resources.getOrDefault(resource, 0.0)
     }
-    return create(builder.buildKeepingLast(), localTestCount, workerKey);
-  }
 
-  public double get(String resource) {
-    return resources.getOrDefault(resource, 0.0);
-  }
+    fun getMemoryMb(): Double {
+        return get(MEMORY)
+    }
 
-  public double getMemoryMb() {
-    return get(MEMORY);
-  }
+    fun getCpuUsage(): Double {
+        return get(CPU)
+    }
 
-  public double getCpuUsage() {
-    return get(CPU);
-  }
+    /**
+     * Returns the workerKey of worker.
+     * 
+     * 
+     * If there is no worker requested, then returns null
+     */
+    fun getWorkerKey(): WorkerKey? {
+        return workerKey
+    }
 
-  /**
-   * Returns the workerKey of worker.
-   *
-   * <p>If there is no worker requested, then returns null
-   */
-  public WorkerKey getWorkerKey() {
-    return workerKey;
-  }
+    fun getResources(): com.google.common.collect.ImmutableMap<String?, Double?> {
+        return resources
+    }
 
-  public ImmutableMap<String, Double> getResources() {
-    return resources;
-  }
+    /** Returns the local test count used.  */
+    fun getLocalTestCount(): Int {
+        return localTestCount
+    }
 
-  /** Returns the local test count used. */
-  public int getLocalTestCount() {
-    return localTestCount;
-  }
-
-  @Override
-  public String toString() {
-    return "Resources: \n"
-        + "Memory: "
-        + resources.get(MEMORY)
-        + "M\n"
-        + "CPU: "
-        + resources.get(CPU)
-        + "\n"
-        + resources.entrySet().stream()
-            .filter(e -> !e.getKey().equals(CPU) && !e.getKey().equals(MEMORY))
+    override fun toString(): String {
+        return ("Resources: \n"
+                + "Memory: "
+                + resources.get(MEMORY)
+                + "M\n"
+                + "CPU: "
+                + resources.get(CPU)
+                + "\n"
+                + resources.entries.stream()
+            .filter { e: MutableMap.MutableEntry<String?, Double?>? -> e!!.key != CPU && e.key != MEMORY }
             .collect(
-                StringBuilder::new,
-                (a, e) -> a.append(e.getKey()).append(": ").append(e.getValue()).append("\n"),
-                StringBuilder::append)
-        + "Local tests: "
-        + localTestCount
-        + "\n";
-  }
-
-  @Override
-  public boolean equals(Object that) {
-    if (that == null) {
-      return false;
+                java.util.function.Supplier { StringBuilder() },
+                java.util.function.BiConsumer { a: java.lang.StringBuilder?, e: MutableMap.MutableEntry<String?, Double?>? ->
+                    a.append(
+                        e!!.key
+                    ).append(": ").append(e.value).append("\n")
+                },
+                java.util.function.BiConsumer { obj: java.lang.StringBuilder?, s: java.lang.StringBuilder? ->
+                    obj.append(
+                        s
+                    )
+                })
+                + "Local tests: "
+                + localTestCount
+                + "\n")
     }
 
-    if (!(that instanceof ResourceSet thatResourceSet)) {
-      return false;
-    }
-
-    return thatResourceSet.getMemoryMb() == getMemoryMb()
-        && thatResourceSet.getCpuUsage() == getCpuUsage()
-        && thatResourceSet.localTestCount == getLocalTestCount();
-  }
-
-  @Override
-  public int hashCode() {
-    int p = 239;
-    return Doubles.hashCode(getMemoryMb())
-        + Doubles.hashCode(getCpuUsage()) * p
-        + getLocalTestCount() * p * p;
-  }
-
-  /** Converter for {@link ResourceSet}. */
-  public static class ResourceSetConverter extends Converter.Contextless<ResourceSet> {
-    private static final Splitter SPLITTER = Splitter.on(',');
-
-    @Override
-    public ResourceSet convert(String input) throws OptionsParsingException {
-      Iterator<String> values = SPLITTER.split(input).iterator();
-      try {
-        double memoryMb = Double.parseDouble(values.next());
-        double cpuUsage = Double.parseDouble(values.next());
-        // There used to be a third field here called ioUsage. In order to not break existing users,
-        // we keep expecting a third field, which must be a double. In the future, we may accept the
-        // two-param variant, and then even phase out the three-param variant.
-        Double.parseDouble(values.next());
-        if (values.hasNext()) {
-          throw new OptionsParsingException("Expected exactly 3 comma-separated float values");
+    override fun equals(that: Any?): Boolean {
+        if (that == null) {
+            return false
         }
-        if (memoryMb <= 0.0 || cpuUsage <= 0.0) {
-          throw new OptionsParsingException("All resource values must be positive");
+
+        if (that !is ResourceSet) {
+            return false
         }
-        return create(memoryMb, cpuUsage, Integer.MAX_VALUE);
-      } catch (NumberFormatException | NoSuchElementException nfe) {
-        throw new OptionsParsingException("Expected exactly 3 comma-separated float values", nfe);
-      }
+
+        return that.getMemoryMb() == getMemoryMb() && that.getCpuUsage() == getCpuUsage() && that.localTestCount == getLocalTestCount()
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "comma-separated available amount of RAM (in MB), CPU (in cores) and "
-          + "available I/O (1.0 being average workstation)";
+    override fun hashCode(): Int {
+        val p = 239
+        return (com.google.common.primitives.Doubles.hashCode(getMemoryMb())
+                + com.google.common.primitives.Doubles.hashCode(getCpuUsage()) * p + getLocalTestCount() * p * p)
     }
-  }
 
-  @Override
-  public ResourceSet buildResourceSet(OS os, int inputsSize) throws ExecException {
-    return this;
-  }
+    /** Converter for [ResourceSet].  */
+    class ResourceSetConverter : Contextless<ResourceSet?>() {
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String): ResourceSet {
+            val values: MutableIterator<String?> = SPLITTER.split(input).iterator()
+            try {
+                val memoryMb: Double = values.next().toDouble()
+                val cpuUsage: Double = values.next().toDouble()
+                // There used to be a third field here called ioUsage. In order to not break existing users,
+                // we keep expecting a third field, which must be a double. In the future, we may accept the
+                // two-param variant, and then even phase out the three-param variant.
+                values.next().toDouble()
+                if (values.hasNext()) {
+                    throw OptionsParsingException("Expected exactly 3 comma-separated float values")
+                }
+                if (memoryMb <= 0.0 || cpuUsage <= 0.0) {
+                    throw OptionsParsingException("All resource values must be positive")
+                }
+                return create(memoryMb, cpuUsage, Int.Companion.MAX_VALUE)
+            } catch (nfe: java.lang.NumberFormatException) {
+                throw OptionsParsingException("Expected exactly 3 comma-separated float values", nfe)
+            } catch (nfe: java.util.NoSuchElementException) {
+                throw OptionsParsingException("Expected exactly 3 comma-separated float values", nfe)
+            }
+        }
+
+        public override fun getTypeDescription(): String {
+            return ("comma-separated available amount of RAM (in MB), CPU (in cores) and "
+                    + "available I/O (1.0 being average workstation)")
+        }
+
+        companion object {
+            private val SPLITTER: com.google.common.base.Splitter = com.google.common.base.Splitter.on(',')
+        }
+    }
+
+    @Throws(ExecException::class)
+    override fun buildResourceSet(os: OS?, inputsSize: Int): ResourceSet {
+        return this
+    }
+
+    companion object {
+        const val CPU: String = "cpu"
+        const val MEMORY: String = "memory"
+
+        /** For actions that consume negligible resources.  */
+        val ZERO: ResourceSet = ResourceSet(com.google.common.collect.ImmutableMap.of<String?, Double?>(), 0, null)
+
+        fun createWithRamCpu(memoryMb: Double, cpu: Double): ResourceSet {
+            return create(com.google.common.collect.ImmutableMap.of<String?, Double?>(MEMORY, memoryMb, CPU, cpu))
+        }
+
+        fun createWithLocalTestCount(localTestCount: Int): ResourceSet {
+            return create(com.google.common.collect.ImmutableMap.of<String?, Double?>(), localTestCount)
+        }
+
+        fun create(memoryMb: Double, cpu: Double, localTestCount: Int): ResourceSet {
+            return create(
+                com.google.common.collect.ImmutableMap.of<String?, Double?>(MEMORY, memoryMb, CPU, cpu),
+                localTestCount
+            )
+        }
+
+        @kotlin.jvm.JvmOverloads
+        fun create(
+            resources: com.google.common.collect.ImmutableMap<String?, Double?>,
+            localTestCount: Int = 0,
+            workerKey: WorkerKey? = null
+        ): ResourceSet {
+            return ResourceSet(resources, localTestCount, workerKey)
+        }
+    }
 }

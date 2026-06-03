@@ -11,38 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Set;
+import com.google.devtools.build.lib.vfs.PathFragment
 
 /**
  * A message sent conveying a set of changed files. This is sent over the event bus if a build is
  * discovered to have changed files. If many files have changed, the set of changed files will be
- * empty, but {@link #changedFileCount} will still return the correct number.
- *
+ * empty, but [.changedFileCount] will still return the correct number.
+ * 
  * @param changedFiles Returns a set with one PathFragment for each file that was changed since the
- *     last build, or an empty set if the set is unknown or would be too big.
+ * last build, or an empty set if the set is unknown or would be too big.
  * @param changedFileCount Returns the number of changed files. This will always be the correct
- *     number of files, even when {@link #changedFiles} might return an empty set, because the
- *     actual set would be too big.
- * @param invalidatedFileValueCount Returns the number of {@link FileValue} nodes invalidated in the
- *     build.
- *     <p>This is different from {@link #changedFiles} , in particular a single file change can
- *     result with multiple {@linkplain FileValue FVs} .
+ * number of files, even when [.changedFiles] might return an empty set, because the
+ * actual set would be too big.
+ * @param invalidatedFileValueCount Returns the number of [FileValue] nodes invalidated in the
+ * build.
+ * 
+ * This is different from [.changedFiles] , in particular a single file change can
+ * result with multiple [FVs][FileValue] .
  */
-public record ChangedFilesMessage(
-    ImmutableSet<PathFragment> changedFiles, int changedFileCount, int invalidatedFileValueCount) {
-  public ChangedFilesMessage {
-    requireNonNull(changedFiles, "changedFiles");
-  }
+class ChangedFilesMessage(
+    changedFiles: com.google.common.collect.ImmutableSet<PathFragment?>?,
+    val changedFileCount: Int,
+    val invalidatedFileValueCount: Int
+) {
+    val changedFiles: com.google.common.collect.ImmutableSet<PathFragment?>?
 
-  public static ChangedFilesMessage create(
-      Set<PathFragment> changedFiles, int changedFileCount, int invalidatedFileValueCount) {
-    return new ChangedFilesMessage(
-        ImmutableSet.copyOf(changedFiles), changedFileCount, invalidatedFileValueCount);
-  }
+    init {
+        this.changedFiles = changedFiles
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<PathFragment?>?>(
+            changedFiles,
+            "changedFiles"
+        )
+    }
+
+    companion object {
+        fun create(
+            changedFiles: MutableSet<PathFragment?>, changedFileCount: Int, invalidatedFileValueCount: Int
+        ): ChangedFilesMessage {
+            return ChangedFilesMessage(
+                com.google.common.collect.ImmutableSet.copyOf<PathFragment?>(changedFiles),
+                changedFileCount,
+                invalidatedFileValueCount
+            )
+        }
+    }
 }

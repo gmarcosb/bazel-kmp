@@ -11,32 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+/** Event for passing SpawnMetrics for the discover inputs phase.  */
+class DiscoveredInputsEvent(
+    metrics: SpawnMetrics?,
+    action: com.google.devtools.build.lib.actions.Action?,
+    startTimeNanos: Long
+) : Postable {
+    private val metrics: SpawnMetrics?
+    private val action: com.google.devtools.build.lib.actions.Action?
+    private val startTimeNanos: Long
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+    init {
+        this.metrics = metrics
+        this.action = action
+        this.startTimeNanos = startTimeNanos
+    }
 
-/** Event for passing SpawnMetrics for the discover inputs phase. */
-public final class DiscoveredInputsEvent implements ExtendedEventHandler.Postable {
-  private final SpawnMetrics metrics;
-  private final Action action;
-  private final long startTimeNanos;
+    fun getMetrics(): SpawnMetrics? {
+        return metrics
+    }
 
-  public DiscoveredInputsEvent(SpawnMetrics metrics, Action action, long startTimeNanos) {
-    this.metrics = metrics;
-    this.action = action;
-    this.startTimeNanos = startTimeNanos;
-  }
+    fun getAction(): com.google.devtools.build.lib.actions.Action? {
+        return action
+    }
 
-  public SpawnMetrics getMetrics() {
-    return metrics;
-  }
-
-  public Action getAction() {
-    return action;
-  }
-
-  public long getStartTimeNanos() {
-    return startTimeNanos;
-  }
+    fun getStartTimeNanos(): Long {
+        return startTimeNanos
+    }
 }

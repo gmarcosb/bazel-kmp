@@ -11,289 +11,226 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.analysis.SymlinkEntry
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** A class that groups services in the scope of the action. Like the FileOutErr object.  */
+class ActionExecutionContext private constructor(
+    executor: com.google.devtools.build.lib.actions.Executor?,
+    inputMetadataProvider: InputMetadataProvider,
+    actionInputPrefetcher: ActionInputPrefetcher?,
+    actionKeyContext: ActionKeyContext?,
+    outputMetadataStore: OutputMetadataStore,
+    rewindingEnabled: Boolean,
+    lostInputsCheck: LostInputsCheck,
+    fileOutErr: FileOutErr,
+    eventHandler: ExtendedEventHandler?,
+    clientEnv: MutableMap<String?, String?>,
+    env: Environment?,
+    actionFileSystem: FileSystem?,
+    discoveredModulesPruner: DiscoveredModulesPruner?,
+    syscallCache: SyscallCache?,
+    threadStateReceiverForMetrics: ThreadStateReceiver?,
+    fileSystemSupportsInputDiscovery: Boolean
+) : java.io.Closeable, ActionContextRegistry {
+    /**
+     * A [RunfilesTree] implementation that wraps another one while overriding the path it
+     * should be materialized at.
+     */
+    private class OverriddenPathRunfilesTree(wrapped: RunfilesTree, execPath: PathFragment?) : RunfilesTree {
+        private val execPath: PathFragment?
+        private val wrapped: RunfilesTree
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.analysis.SymlinkEntry;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.RunfileSymlinksMode;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.util.CommandDescriptionForm;
-import com.google.devtools.build.lib.util.CommandFailureUtils;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.common.options.OptionsProvider;
-import java.io.Closeable;
-import java.io.IOException;
-import java.util.Map;
-import java.util.SortedMap;
-import javax.annotation.Nullable;
+        init {
+            this.wrapped = wrapped
+            this.execPath = execPath
+        }
 
-/** A class that groups services in the scope of the action. Like the FileOutErr object. */
-public class ActionExecutionContext implements Closeable, ActionContext.ActionContextRegistry {
+        override fun getExecPath(): PathFragment? {
+            return execPath
+        }
 
-  /**
-   * A {@link RunfilesTree} implementation that wraps another one while overriding the path it
-   * should be materialized at.
-   */
-  private static class OverriddenPathRunfilesTree implements RunfilesTree {
-    private final PathFragment execPath;
-    private final RunfilesTree wrapped;
+        override fun getMapping(): SortedMap<PathFragment?, Artifact?>? {
+            return wrapped.getMapping()
+        }
 
-    private OverriddenPathRunfilesTree(RunfilesTree wrapped, PathFragment execPath) {
-      this.wrapped = wrapped;
-      this.execPath = execPath;
+        override fun getArtifacts(): NestedSet<Artifact?>? {
+            return wrapped.getArtifacts()
+        }
+
+        override fun getSymlinksMode(): RunfileSymlinksMode? {
+            return wrapped.getSymlinksMode()
+        }
+
+        override fun isBuildRunfileLinks(): Boolean {
+            return wrapped.isBuildRunfileLinks()
+        }
+
+        override fun getWorkspaceName(): String? {
+            return wrapped.getWorkspaceName()
+        }
+
+        override fun getArtifactsAtCanonicalLocationsForLogging(): NestedSet<Artifact?>? {
+            return wrapped.getArtifactsAtCanonicalLocationsForLogging()
+        }
+
+        override fun getEmptyFilenamesForLogging(): Iterable<PathFragment?>? {
+            return wrapped.getEmptyFilenamesForLogging()
+        }
+
+        override fun getSymlinksForLogging(): NestedSet<SymlinkEntry?>? {
+            return wrapped.getSymlinksForLogging()
+        }
+
+        override fun getRootSymlinksForLogging(): NestedSet<SymlinkEntry?>? {
+            return wrapped.getRootSymlinksForLogging()
+        }
+
+        override fun getRepoMappingManifestForLogging(): Artifact? {
+            return wrapped.getRepoMappingManifestForLogging()
+        }
+
+        override fun isMappingCached(): Boolean {
+            return wrapped.isMappingCached()
+        }
+
+        override fun fingerprint(
+            actionKeyContext: ActionKeyContext?, fp: Fingerprint?, digestAbsolutePaths: Boolean
+        ) {
+            wrapped.fingerprint(actionKeyContext, fp, digestAbsolutePaths)
+        }
     }
 
-    @Override
-    public PathFragment getExecPath() {
-      return execPath;
+    /**
+     * An [InputMetadataProvider] wrapping another while overriding the materialization path of
+     * a chosen runfiles tree.
+     * 
+     * 
+     * The choice is made by passing in the runfiles tree artifact which represents the tree whose
+     * path is is to be overridden.
+     */
+    private class OverriddenRunfilesPathInputMetadataProvider
+        (wrapped: InputMetadataProvider, wrappedRunfilesArtifact: ActionInput, execPath: PathFragment?) :
+        InputMetadataProvider {
+        private val wrapped: InputMetadataProvider
+        private val wrappedRunfilesArtifact: ActionInput
+        private val overriddenTree: OverriddenPathRunfilesTree
+
+        init {
+            this.wrapped = wrapped
+            this.wrappedRunfilesArtifact = wrappedRunfilesArtifact
+            this.overriddenTree =
+                OverriddenPathRunfilesTree(
+                    wrapped.getRunfilesMetadata(wrappedRunfilesArtifact).getRunfilesTree(), execPath
+                )
+        }
+
+        @Throws(java.lang.InterruptedException::class, IOException::class, MissingDepExecException::class)
+        override fun getInputMetadataChecked(input: ActionInput?): FileArtifactValue? {
+            return wrapped.getInputMetadataChecked(input)
+        }
+
+        override fun getTreeMetadata(actionInput: ActionInput?): TreeArtifactValue? {
+            return wrapped.getTreeMetadata(actionInput)
+        }
+
+        override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+            return wrapped.getEnclosingTreeMetadata(execPath)
+        }
+
+        override fun getInput(execPath: PathFragment?): ActionInput? {
+            return wrapped.getInput(execPath)
+        }
+
+        override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+            return wrapped.getFileset(input)
+        }
+
+        override fun getFilesets(): MutableMap<Artifact?, FilesetOutputTree?>? {
+            return wrapped.getFilesets()
+        }
+
+        override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+            val original: RunfilesArtifactValue? = wrapped.getRunfilesMetadata(input)
+            if (wrappedRunfilesArtifact == input) {
+                return original.withOverriddenRunfilesTree(overriddenTree)
+            } else {
+                return original
+            }
+        }
+
+        override fun getRunfilesTrees(): com.google.common.collect.ImmutableList<RunfilesTree?> {
+            return com.google.common.collect.ImmutableList.of<RunfilesTree?>(overriddenTree)
+        }
     }
 
-    @Override
-    public SortedMap<PathFragment, Artifact> getMapping() {
-      return wrapped.getMapping();
+    /** Enum for --subcommands flag  */
+    enum class ShowSubcommands(private val shouldShowSubcommands: Boolean, private val prettyPrintArgs: Boolean) {
+        TRUE(true, false), PRETTY_PRINT(true, true), FALSE(false, false)
     }
 
-    @Override
-    public NestedSet<Artifact> getArtifacts() {
-      return wrapped.getArtifacts();
+    private val executor: com.google.devtools.build.lib.actions.Executor?
+    private val inputMetadataProvider: InputMetadataProvider
+    private val actionInputPrefetcher: ActionInputPrefetcher?
+    private val actionKeyContext: ActionKeyContext?
+    private val outputMetadataStore: OutputMetadataStore
+    private val rewindingEnabled: Boolean
+    private val lostInputsCheck: LostInputsCheck
+    private val fileOutErr: FileOutErr
+    private val eventHandler: ExtendedEventHandler?
+    private val clientEnv: com.google.common.collect.ImmutableMap<String?, String?>
+    private val env: Environment?
+
+    private val actionFileSystem: FileSystem?
+
+    private var richArtifactData: RichArtifactData? = null
+
+    private val pathResolver: ArtifactPathResolver
+    private val discoveredModulesPruner: DiscoveredModulesPruner?
+    private val syscallCache: SyscallCache?
+    private val threadStateReceiverForMetrics: ThreadStateReceiver?
+    private val fileSystemSupportsInputDiscovery: Boolean
+
+    init {
+        this.inputMetadataProvider = inputMetadataProvider
+        this.actionInputPrefetcher = actionInputPrefetcher
+        this.actionKeyContext = actionKeyContext
+        this.outputMetadataStore = outputMetadataStore
+        this.rewindingEnabled = rewindingEnabled
+        this.lostInputsCheck = lostInputsCheck
+        this.fileOutErr = fileOutErr
+        this.eventHandler = eventHandler
+        this.clientEnv = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(clientEnv)
+        this.executor = executor
+        this.env = env
+        this.actionFileSystem = actionFileSystem
+        this.threadStateReceiverForMetrics = threadStateReceiverForMetrics
+        this.pathResolver = ArtifactPathResolver.Companion.createPathResolver(
+            actionFileSystem,  // executor is only ever null in testing.
+            if (executor == null) null else executor.getExecRoot()
+        )
+        this.discoveredModulesPruner = discoveredModulesPruner
+        this.syscallCache = syscallCache
+        this.fileSystemSupportsInputDiscovery = fileSystemSupportsInputDiscovery
     }
 
-    @Override
-    public RunfileSymlinksMode getSymlinksMode() {
-      return wrapped.getSymlinksMode();
-    }
-
-    @Override
-    public boolean isBuildRunfileLinks() {
-      return wrapped.isBuildRunfileLinks();
-    }
-
-    @Override
-    public String getWorkspaceName() {
-      return wrapped.getWorkspaceName();
-    }
-
-    @Override
-    public NestedSet<Artifact> getArtifactsAtCanonicalLocationsForLogging() {
-      return wrapped.getArtifactsAtCanonicalLocationsForLogging();
-    }
-
-    @Override
-    public Iterable<PathFragment> getEmptyFilenamesForLogging() {
-      return wrapped.getEmptyFilenamesForLogging();
-    }
-
-    @Override
-    public NestedSet<SymlinkEntry> getSymlinksForLogging() {
-      return wrapped.getSymlinksForLogging();
-    }
-
-    @Override
-    public NestedSet<SymlinkEntry> getRootSymlinksForLogging() {
-      return wrapped.getRootSymlinksForLogging();
-    }
-
-    @Nullable
-    @Override
-    public Artifact getRepoMappingManifestForLogging() {
-      return wrapped.getRepoMappingManifestForLogging();
-    }
-
-    @Override
-    public boolean isMappingCached() {
-      return wrapped.isMappingCached();
-    }
-
-    @Override
-    public void fingerprint(
-        ActionKeyContext actionKeyContext, Fingerprint fp, boolean digestAbsolutePaths) {
-      wrapped.fingerprint(actionKeyContext, fp, digestAbsolutePaths);
-    }
-  }
-
-  /**
-   * An {@link InputMetadataProvider} wrapping another while overriding the materialization path of
-   * a chosen runfiles tree.
-   *
-   * <p>The choice is made by passing in the runfiles tree artifact which represents the tree whose
-   * path is is to be overridden.
-   */
-  private static class OverriddenRunfilesPathInputMetadataProvider
-      implements InputMetadataProvider {
-    private final InputMetadataProvider wrapped;
-    private final ActionInput wrappedRunfilesArtifact;
-    private final OverriddenPathRunfilesTree overriddenTree;
-
-    private OverriddenRunfilesPathInputMetadataProvider(
-        InputMetadataProvider wrapped, ActionInput wrappedRunfilesArtifact, PathFragment execPath) {
-      this.wrapped = wrapped;
-      this.wrappedRunfilesArtifact = wrappedRunfilesArtifact;
-      this.overriddenTree =
-          new OverriddenPathRunfilesTree(
-              wrapped.getRunfilesMetadata(wrappedRunfilesArtifact).getRunfilesTree(), execPath);
-    }
-
-    @Nullable
-    @Override
-    public FileArtifactValue getInputMetadataChecked(ActionInput input)
-        throws InterruptedException, IOException, MissingDepExecException {
-      return wrapped.getInputMetadataChecked(input);
-    }
-
-    @Nullable
-    @Override
-    public TreeArtifactValue getTreeMetadata(ActionInput actionInput) {
-      return wrapped.getTreeMetadata(actionInput);
-    }
-
-    @Nullable
-    @Override
-    public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-      return wrapped.getEnclosingTreeMetadata(execPath);
-    }
-
-    @Nullable
-    @Override
-    public ActionInput getInput(PathFragment execPath) {
-      return wrapped.getInput(execPath);
-    }
-
-    @Nullable
-    @Override
-    public FilesetOutputTree getFileset(ActionInput input) {
-      return wrapped.getFileset(input);
-    }
-
-    @Override
-    public Map<Artifact, FilesetOutputTree> getFilesets() {
-      return wrapped.getFilesets();
-    }
-
-    @Nullable
-    @Override
-    public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-      RunfilesArtifactValue original = wrapped.getRunfilesMetadata(input);
-      if (wrappedRunfilesArtifact.equals(input)) {
-        return original.withOverriddenRunfilesTree(overriddenTree);
-      } else {
-        return original;
-      }
-    }
-
-    @Override
-    public ImmutableList<RunfilesTree> getRunfilesTrees() {
-      return ImmutableList.of(overriddenTree);
-    }
-  }
-
-  /** Enum for --subcommands flag */
-  public enum ShowSubcommands {
-    TRUE(true, false), PRETTY_PRINT(true, true), FALSE(false, false);
-
-    private final boolean shouldShowSubcommands;
-    private final boolean prettyPrintArgs;
-
-    ShowSubcommands(boolean shouldShowSubcommands, boolean prettyPrintArgs) {
-      this.shouldShowSubcommands = shouldShowSubcommands;
-      this.prettyPrintArgs = prettyPrintArgs;
-    }
-  }
-
-  private final Executor executor;
-  private final InputMetadataProvider inputMetadataProvider;
-  private final ActionInputPrefetcher actionInputPrefetcher;
-  private final ActionKeyContext actionKeyContext;
-  private final OutputMetadataStore outputMetadataStore;
-  private final boolean rewindingEnabled;
-  private final LostInputsCheck lostInputsCheck;
-  private final FileOutErr fileOutErr;
-  private final ExtendedEventHandler eventHandler;
-  private final ImmutableMap<String, String> clientEnv;
-  @Nullable private final Environment env;
-
-  @Nullable private final FileSystem actionFileSystem;
-
-  private RichArtifactData richArtifactData = null;
-
-  private final ArtifactPathResolver pathResolver;
-  private final DiscoveredModulesPruner discoveredModulesPruner;
-  private final SyscallCache syscallCache;
-  private final ThreadStateReceiver threadStateReceiverForMetrics;
-  private final boolean fileSystemSupportsInputDiscovery;
-
-  private ActionExecutionContext(
-      Executor executor,
-      InputMetadataProvider inputMetadataProvider,
-      ActionInputPrefetcher actionInputPrefetcher,
-      ActionKeyContext actionKeyContext,
-      OutputMetadataStore outputMetadataStore,
-      boolean rewindingEnabled,
-      LostInputsCheck lostInputsCheck,
-      FileOutErr fileOutErr,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv,
-      @Nullable Environment env,
-      @Nullable FileSystem actionFileSystem,
-      DiscoveredModulesPruner discoveredModulesPruner,
-      SyscallCache syscallCache,
-      ThreadStateReceiver threadStateReceiverForMetrics,
-      boolean fileSystemSupportsInputDiscovery) {
-    this.inputMetadataProvider = inputMetadataProvider;
-    this.actionInputPrefetcher = actionInputPrefetcher;
-    this.actionKeyContext = actionKeyContext;
-    this.outputMetadataStore = outputMetadataStore;
-    this.rewindingEnabled = rewindingEnabled;
-    this.lostInputsCheck = lostInputsCheck;
-    this.fileOutErr = fileOutErr;
-    this.eventHandler = eventHandler;
-    this.clientEnv = ImmutableMap.copyOf(clientEnv);
-    this.executor = executor;
-    this.env = env;
-    this.actionFileSystem = actionFileSystem;
-    this.threadStateReceiverForMetrics = threadStateReceiverForMetrics;
-    this.pathResolver = ArtifactPathResolver.createPathResolver(actionFileSystem,
-        // executor is only ever null in testing.
-        executor == null ? null : executor.getExecRoot());
-    this.discoveredModulesPruner = discoveredModulesPruner;
-    this.syscallCache = syscallCache;
-    this.fileSystemSupportsInputDiscovery = fileSystemSupportsInputDiscovery;
-  }
-
-  public ActionExecutionContext(
-      Executor executor,
-      InputMetadataProvider inputMetadataProvider,
-      ActionInputPrefetcher actionInputPrefetcher,
-      ActionKeyContext actionKeyContext,
-      OutputMetadataStore outputMetadataStore,
-      boolean rewindingEnabled,
-      LostInputsCheck lostInputsCheck,
-      FileOutErr fileOutErr,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv,
-      @Nullable FileSystem actionFileSystem,
-      DiscoveredModulesPruner discoveredModulesPruner,
-      SyscallCache syscallCache,
-      ThreadStateReceiver threadStateReceiverForMetrics) {
-    this(
+    constructor(
+        executor: com.google.devtools.build.lib.actions.Executor?,
+        inputMetadataProvider: InputMetadataProvider,
+        actionInputPrefetcher: ActionInputPrefetcher?,
+        actionKeyContext: ActionKeyContext?,
+        outputMetadataStore: OutputMetadataStore,
+        rewindingEnabled: Boolean,
+        lostInputsCheck: LostInputsCheck,
+        fileOutErr: FileOutErr,
+        eventHandler: ExtendedEventHandler?,
+        clientEnv: MutableMap<String?, String?>,
+        actionFileSystem: FileSystem?,
+        discoveredModulesPruner: DiscoveredModulesPruner?,
+        syscallCache: SyscallCache?,
+        threadStateReceiverForMetrics: ThreadStateReceiver?
+    ) : this(
         executor,
         inputMetadataProvider,
         actionInputPrefetcher,
@@ -303,326 +240,342 @@ public class ActionExecutionContext implements Closeable, ActionContext.ActionCo
         lostInputsCheck,
         fileOutErr,
         eventHandler,
-        clientEnv,
-        /* env= */ null,
-        actionFileSystem,
-        discoveredModulesPruner,
-        syscallCache,
-        threadStateReceiverForMetrics,
-        /* fileSystemSupportsInputDiscovery= */ false);
-  }
-
-  public static ActionExecutionContext forInputDiscovery(
-      Executor executor,
-      InputMetadataProvider actionInputFileCache,
-      ActionInputPrefetcher actionInputPrefetcher,
-      ActionKeyContext actionKeyContext,
-      boolean rewindingEnabled,
-      LostInputsCheck lostInputsCheck,
-      FileOutErr fileOutErr,
-      ExtendedEventHandler eventHandler,
-      Map<String, String> clientEnv,
-      Environment env,
-      @Nullable FileSystem actionFileSystem,
-      DiscoveredModulesPruner discoveredModulesPruner,
-      SyscallCache syscalls,
-      ThreadStateReceiver threadStateReceiverForMetrics,
-      boolean fileSystemSupportsInputDiscovery) {
-    return new ActionExecutionContext(
-        executor,
-        actionInputFileCache,
-        actionInputPrefetcher,
-        actionKeyContext,
+        clientEnv,  /* env= */
         null,
-        rewindingEnabled,
-        lostInputsCheck,
-        fileOutErr,
-        eventHandler,
-        clientEnv,
-        env,
-        actionFileSystem,
-        discoveredModulesPruner,
-        syscalls,
-        threadStateReceiverForMetrics,
-        fileSystemSupportsInputDiscovery);
-  }
-
-  public ActionInputPrefetcher getActionInputPrefetcher() {
-    return actionInputPrefetcher;
-  }
-
-  public InputMetadataProvider getInputMetadataProvider() {
-    return inputMetadataProvider;
-  }
-
-  public OutputMetadataStore getOutputMetadataStore() {
-    return outputMetadataStore;
-  }
-
-  public FileSystem getFileSystem() {
-    if (actionFileSystem != null) {
-      return actionFileSystem;
-    }
-    return executor.getFileSystem();
-  }
-
-  public Path getExecRoot() {
-    return actionFileSystem != null
-        ? actionFileSystem.getPath(executor.getExecRoot().asFragment())
-        : executor.getExecRoot();
-  }
-
-  @Nullable
-  public FileSystem getActionFileSystem() {
-    return actionFileSystem;
-  }
-
-  public boolean fileSystemSupportsInputDiscovery() {
-    return fileSystemSupportsInputDiscovery;
-  }
-
-  public boolean isRewindingEnabled() {
-    return rewindingEnabled;
-  }
-
-  public void checkForLostInputs() throws LostInputsActionExecutionException {
-    lostInputsCheck.checkForLostInputs();
-  }
-
-  /**
-   * Returns the path for an ActionInput.
-   *
-   * <p>Notably, in the future, we want any action-scoped artifacts to resolve paths using this
-   * method instead of {@link Artifact#getPath} because that does not allow filesystem injection.
-   *
-   * <p>TODO(shahan): cleanup {@link Action}-scoped references to {@link Artifact#getPath} and
-   * {@link Artifact#getRoot}.
-   */
-  public Path getInputPath(ActionInput input) {
-    return pathResolver.toPath(input);
-  }
-
-  public Root getRoot(Artifact artifact) {
-    return pathResolver.transformRoot(artifact.getRoot().getRoot());
-  }
-
-  public ArtifactPathResolver getPathResolver() {
-    return pathResolver;
-  }
-
-  /**
-   * Returns the command line options of the Blaze command being executed.
-   */
-  public OptionsProvider getOptions() {
-    return executor.getOptions();
-  }
-
-  public Clock getClock() {
-    return executor.getClock();
-  }
-
-  /**
-   * Returns {@link BugReporter} to use when reporting bugs, instead of {@link
-   * com.google.devtools.build.lib.bugreport.BugReport#sendBugReport}.
-   */
-  public BugReporter getBugReporter() {
-    return executor.getBugReporter();
-  }
-
-  public ExtendedEventHandler getEventHandler() {
-    return eventHandler;
-  }
-
-  public RichArtifactData getRichArtifactData() {
-    return richArtifactData;
-  }
-
-  public void setRichArtifactData(RichArtifactData richArtifactData) {
-    Preconditions.checkState(
-        this.richArtifactData == null,
-        "rich artifact data was set twice, old=%s, new=%s",
-        this.richArtifactData,
-        richArtifactData);
-    this.richArtifactData = richArtifactData;
-  }
-
-  @Override
-  @Nullable
-  public <T extends ActionContext> T getContext(Class<T> type) {
-    return executor.getContext(type);
-  }
-
-  /**
-   * Report a subcommand event to this Executor's Reporter and, if action logging is enabled, post
-   * it on its EventBus.
-   */
-  public void maybeReportSubcommand(Spawn spawn, @Nullable String spawnRunner) {
-    ShowSubcommands showSubcommands = executor.reportsSubcommands();
-    if (!showSubcommands.shouldShowSubcommands) {
-      return;
-    }
-
-    StringBuilder reason = new StringBuilder();
-    ActionOwner owner = spawn.getResourceOwner().getOwner();
-    if (owner == null) {
-      reason.append(spawn.getResourceOwner().prettyPrint());
-    } else {
-      reason.append(owner.getDescription());
-      reason.append(" [");
-      reason.append(spawn.getResourceOwner().prettyPrint());
-      reason.append(", configuration: ");
-      reason.append(owner.getConfigurationChecksum());
-      if (owner.getExecutionPlatform() != null) {
-        reason.append(", execution platform: ");
-        reason.append(owner.getExecutionPlatform().label());
-      }
-      reason.append(", mnemonic: ");
-      reason.append(spawn.getMnemonic());
-      reason.append("]");
-    }
-
-    // We print this command out in such a way that it can safely be
-    // copied+pasted as a Bourne shell command.  This is extremely valuable for
-    // debugging.
-    String message =
-        CommandFailureUtils.describeCommand(
-            CommandDescriptionForm.COMPLETE,
-            showSubcommands.prettyPrintArgs,
-            spawn.getArguments(),
-            spawn.getEnvironment(),
-            /* environmentVariablesToClear= */ null,
-            getExecRoot().getPathString(),
-            spawn.getConfigurationChecksum(),
-            spawn.getExecutionPlatformLabel(),
-            spawnRunner);
-    getEventHandler().handle(Event.of(EventKind.SUBCOMMAND, null, "# " + reason + "\n" + message));
-  }
-
-  public ImmutableMap<String, String> getClientEnv() {
-    return clientEnv;
-  }
-
-  /**
-   * Provide that {@code FileOutErr} that the action should use for redirecting the output and error
-   * stream.
-   */
-  public FileOutErr getFileOutErr() {
-    return fileOutErr;
-  }
-
-  /**
-   * Provides a mechanism for the action to request values from Skyframe while it discovers inputs.
-   */
-  public Environment getEnvironmentForDiscoveringInputs() {
-    return checkNotNull(env);
-  }
-
-  public ActionKeyContext getActionKeyContext() {
-    return actionKeyContext;
-  }
-
-  public DiscoveredModulesPruner getDiscoveredModulesPruner() {
-    return discoveredModulesPruner;
-  }
-
-  /** This only exists for loose header checking and as a helper for digest computations. */
-  public SyscallCache getSyscallCache() {
-    return syscallCache;
-  }
-
-  public ThreadStateReceiver getThreadStateReceiverForMetrics() {
-    return threadStateReceiverForMetrics;
-  }
-
-  @Override
-  public void close() throws IOException {
-    fileOutErr.close();
-  }
-
-  private ActionExecutionContext withInputMetadataProvider(
-      InputMetadataProvider newInputMetadataProvider) {
-    return new ActionExecutionContext(
-        executor,
-        newInputMetadataProvider,
-        actionInputPrefetcher,
-        actionKeyContext,
-        outputMetadataStore,
-        rewindingEnabled,
-        lostInputsCheck,
-        fileOutErr,
-        eventHandler,
-        clientEnv,
-        env,
         actionFileSystem,
         discoveredModulesPruner,
         syscallCache,
-        threadStateReceiverForMetrics,
-        fileSystemSupportsInputDiscovery);
-  }
+        threadStateReceiverForMetrics,  /* fileSystemSupportsInputDiscovery= */
+        false
+    )
 
-  /**
-   * Creates a new {@link ActionExecutionContext} whose {@link InputMetadataProvider} has the given
-   * {@link Artifact}s as inputs.
-   *
-   * <p>Each {@link Artifact} must be an output of the current {@link ActionExecutionContext} and it
-   * must already have been built.
-   */
-  public ActionExecutionContext withOutputsAsInputs(Iterable<Artifact> outputs)
-      throws IOException, InterruptedException {
-    ImmutableMap.Builder<ActionInput, FileArtifactValue> additionalInputMap =
-        ImmutableMap.builder();
-
-    for (Artifact output : outputs) {
-      additionalInputMap.put(output, outputMetadataStore.getOutputMetadata(output));
+    fun getActionInputPrefetcher(): ActionInputPrefetcher? {
+        return actionInputPrefetcher
     }
 
-    StaticInputMetadataProvider additionalInputMetadata =
-        new StaticInputMetadataProvider(additionalInputMap.buildOrThrow());
+    fun getInputMetadataProvider(): InputMetadataProvider {
+        return inputMetadataProvider
+    }
 
-    return withInputMetadataProvider(
-        new DelegatingPairInputMetadataProvider(additionalInputMetadata, inputMetadataProvider));
-  }
+    fun getOutputMetadataStore(): OutputMetadataStore {
+        return outputMetadataStore
+    }
 
-  public ActionExecutionContext withOverriddenRunfilesPath(
-      ActionInput overriddenRunfilesArtifact, PathFragment overrideRunfilesPath) {
-    return withInputMetadataProvider(
-        new OverriddenRunfilesPathInputMetadataProvider(
-            inputMetadataProvider, overriddenRunfilesArtifact, overrideRunfilesPath));
-  }
+    fun getFileSystem(): FileSystem? {
+        if (actionFileSystem != null) {
+            return actionFileSystem
+        }
+        return executor.getFileSystem()
+    }
 
-  /**
-   * Allows us to create a new context that overrides the FileOutErr with another one. This is
-   * useful for muting the output for example.
-   */
-  public ActionExecutionContext withFileOutErr(FileOutErr fileOutErr) {
-    return new ActionExecutionContext(
-        executor,
-        inputMetadataProvider,
-        actionInputPrefetcher,
-        actionKeyContext,
-        outputMetadataStore,
-        rewindingEnabled,
-        lostInputsCheck,
-        fileOutErr,
-        eventHandler,
-        clientEnv,
-        env,
-        actionFileSystem,
-        discoveredModulesPruner,
-        syscallCache,
-        threadStateReceiverForMetrics,
-        fileSystemSupportsInputDiscovery);
-  }
+    fun getExecRoot(): Path? {
+        return if (actionFileSystem != null)
+            actionFileSystem.getPath(executor.getExecRoot().asFragment())
+        else
+            executor.getExecRoot()
+    }
 
-  /**
-   * A way of checking whether any lost inputs have been detected during the execution of this
-   * action.
-   */
-  public interface LostInputsCheck {
+    fun getActionFileSystem(): FileSystem? {
+        return actionFileSystem
+    }
 
-    LostInputsCheck NONE = () -> {};
+    fun fileSystemSupportsInputDiscovery(): Boolean {
+        return fileSystemSupportsInputDiscovery
+    }
 
-    /** Throws if inputs have been lost. */
-    void checkForLostInputs() throws LostInputsActionExecutionException;
-  }
+    fun isRewindingEnabled(): Boolean {
+        return rewindingEnabled
+    }
+
+    @Throws(LostInputsActionExecutionException::class)
+    fun checkForLostInputs() {
+        lostInputsCheck.checkForLostInputs()
+    }
+
+    /**
+     * Returns the path for an ActionInput.
+     * 
+     * 
+     * Notably, in the future, we want any action-scoped artifacts to resolve paths using this
+     * method instead of [Artifact.getPath] because that does not allow filesystem injection.
+     * 
+     * 
+     * TODO(shahan): cleanup [Action]-scoped references to [Artifact.getPath] and
+     * [Artifact.getRoot].
+     */
+    fun getInputPath(input: ActionInput?): Path? {
+        return pathResolver.toPath(input)
+    }
+
+    fun getRoot(artifact: Artifact): Root? {
+        return pathResolver.transformRoot(artifact.getRoot().getRoot())
+    }
+
+    fun getPathResolver(): ArtifactPathResolver {
+        return pathResolver
+    }
+
+    /**
+     * Returns the command line options of the Blaze command being executed.
+     */
+    fun getOptions(): OptionsProvider? {
+        return executor.getOptions()
+    }
+
+    fun getClock(): com.google.devtools.build.lib.clock.Clock? {
+        return executor.getClock()
+    }
+
+    /**
+     * Returns [BugReporter] to use when reporting bugs, instead of [ ][com.google.devtools.build.lib.bugreport.BugReport.sendBugReport].
+     */
+    fun getBugReporter(): BugReporter? {
+        return executor.getBugReporter()
+    }
+
+    fun getEventHandler(): ExtendedEventHandler? {
+        return eventHandler
+    }
+
+    fun getRichArtifactData(): RichArtifactData? {
+        return richArtifactData
+    }
+
+    fun setRichArtifactData(richArtifactData: RichArtifactData?) {
+        com.google.common.base.Preconditions.checkState(
+            this.richArtifactData == null,
+            "rich artifact data was set twice, old=%s, new=%s",
+            this.richArtifactData,
+            richArtifactData
+        )
+        this.richArtifactData = richArtifactData
+    }
+
+    override fun <T : ActionContext?> getContext(type: java.lang.Class<T?>?): T? {
+        return executor.getContext<T?>(type)
+    }
+
+    /**
+     * Report a subcommand event to this Executor's Reporter and, if action logging is enabled, post
+     * it on its EventBus.
+     */
+    fun maybeReportSubcommand(spawn: Spawn, spawnRunner: String?) {
+        val showSubcommands: ShowSubcommands = executor.reportsSubcommands()
+        if (!showSubcommands.shouldShowSubcommands) {
+            return
+        }
+
+        val reason: java.lang.StringBuilder = java.lang.StringBuilder()
+        val owner: ActionOwner? = spawn.getResourceOwner().getOwner()
+        if (owner == null) {
+            reason.append(spawn.getResourceOwner().prettyPrint())
+        } else {
+            reason.append(owner.getDescription())
+            reason.append(" [")
+            reason.append(spawn.getResourceOwner().prettyPrint())
+            reason.append(", configuration: ")
+            reason.append(owner.getConfigurationChecksum())
+            if (owner.getExecutionPlatform() != null) {
+                reason.append(", execution platform: ")
+                reason.append(owner.getExecutionPlatform().label())
+            }
+            reason.append(", mnemonic: ")
+            reason.append(spawn.getMnemonic())
+            reason.append("]")
+        }
+
+        // We print this command out in such a way that it can safely be
+        // copied+pasted as a Bourne shell command.  This is extremely valuable for
+        // debugging.
+        val message: String? =
+            CommandFailureUtils.describeCommand(
+                CommandDescriptionForm.COMPLETE,
+                showSubcommands.prettyPrintArgs,
+                spawn.getArguments(),
+                spawn.getEnvironment(),  /* environmentVariablesToClear= */
+                null,
+                getExecRoot().getPathString(),
+                spawn.getConfigurationChecksum(),
+                spawn.getExecutionPlatformLabel(),
+                spawnRunner
+            )
+        getEventHandler().handle(Event.of(EventKind.SUBCOMMAND, null, "# " + reason + "\n" + message))
+    }
+
+    fun getClientEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return clientEnv
+    }
+
+    /**
+     * Provide that `FileOutErr` that the action should use for redirecting the output and error
+     * stream.
+     */
+    fun getFileOutErr(): FileOutErr {
+        return fileOutErr
+    }
+
+    /**
+     * Provides a mechanism for the action to request values from Skyframe while it discovers inputs.
+     */
+    fun getEnvironmentForDiscoveringInputs(): Environment? {
+        return com.google.common.base.Preconditions.checkNotNull<Environment?>(env)
+    }
+
+    fun getActionKeyContext(): ActionKeyContext? {
+        return actionKeyContext
+    }
+
+    fun getDiscoveredModulesPruner(): DiscoveredModulesPruner? {
+        return discoveredModulesPruner
+    }
+
+    /** This only exists for loose header checking and as a helper for digest computations.  */
+    fun getSyscallCache(): SyscallCache? {
+        return syscallCache
+    }
+
+    fun getThreadStateReceiverForMetrics(): ThreadStateReceiver? {
+        return threadStateReceiverForMetrics
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        fileOutErr.close()
+    }
+
+    private fun withInputMetadataProvider(
+        newInputMetadataProvider: InputMetadataProvider
+    ): ActionExecutionContext {
+        return ActionExecutionContext(
+            executor,
+            newInputMetadataProvider,
+            actionInputPrefetcher,
+            actionKeyContext,
+            outputMetadataStore,
+            rewindingEnabled,
+            lostInputsCheck,
+            fileOutErr,
+            eventHandler,
+            clientEnv,
+            env,
+            actionFileSystem,
+            discoveredModulesPruner,
+            syscallCache,
+            threadStateReceiverForMetrics,
+            fileSystemSupportsInputDiscovery
+        )
+    }
+
+    /**
+     * Creates a new [ActionExecutionContext] whose [InputMetadataProvider] has the given
+     * [Artifact]s as inputs.
+     * 
+     * 
+     * Each [Artifact] must be an output of the current [ActionExecutionContext] and it
+     * must already have been built.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun withOutputsAsInputs(outputs: Iterable<Artifact?>): ActionExecutionContext {
+        val additionalInputMap: com.google.common.collect.ImmutableMap.Builder<ActionInput?, FileArtifactValue?> =
+            com.google.common.collect.ImmutableMap.builder<ActionInput?, FileArtifactValue?>()
+
+        for (output in outputs) {
+            additionalInputMap.put(output, outputMetadataStore.getOutputMetadata(output))
+        }
+
+        val additionalInputMetadata: StaticInputMetadataProvider =
+            StaticInputMetadataProvider(additionalInputMap.buildOrThrow())
+
+        return withInputMetadataProvider(
+            DelegatingPairInputMetadataProvider(additionalInputMetadata, inputMetadataProvider)
+        )
+    }
+
+    fun withOverriddenRunfilesPath(
+        overriddenRunfilesArtifact: ActionInput, overrideRunfilesPath: PathFragment?
+    ): ActionExecutionContext {
+        return withInputMetadataProvider(
+            OverriddenRunfilesPathInputMetadataProvider(
+                inputMetadataProvider, overriddenRunfilesArtifact, overrideRunfilesPath
+            )
+        )
+    }
+
+    /**
+     * Allows us to create a new context that overrides the FileOutErr with another one. This is
+     * useful for muting the output for example.
+     */
+    fun withFileOutErr(fileOutErr: FileOutErr): ActionExecutionContext {
+        return ActionExecutionContext(
+            executor,
+            inputMetadataProvider,
+            actionInputPrefetcher,
+            actionKeyContext,
+            outputMetadataStore,
+            rewindingEnabled,
+            lostInputsCheck,
+            fileOutErr,
+            eventHandler,
+            clientEnv,
+            env,
+            actionFileSystem,
+            discoveredModulesPruner,
+            syscallCache,
+            threadStateReceiverForMetrics,
+            fileSystemSupportsInputDiscovery
+        )
+    }
+
+    /**
+     * A way of checking whether any lost inputs have been detected during the execution of this
+     * action.
+     */
+    interface LostInputsCheck {
+        /** Throws if inputs have been lost.  */
+        @Throws(LostInputsActionExecutionException::class)
+        fun checkForLostInputs()
+
+        companion object {
+            val NONE: LostInputsCheck = LostInputsCheck {}
+        }
+    }
+
+    companion object {
+        fun forInputDiscovery(
+            executor: com.google.devtools.build.lib.actions.Executor?,
+            actionInputFileCache: InputMetadataProvider,
+            actionInputPrefetcher: ActionInputPrefetcher?,
+            actionKeyContext: ActionKeyContext?,
+            rewindingEnabled: Boolean,
+            lostInputsCheck: LostInputsCheck,
+            fileOutErr: FileOutErr,
+            eventHandler: ExtendedEventHandler?,
+            clientEnv: MutableMap<String?, String?>,
+            env: Environment?,
+            actionFileSystem: FileSystem?,
+            discoveredModulesPruner: DiscoveredModulesPruner?,
+            syscalls: SyscallCache?,
+            threadStateReceiverForMetrics: ThreadStateReceiver?,
+            fileSystemSupportsInputDiscovery: Boolean
+        ): ActionExecutionContext {
+            return ActionExecutionContext(
+                executor,
+                actionInputFileCache,
+                actionInputPrefetcher,
+                actionKeyContext,
+                null,
+                rewindingEnabled,
+                lostInputsCheck,
+                fileOutErr,
+                eventHandler,
+                clientEnv,
+                env,
+                actionFileSystem,
+                discoveredModulesPruner,
+                syscalls,
+                threadStateReceiverForMetrics,
+                fileSystemSupportsInputDiscovery
+            )
+        }
+    }
 }

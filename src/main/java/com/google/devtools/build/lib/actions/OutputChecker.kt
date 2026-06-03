@@ -11,21 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
+
+import com.google.devtools.build.lib.actions.FileArtifactValue
 
 /**
  * An interface used to check whether an output should be downloaded or its metadata revalidated
  * when it is stored with a bounded lifetime.
  */
-public interface OutputChecker {
-  static final OutputChecker TRUST_ALL = (file, metadata) -> true;
-  static final OutputChecker TRUST_LOCAL_ONLY = (file, metadata) -> !metadata.isRemote();
+interface OutputChecker {
+    /** Returns whether the given output should be downloaded.  */
+    fun shouldDownloadOutput(output: ActionInput?, metadata: FileArtifactValue?): Boolean {
+        return !shouldTrustMetadata(output, metadata)
+    }
 
-  /** Returns whether the given output should be downloaded. */
-  default boolean shouldDownloadOutput(ActionInput output, FileArtifactValue metadata) {
-    return !shouldTrustMetadata(output, metadata);
-  }
+    /** Returns whether the given metadata should be trusted.  */
+    fun shouldTrustMetadata(file: ActionInput?, metadata: FileArtifactValue?): Boolean
 
-  /** Returns whether the given metadata should be trusted. */
-  boolean shouldTrustMetadata(ActionInput file, FileArtifactValue metadata);
+    companion object {
+        val TRUST_ALL: OutputChecker = OutputChecker { file: ActionInput?, metadata: FileArtifactValue? -> true }
+        val TRUST_LOCAL_ONLY: OutputChecker =
+            OutputChecker { file: ActionInput?, metadata: FileArtifactValue? -> !metadata.isRemote() }
+    }
 }

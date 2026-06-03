@@ -11,131 +11,126 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac
 
-package com.google.devtools.build.buildjar.javac;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin;
-import com.google.protobuf.ByteString;
-import java.nio.file.Path;
-import java.util.OptionalInt;
-import javax.annotation.Nullable;
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin
+import com.google.protobuf.ByteString
+import java.nio.file.Path
+import java.util.OptionalInt
 
 /**
- * Arguments to a single compilation performed by {@link BlazeJavacMain}.
- *
- * <p>This includes a subset of arguments to {@link javax.tools.JavaCompiler#getTask} and {@link
- * javax.tools.StandardFileManager#setLocation} for a single compilation, with sensible defaults and
+ * Arguments to a single compilation performed by [BlazeJavacMain].
+ * 
+ * 
+ * This includes a subset of arguments to [javax.tools.JavaCompiler.getTask] and [ ][javax.tools.StandardFileManager.setLocation] for a single compilation, with sensible defaults and
  * a builder.
  */
 @AutoValue
-public abstract class BlazeJavacArguments {
-  /** The sources to compile. */
-  public abstract ImmutableList<Path> sourceFiles();
+abstract class BlazeJavacArguments {
+    /** The sources to compile.  */
+    abstract fun sourceFiles(): com.google.common.collect.ImmutableList<Path?>?
 
-  /** Javac options, not including location settings. */
-  public abstract ImmutableList<String> javacOptions();
+    /** Javac options, not including location settings.  */
+    abstract fun javacOptions(): com.google.common.collect.ImmutableList<String?>?
 
-  /** Blaze-specific Javac options. */
-  public abstract ImmutableList<String> blazeJavacOptions();
+    /** Blaze-specific Javac options.  */
+    abstract fun blazeJavacOptions(): com.google.common.collect.ImmutableList<String?>?
 
-  /** The compilation classpath. */
-  public abstract ImmutableList<Path> classPath();
+    /** The compilation classpath.  */
+    abstract fun classPath(): com.google.common.collect.ImmutableList<Path?>?
 
-  /** The compilation bootclasspath. */
-  public abstract ImmutableList<Path> bootClassPath();
+    /** The compilation bootclasspath.  */
+    abstract fun bootClassPath(): com.google.common.collect.ImmutableList<Path?>?
 
-  @Nullable
-  public abstract Path system();
+    abstract fun system(): Path?
 
-  /** The compilation source path. */
-  public abstract ImmutableList<Path> sourcePath();
+    /** The compilation source path.  */
+    abstract fun sourcePath(): com.google.common.collect.ImmutableList<Path?>?
 
-  /** The classpath to load processors from. */
-  public abstract ImmutableList<Path> processorPath();
+    /** The classpath to load processors from.  */
+    abstract fun processorPath(): com.google.common.collect.ImmutableList<Path?>?
 
-  /** The compiler plugins. */
-  public abstract ImmutableList<BlazeJavaCompilerPlugin> plugins();
+    /** The compiler plugins.  */
+    abstract fun plugins(): com.google.common.collect.ImmutableList<BlazeJavaCompilerPlugin?>?
 
-  /** The class output directory (-d). */
-  public abstract Path classOutput();
+    /** The class output directory (-d).  */
+    abstract fun classOutput(): Path?
 
-  /** The native header output directory (-h). */
-  @Nullable
-  public abstract Path nativeHeaderOutput();
+    /** The native header output directory (-h).  */
+    abstract fun nativeHeaderOutput(): Path?
 
-  /** The generated source output directory (-s). */
-  @Nullable
-  public abstract Path sourceOutput();
+    /** The generated source output directory (-s).  */
+    abstract fun sourceOutput(): Path?
 
-  /** Stop compiling after the first diagnostic that could cause transitive classpath fallback. */
-  public abstract boolean failFast();
+    /** Stop compiling after the first diagnostic that could cause transitive classpath fallback.  */
+    abstract fun failFast(): Boolean
 
-  /** The Inputs' path and digest received from a WorkRequest */
-  public abstract ImmutableMap<String, ByteString> inputsAndDigest();
+    /** The Inputs' path and digest received from a WorkRequest  */
+    abstract fun inputsAndDigest(): com.google.common.collect.ImmutableMap<String?, ByteString?>?
 
-  public abstract OptionalInt requestId();
+    abstract fun requestId(): OptionalInt?
 
-  /**
-   * The working directory for the compilation relative to which paths should be emitted in
-   * diagnostics.
-   */
-  public abstract Path workDir();
+    /**
+     * The working directory for the compilation relative to which paths should be emitted in
+     * diagnostics.
+     */
+    abstract fun workDir(): Path?
 
-  public static Builder builder() {
-    return new AutoValue_BlazeJavacArguments.Builder()
-        .classPath(ImmutableList.of())
-        .bootClassPath(ImmutableList.of())
-        .javacOptions(ImmutableList.of())
-        .blazeJavacOptions(ImmutableList.of())
-        .sourceFiles(ImmutableList.of())
-        .sourcePath(ImmutableList.of())
-        .sourceOutput(null)
-        .processorPath(ImmutableList.of())
-        .plugins(ImmutableList.of())
-        .failFast(false)
-        .inputsAndDigest(ImmutableMap.of())
-        .requestId(OptionalInt.empty())
-        .workDir(Path.of(""));
-  }
+    /** [BlazeJavacArguments]Builder.  */
+    @AutoValue.Builder
+    interface Builder {
+        fun classPath(classPath: com.google.common.collect.ImmutableList<Path?>?): Builder?
 
-  /** {@link BlazeJavacArguments}Builder. */
-  @AutoValue.Builder
-  public interface Builder {
-    Builder classPath(ImmutableList<Path> classPath);
+        fun classOutput(classOutput: Path?): Builder?
 
-    Builder classOutput(Path classOutput);
+        fun nativeHeaderOutput(nativeHeaderOutput: Path?): Builder?
 
-    Builder nativeHeaderOutput(Path nativeHeaderOutput);
+        fun bootClassPath(bootClassPath: com.google.common.collect.ImmutableList<Path?>?): Builder?
 
-    Builder bootClassPath(ImmutableList<Path> bootClassPath);
+        fun system(system: Path?): Builder?
 
-    Builder system(Path system);
+        fun javacOptions(javacOptions: com.google.common.collect.ImmutableList<String?>?): Builder?
 
-    Builder javacOptions(ImmutableList<String> javacOptions);
+        fun blazeJavacOptions(javacOptions: com.google.common.collect.ImmutableList<String?>?): Builder?
 
-    Builder blazeJavacOptions(ImmutableList<String> javacOptions);
+        fun sourcePath(sourcePath: com.google.common.collect.ImmutableList<Path?>?): Builder?
 
-    Builder sourcePath(ImmutableList<Path> sourcePath);
+        fun sourceFiles(sourceFiles: com.google.common.collect.ImmutableList<Path?>?): Builder?
 
-    Builder sourceFiles(ImmutableList<Path> sourceFiles);
+        fun sourceOutput(sourceOutput: Path?): Builder?
 
-    Builder sourceOutput(Path sourceOutput);
+        fun processorPath(processorPath: com.google.common.collect.ImmutableList<Path?>?): Builder?
 
-    Builder processorPath(ImmutableList<Path> processorPath);
+        fun plugins(plugins: com.google.common.collect.ImmutableList<BlazeJavaCompilerPlugin?>?): Builder?
 
-    Builder plugins(ImmutableList<BlazeJavaCompilerPlugin> plugins);
+        fun failFast(failFast: Boolean): Builder?
 
-    Builder failFast(boolean failFast);
+        fun inputsAndDigest(inputsAndDigest: com.google.common.collect.ImmutableMap<String?, ByteString?>?): Builder?
 
-    Builder inputsAndDigest(ImmutableMap<String, ByteString> inputsAndDigest);
+        fun requestId(requestId: OptionalInt?): Builder?
 
-    Builder requestId(OptionalInt requestId);
+        fun workDir(workDir: Path?): Builder?
 
-    Builder workDir(Path workDir);
+        fun build(): BlazeJavacArguments?
+    }
 
-    BlazeJavacArguments build();
-  }
+    companion object {
+        fun builder(): Builder {
+            return Builder()
+                .classPath(com.google.common.collect.ImmutableList.of<E?>())
+                .bootClassPath(com.google.common.collect.ImmutableList.of<E?>())
+                .javacOptions(com.google.common.collect.ImmutableList.of<E?>())
+                .blazeJavacOptions(com.google.common.collect.ImmutableList.of<E?>())
+                .sourceFiles(com.google.common.collect.ImmutableList.of<E?>())
+                .sourcePath(com.google.common.collect.ImmutableList.of<E?>())
+                .sourceOutput(null)
+                .processorPath(com.google.common.collect.ImmutableList.of<E?>())
+                .plugins(com.google.common.collect.ImmutableList.of<E?>())
+                .failFast(false)
+                .inputsAndDigest(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .requestId(OptionalInt.empty())
+                .workDir(Path.of(""))
+        }
+    }
 }

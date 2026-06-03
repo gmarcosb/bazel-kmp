@@ -11,77 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailAction.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Fingerprint;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder
 
 /**
  * FailAction is an Action that always fails to execute. (Used as scaffolding for rules we haven't
  * yet implemented. Also useful for testing.)
  */
 @Immutable
-public final class FailAction extends AbstractAction {
+class FailAction(owner: ActionOwner?, outputs: Iterable<Artifact?>?, errorMessage: String?, failActionCode: Code?) :
+    com.google.devtools.build.lib.actions.AbstractAction(
+        owner,
+        NestedSetBuilder.emptySet(Order.STABLE_ORDER),
+        outputs
+    ) {
+    private val failureDetail: FailureDetail
 
-  private static final String GUID = "626cb78a-810f-4af3-979c-ee194955f04c";
+    init {
+        this.failureDetail =
+            FailureDetail.newBuilder()
+                .setMessage(errorMessage + " caused by " + getOwner().getLabel())
+                .setFailAction(FailureDetails.FailAction.newBuilder().setCode(failActionCode).build())
+                .build()
+    }
 
-  private final FailureDetail failureDetail;
+    override fun getPrimaryInput(): Artifact? {
+        return null
+    }
 
-  public FailAction(
-      ActionOwner owner, Iterable<Artifact> outputs, String errorMessage, Code failActionCode) {
-    super(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), outputs);
-    this.failureDetail =
-        FailureDetail.newBuilder()
-            .setMessage(errorMessage + " caused by " + getOwner().getLabel())
-            .setFailAction(FailureDetails.FailAction.newBuilder().setCode(failActionCode).build())
-            .build();
-  }
+    fun getErrorMessage(): String {
+        return failureDetail.getMessage()
+    }
 
-  @Nullable
-  @Override
-  public Artifact getPrimaryInput() {
-    return null;
-  }
+    @Throws(ActionExecutionException::class)
+    override fun execute(actionExecutionContext: ActionExecutionContext?): ActionResult? {
+        throw ActionExecutionException(
+            failureDetail.getMessage(), this, false, DetailedExitCode.of(failureDetail)
+        )
+    }
 
-  public String getErrorMessage() {
-    return failureDetail.getMessage();
-  }
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addString(GUID)
+        // Should never be cached, but just be safe.
+        fp.addString(getErrorMessage())
+    }
 
-  @Override
-  public ActionResult execute(ActionExecutionContext actionExecutionContext)
-      throws ActionExecutionException {
-    throw new ActionExecutionException(
-        failureDetail.getMessage(), this, false, DetailedExitCode.of(failureDetail));
-  }
+    override fun getRawProgressMessage(): String {
+        return ("Reporting failed target "
+                + getOwner().getLabel()
+                + " located at "
+                + getOwner().getLocation())
+    }
 
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    fp.addString(GUID);
-    // Should never be cached, but just be safe.
-    fp.addString(getErrorMessage());
-  }
+    override fun getMnemonic(): String {
+        return "Fail"
+    }
 
-  @Override
-  protected String getRawProgressMessage() {
-    return "Reporting failed target "
-        + getOwner().getLabel()
-        + " located at "
-        + getOwner().getLocation();
-  }
-
-  @Override
-  public String getMnemonic() {
-    return "Fail";
-  }
+    companion object {
+        private const val GUID = "626cb78a-810f-4af3-979c-ee194955f04c"
+    }
 }

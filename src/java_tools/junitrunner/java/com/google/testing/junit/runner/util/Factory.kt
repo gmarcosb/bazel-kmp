@@ -11,10 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import java.util.function.Supplier;
-
-/** An interface for factory implementations. */
-public interface Factory<T> extends Supplier<T> {}
+/** An interface for factory implementations.  */
+interface Factory<T> : java.util.function.Supplier<T?>

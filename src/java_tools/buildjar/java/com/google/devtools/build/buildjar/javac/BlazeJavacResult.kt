@@ -11,87 +11,109 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar.javac
 
-package com.google.devtools.build.buildjar.javac;
+import com.google.devtools.build.buildjar.javac.BlazeJavacResult
+import com.google.devtools.build.buildjar.javac.FormattedDiagnostic
+import com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule.Builder.build
+import com.google.devtools.build.buildjar.javac.plugins.processing.AnnotationProcessingModule.Builder.build
+import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics
+import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics.Builder.build
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.Builder.build
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.buildjar.javac.statistics.BlazeJavacStatistics;
+/** The result of a single compilation performed by [BlazeJavacMain].  */
+class BlazeJavacResult private constructor(
+    private val status: Status?,
+    diagnostics: com.google.common.collect.ImmutableList<FormattedDiagnostic?>?,
+    output: String?,
+    statistics: BlazeJavacStatistics?
+) {
+    /** The compilation result.  */
+    enum class Status {
+        OK,
+        ERROR,
+        CRASH,
+        REQUIRES_FALLBACK,
+        CANCELLED,
+    }
 
-/** The result of a single compilation performed by {@link BlazeJavacMain}. */
-public class BlazeJavacResult {
-  /** The compilation result. */
-  public enum Status {
-    OK,
-    ERROR,
-    CRASH,
-    REQUIRES_FALLBACK,
-    CANCELLED,
-  }
+    private val diagnostics: com.google.common.collect.ImmutableList<FormattedDiagnostic?>?
+    private val output: String?
+    private val statistics: BlazeJavacStatistics?
 
-  private final Status status;
-  private final ImmutableList<FormattedDiagnostic> diagnostics;
-  private final String output;
-  private final BlazeJavacStatistics statistics;
+    fun withStatistics(statistics: BlazeJavacStatistics?): BlazeJavacResult {
+        return BlazeJavacResult(status, diagnostics, output, statistics)
+    }
 
-  public static BlazeJavacResult ok() {
-    return createFullResult(Status.OK, ImmutableList.of(), "", BlazeJavacStatistics.empty());
-  }
+    init {
+        this.diagnostics = diagnostics
+        this.output = output
+        this.statistics = statistics
+    }
 
-  public static BlazeJavacResult error(String message) {
-    return createFullResult(
-        Status.ERROR, ImmutableList.of(), message, BlazeJavacStatistics.empty());
-  }
+    val isOk: Boolean
+        get() = status == com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status.OK
 
-  public static BlazeJavacResult cancelled(String message) {
-    return createFullResult(
-        Status.CANCELLED, ImmutableList.of(), message, BlazeJavacStatistics.empty());
-  }
+    fun status(): Status? {
+        return status
+    }
 
-  public static BlazeJavacResult fallback() {
-    return createFullResult(
-        Status.REQUIRES_FALLBACK, ImmutableList.of(), "", BlazeJavacStatistics.empty());
-  }
+    fun diagnostics(): com.google.common.collect.ImmutableList<FormattedDiagnostic?>? {
+        return diagnostics
+    }
 
-  public BlazeJavacResult withStatistics(BlazeJavacStatistics statistics) {
-    return new BlazeJavacResult(status, diagnostics, output, statistics);
-  }
+    fun output(): String? {
+        return output
+    }
 
-  private BlazeJavacResult(
-      Status status,
-      ImmutableList<FormattedDiagnostic> diagnostics,
-      String output,
-      BlazeJavacStatistics statistics) {
-    this.status = status;
-    this.diagnostics = diagnostics;
-    this.output = output;
-    this.statistics = statistics;
-  }
+    fun statistics(): BlazeJavacStatistics? {
+        return statistics
+    }
 
-  public static BlazeJavacResult createFullResult(
-      Status status,
-      ImmutableList<FormattedDiagnostic> diagnostics,
-      String output,
-      BlazeJavacStatistics statistics) {
-    return new BlazeJavacResult(status, diagnostics, output, statistics);
-  }
+    companion object {
+        fun ok(): BlazeJavacResult {
+            return createFullResult(
+                com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status.OK,
+                com.google.common.collect.ImmutableList.of<FormattedDiagnostic?>(),
+                "",
+                BlazeJavacStatistics.empty()
+            )
+        }
 
-  public boolean isOk() {
-    return status == Status.OK;
-  }
+        fun error(message: String?): BlazeJavacResult {
+            return createFullResult(
+                com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status.ERROR,
+                com.google.common.collect.ImmutableList.of<FormattedDiagnostic?>(),
+                message,
+                BlazeJavacStatistics.empty()
+            )
+        }
 
-  public Status status() {
-    return status;
-  }
+        fun cancelled(message: String?): BlazeJavacResult {
+            return createFullResult(
+                com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status.CANCELLED,
+                com.google.common.collect.ImmutableList.of<FormattedDiagnostic?>(),
+                message,
+                BlazeJavacStatistics.empty()
+            )
+        }
 
-  public ImmutableList<FormattedDiagnostic> diagnostics() {
-    return diagnostics;
-  }
+        fun fallback(): BlazeJavacResult {
+            return createFullResult(
+                com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status.REQUIRES_FALLBACK,
+                com.google.common.collect.ImmutableList.of<FormattedDiagnostic?>(),
+                "",
+                BlazeJavacStatistics.empty()
+            )
+        }
 
-  public String output() {
-    return output;
-  }
-
-  public BlazeJavacStatistics statistics() {
-    return statistics;
-  }
+        fun createFullResult(
+            status: Status?,
+            diagnostics: com.google.common.collect.ImmutableList<FormattedDiagnostic?>?,
+            output: String?,
+            statistics: BlazeJavacStatistics?
+        ): BlazeJavacResult {
+            return BlazeJavacResult(status, diagnostics, output, statistics)
+        }
+    }
 }

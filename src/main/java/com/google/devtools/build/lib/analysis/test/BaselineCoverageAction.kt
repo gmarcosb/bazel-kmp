@@ -11,81 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifacts;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.actions.AbstractFileWriteAction;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.PrintWriter;
-import javax.annotation.Nullable;
+/** Generates baseline (empty) coverage for the given non-test target.  */
+@com.google.common.annotations.VisibleForTesting
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class BaselineCoverageAction private constructor(
+    owner: ActionOwner?,
+    instrumentedFiles: NestedSet<Artifact?>,
+    primaryOutput: Artifact?
+) : AbstractFileWriteAction(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), primaryOutput) {
+    private val instrumentedFiles: NestedSet<Artifact?>
 
-/** Generates baseline (empty) coverage for the given non-test target. */
-@VisibleForTesting
-@Immutable
-public final class BaselineCoverageAction extends AbstractFileWriteAction {
-  private final NestedSet<Artifact> instrumentedFiles;
+    init {
+        this.instrumentedFiles = instrumentedFiles
+    }
 
-  private BaselineCoverageAction(
-      ActionOwner owner, NestedSet<Artifact> instrumentedFiles, Artifact primaryOutput) {
-    super(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), primaryOutput);
-    this.instrumentedFiles = instrumentedFiles;
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun getInstrumentedFilesForTesting(): NestedSet<Artifact?> {
+        return instrumentedFiles
+    }
 
-  @VisibleForTesting
-  public NestedSet<Artifact> getInstrumentedFilesForTesting() {
-    return instrumentedFiles;
-  }
+    override fun getMnemonic(): String {
+        return "BaselineCoverage"
+    }
 
-  @Override
-  public String getMnemonic() {
-    return "BaselineCoverage";
-  }
+    public override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint?
+    ) {
+        // TODO(b/150305897): No UUID?
+        // TODO(b/150308417): Sort?
+        Artifacts.addToFingerprint(fp, instrumentedFiles.toList())
+    }
 
-  @Override
-  public void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    // TODO(b/150305897): No UUID?
-    // TODO(b/150308417): Sort?
-    Artifacts.addToFingerprint(fp, instrumentedFiles.toList());
-  }
+    override fun newDeterministicWriter(ctx: ActionExecutionContext?): DeterministicWriter {
+        return DeterministicWriter { out ->
+            val writer: PrintWriter = PrintWriter(out)
+            for (file in instrumentedFiles.toList()) {
+                writer.write("SF:" + file.getExecPathString() + "\n")
+                writer.write("end_of_record\n")
+            }
+            writer.flush()
+        }
+    }
 
-  @Override
-  public DeterministicWriter newDeterministicWriter(ActionExecutionContext ctx) {
-    return out -> {
-      PrintWriter writer = new PrintWriter(out);
-      for (Artifact file : instrumentedFiles.toList()) {
-        writer.write("SF:" + file.getExecPathString() + "\n");
-        writer.write("end_of_record\n");
-      }
-      writer.flush();
-    };
-  }
-
-  static BaselineCoverageAction create(
-      RuleContext ruleContext, NestedSet<Artifact> instrumentedFiles) {
-    // Baseline coverage artifacts will still go into "testlogs" directory.
-    Artifact coverageData =
-        ruleContext.getPackageRelativeArtifact(
-            PathFragment.create(ruleContext.getTarget().getName())
-                .getChild("baseline_coverage.dat"),
-            ruleContext.getTestLogsDirectory());
-    return new BaselineCoverageAction(
-        ruleContext.getActionOwner(), instrumentedFiles, coverageData);
-  }
+    companion object {
+        fun create(
+            ruleContext: RuleContext, instrumentedFiles: NestedSet<Artifact?>
+        ): BaselineCoverageAction {
+            // Baseline coverage artifacts will still go into "testlogs" directory.
+            val coverageData: Artifact? =
+                ruleContext.getPackageRelativeArtifact(
+                    PathFragment.create(ruleContext.getTarget().getName())
+                        .getChild("baseline_coverage.dat"),
+                    ruleContext.getTestLogsDirectory()
+                )
+            return BaselineCoverageAction(
+                ruleContext.getActionOwner(), instrumentedFiles, coverageData
+            )
+        }
+    }
 }

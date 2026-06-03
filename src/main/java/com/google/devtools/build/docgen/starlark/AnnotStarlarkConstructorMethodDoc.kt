@@ -11,64 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen.starlark;
+package com.google.devtools.build.docgen.starlark
 
-import java.lang.reflect.Method;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.docgen.starlark.AnnotStarlarkMethodDoc
+import com.google.devtools.build.docgen.starlark.StarlarkDocExpander
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.Starlark
 
 /**
  * A class representing a Java method callable from Starlark which constructs a type of Starlark
- * object. Such a method is annotated with {@link StarlarkMethod#selfCall} or {@link
- * com.google.devtools.build.docgen.annot.StarlarkConstructor}, and has special handling.
+ * object. Such a method is annotated with [StarlarkMethod.selfCall] or [ ], and has special handling.
  */
-public final class AnnotStarlarkConstructorMethodDoc extends AnnotStarlarkMethodDoc {
-  private final String fullyQualifiedName;
+class AnnotStarlarkConstructorMethodDoc(
+    val name: String?,
+    javaMethod: java.lang.reflect.Method?,
+    annotation: StarlarkMethod?,
+    expander: StarlarkDocExpander?
+) : AnnotStarlarkMethodDoc(javaMethod, annotation, expander) {
+    val isConstructor: Boolean
+        get() = true
 
-  public AnnotStarlarkConstructorMethodDoc(
-      String fullyQualifiedName,
-      Method javaMethod,
-      StarlarkMethod annotation,
-      StarlarkDocExpander expander) {
-    super(javaMethod, annotation, expander);
-    this.fullyQualifiedName = fullyQualifiedName;
-  }
+    val rawDocumentation: String?
+        get() = annotation.doc
 
-  @Override
-  public boolean isConstructor() {
-    return true;
-  }
+    val signature: String?
+        get() = getSignature(this.name)
 
-  @Override
-  public String getName() {
-    return fullyQualifiedName;
-  }
+    val returnType: String?
+        get() = Starlark.classType(javaMethod.getReturnType())
 
-  @Override
-  public String getRawDocumentation() {
-    return annotation.doc();
-  }
+    override fun toString(): String {
+        return String.format(
+            "AnnotStarlarkConstructorMethodDoc{fullyQualifiedName=%s method=%s callable=%s}",
+            this.name, javaMethod, formatCallable()
+        )
+    }
 
-  @Override
-  public String getSignature() {
-    return getSignature(fullyQualifiedName);
-  }
-
-  @Override
-  public String getReturnType() {
-    return Starlark.classType(javaMethod.getReturnType());
-  }
-
-  @Override
-  public String toString() {
-    return String.format(
-        "AnnotStarlarkConstructorMethodDoc{fullyQualifiedName=%s method=%s callable=%s}",
-        fullyQualifiedName, javaMethod, formatCallable());
-  }
-
-  private String formatCallable() {
-    return String.format(
-        "StarlarkMethod{name=%s selfCall=%s structField=%s doc=%s}",
-        annotation.name(), annotation.selfCall(), annotation.structField(), annotation.doc());
-  }
+    private fun formatCallable(): String? {
+        return String.format(
+            "StarlarkMethod{name=%s selfCall=%s structField=%s doc=%s}",
+            annotation.name, annotation.selfCall, annotation.structField, annotation.doc
+        )
+    }
 }

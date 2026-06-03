@@ -11,65 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
-package com.google.devtools.build.lib.analysis.starlark;
+package com.google.devtools.build.lib.analysis.starlark
 
-import com.google.devtools.build.lib.analysis.RuleErrorConsumer;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.analysis.RuleErrorConsumer
 
 /**
- * {@link RuleErrorConsumer} for Native implementations of Starlark APIs.
- *
- * <p>This class proxies reported errors and warnings to a proxy {@link RuleErrorConsumer}, except
+ * [RuleErrorConsumer] for Native implementations of Starlark APIs.
+ * 
+ * 
+ * This class proxies reported errors and warnings to a proxy [RuleErrorConsumer], except
  * that it suppresses all cases of actually throwing exceptions until this reporter is closed.
- *
- * <p>This class is AutoClosable, to ensure that {@link RuleErrorException} are checked and handled
- * before leaving native code. The {@link #close()} method will only throw {@link EvalException},
- * properly wrapping any {@link RuleErrorException} instances if needed.
+ * 
+ * 
+ * This class is AutoClosable, to ensure that [RuleErrorException] are checked and handled
+ * before leaving native code. The [.close] method will only throw [EvalException],
+ * properly wrapping any [RuleErrorException] instances if needed.
  */
-public class StarlarkErrorReporter implements AutoCloseable, RuleErrorConsumer {
-  private final RuleErrorConsumer ruleErrorConsumer;
+class StarlarkErrorReporter private constructor(ruleErrorConsumer: RuleErrorConsumer) : java.lang.AutoCloseable,
+    RuleErrorConsumer {
+    private val ruleErrorConsumer: RuleErrorConsumer
 
-  public static StarlarkErrorReporter from(RuleErrorConsumer ruleErrorConsumer) {
-    return new StarlarkErrorReporter(ruleErrorConsumer);
-  }
-
-  private StarlarkErrorReporter(RuleErrorConsumer ruleErrorConsumer) {
-    this.ruleErrorConsumer = ruleErrorConsumer;
-  }
-
-  @Override
-  public void close() throws EvalException {
-    try {
-      assertNoErrors();
-    } catch (RuleErrorException e) {
-      throw Starlark.errorf("error occurred while evaluating builtin function: %s", e.getMessage());
+    init {
+        this.ruleErrorConsumer = ruleErrorConsumer
     }
-  }
 
-  @Override
-  public void ruleWarning(String message) {
-    ruleErrorConsumer.ruleWarning(message);
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun close() {
+        try {
+            assertNoErrors()
+        } catch (e: RuleErrorException) {
+            throw Starlark.errorf("error occurred while evaluating builtin function: %s", e.getMessage())
+        }
+    }
 
-  @Override
-  public void ruleError(String message) {
-    ruleErrorConsumer.ruleError(message);
-  }
+    public override fun ruleWarning(message: String?) {
+        ruleErrorConsumer.ruleWarning(message)
+    }
 
-  @Override
-  public void attributeWarning(String attrName, String message) {
-    ruleErrorConsumer.attributeWarning(attrName, message);
-  }
+    public override fun ruleError(message: String?) {
+        ruleErrorConsumer.ruleError(message)
+    }
 
-  @Override
-  public void attributeError(String attrName, String message) {
-    ruleErrorConsumer.attributeError(attrName, message);
-  }
+    public override fun attributeWarning(attrName: String?, message: String?) {
+        ruleErrorConsumer.attributeWarning(attrName, message)
+    }
 
-  @Override
-  public boolean hasErrors() {
-    return ruleErrorConsumer.hasErrors();
-  }
+    public override fun attributeError(attrName: String?, message: String?) {
+        ruleErrorConsumer.attributeError(attrName, message)
+    }
+
+    public override fun hasErrors(): Boolean {
+        return ruleErrorConsumer.hasErrors()
+    }
+
+    companion object {
+        fun from(ruleErrorConsumer: RuleErrorConsumer): StarlarkErrorReporter {
+            return StarlarkErrorReporter(ruleErrorConsumer)
+        }
+    }
 }

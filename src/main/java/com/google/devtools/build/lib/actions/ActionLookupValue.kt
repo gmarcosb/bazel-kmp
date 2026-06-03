@@ -11,35 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.skyframe.SkyValue
 
-/** Base interface for all values which can provide the generating action of an artifact. */
-public interface ActionLookupValue extends SkyValue {
+/** Base interface for all values which can provide the generating action of an artifact.  */
+interface ActionLookupValue : SkyValue {
+    /** Returns a list of actions registered by this [SkyValue].  */
+    fun getActions(): com.google.common.collect.ImmutableList<ActionAnalysisMetadata>?
 
-  /** Returns a list of actions registered by this {@link SkyValue}. */
-  ImmutableList<ActionAnalysisMetadata> getActions();
-
-  /** Returns the {@link Action} with index {@code index} in this value. Never null. */
-  default Action getAction(int index) {
-    ActionAnalysisMetadata result = getActions().get(index);
-    // Avoid Preconditions.checkState which would box the int arg.
-    if (!(result instanceof Action action)) {
-      throw new IllegalStateException(String.format("Not action: %s %s %s", result, index, this));
+    /** Returns the [Action] with index `index` in this value. Never null.  */
+    fun getAction(index: Int): com.google.devtools.build.lib.actions.Action {
+        val result: ActionAnalysisMetadata = getActions().get(index)
+        // Avoid Preconditions.checkState which would box the int arg.
+        check(result is com.google.devtools.build.lib.actions.Action) {
+            java.lang.String.format(
+                "Not action: %s %s %s",
+                result,
+                index,
+                this
+            )
+        }
+        return result
     }
-    return action;
-  }
 
-  default ActionTemplate<?> getActionTemplate(int index) {
-    ActionAnalysisMetadata result = getActions().get(index);
-    // Avoid Preconditions.checkState which would box the int arg.
-    if (!(result instanceof ActionTemplate<?> actionTemplate)) {
-      throw new IllegalStateException(
-          String.format("Not action template: %s %s %s", result, index, this));
+    fun getActionTemplate(index: Int): ActionTemplate<*> {
+        val result: ActionAnalysisMetadata = getActions().get(index)
+        // Avoid Preconditions.checkState which would box the int arg.
+        check(result is ActionTemplate<*>) {
+            java.lang.String.format(
+                "Not action template: %s %s %s",
+                result,
+                index,
+                this
+            )
+        }
+        return result
     }
-    return actionTemplate;
-  }
-
 }

@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.testing.coverage;
+package com.google.testing.coverage
 
 /**
  * Expressions to evaluate a branch coverage result, either a simple probeId or a combination of
  * probes.
  */
-public interface CovExp {
-  /** Evaluate the expression using the given values of probes. */
-  public abstract boolean eval(final boolean[] probes);
+interface CovExp {
+    /** Evaluate the expression using the given values of probes.  */
+    fun eval(probes: BooleanArray?): Boolean
 }

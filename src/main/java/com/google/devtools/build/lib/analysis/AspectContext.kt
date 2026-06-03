@@ -11,362 +11,351 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
+/** Extends [RuleContext] to provide all data available during the analysis of an aspect.  */
+class AspectContext internal constructor(
+    builder: com.google.devtools.build.lib.analysis.RuleContext.Builder,
+    aspectAwareAttributeMapper: AspectAwareAttributeMapper?,
+    ruleAndBaseAspectsPrerequisites: PrerequisitesCollection?,
+    mainAspectPrerequisites: PrerequisitesCollection,
+    execGroupCollection: ExecGroupCollection?,
+    baseTargetToolchainContexts: ToolchainCollection<AspectBaseTargetResolvedToolchainContext?>?,
+    targetUsesAutoExecGroups: Boolean
+) : RuleContext(
+    builder, aspectAwareAttributeMapper, ruleAndBaseAspectsPrerequisites, execGroupCollection
+) {
+    /**
+     * A list of all aspects applied to the target.
+     * 
+     * 
+     * The last aspect in the list is the main aspect that this context is for.
+     */
+    private val aspects: com.google.common.collect.ImmutableList<Aspect>
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Streams;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.ImmutableSortedKeyListMultimap;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.AttributeMap;
-import com.google.devtools.build.lib.packages.DeclaredExecGroup;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
+    private val aspectDescriptors: com.google.common.collect.ImmutableList<AspectDescriptor?>
 
-/** Extends {@link RuleContext} to provide all data available during the analysis of an aspect. */
-public final class AspectContext extends RuleContext {
+    private val mainAspectPrerequisites: PrerequisitesCollection
 
-  /**
-   * A list of all aspects applied to the target.
-   *
-   * <p>The last aspect in the list is the main aspect that this context is for.
-   */
-  private final ImmutableList<Aspect> aspects;
+    /**
+     * The toolchain contexts for the base target.
+     * 
+     * 
+     * It only contains the providers created by the aspects that propagate to the toolchains.
+     */
+    private val baseTargetToolchainContexts: ToolchainCollection<AspectBaseTargetResolvedToolchainContext?>?
 
-  private final ImmutableList<AspectDescriptor> aspectDescriptors;
 
-  private final PrerequisitesCollection mainAspectPrerequisites;
+    /** Whether the target uses auto exec groups.  */
+    private val targetUsesAutoExecGroups: Boolean
 
-  /**
-   * The toolchain contexts for the base target.
-   *
-   * <p>It only contains the providers created by the aspects that propagate to the toolchains.
-   */
-  @Nullable
-  private final ToolchainCollection<AspectBaseTargetResolvedToolchainContext>
-      baseTargetToolchainContexts;
+    /** The make variables for the base target.  */
+    private var baseTargetConfigurationMakeVariableContext: ConfigurationMakeVariableContext? = null
 
-  /** Whether the target uses auto exec groups. */
-  private final boolean targetUsesAutoExecGroups;
-
-  /** The make variables for the base target. */
-  @Nullable
-  private ConfigurationMakeVariableContext baseTargetConfigurationMakeVariableContext = null;
-
-  AspectContext(
-      RuleContext.Builder builder,
-      AspectAwareAttributeMapper aspectAwareAttributeMapper,
-      PrerequisitesCollection ruleAndBaseAspectsPrerequisites,
-      PrerequisitesCollection mainAspectPrerequisites,
-      ExecGroupCollection execGroupCollection,
-      @Nullable
-          ToolchainCollection<AspectBaseTargetResolvedToolchainContext> baseTargetToolchainContexts,
-      boolean targetUsesAutoExecGroups) {
-    super(
-        builder, aspectAwareAttributeMapper, ruleAndBaseAspectsPrerequisites, execGroupCollection);
-
-    this.aspects = builder.getAspects();
-    this.aspectDescriptors = aspects.stream().map(Aspect::getDescriptor).collect(toImmutableList());
-    this.mainAspectPrerequisites = mainAspectPrerequisites;
-    this.baseTargetToolchainContexts = baseTargetToolchainContexts;
-    this.targetUsesAutoExecGroups = targetUsesAutoExecGroups;
-  }
-
-  /**
-   * Returns the toolchain contexts for the base target. Can be null if no aspect in the {@code
-   * aspects} path propagate to the toolchains.
-   */
-  @Nullable
-  public ToolchainCollection<AspectBaseTargetResolvedToolchainContext>
-      getBaseTargetToolchainContexts() {
-    return baseTargetToolchainContexts;
-  }
-
-  /** Returns the labels of default the toolchain types that aspects have propagated. */
-  public ImmutableSet<Label> getRequestedToolchainTypesLabels() {
-    if (targetUsesAutoExecGroups) {
-      return baseTargetToolchainContexts.contextMap().entrySet().stream()
-          .filter(e -> DeclaredExecGroup.isAutomatic(e.getKey()))
-          .flatMap(e -> e.getValue().requestedToolchainTypeLabels().keySet().stream())
-          .collect(toImmutableSet());
-    } else {
-      return baseTargetToolchainContexts
-          .getDefaultToolchainContext()
-          .requestedToolchainTypeLabels()
-          .keySet();
+    init {
+        this.aspects = builder.getAspects()
+        this.aspectDescriptors = aspects.stream().map<Any?>(Aspect::getDescriptor)
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        this.mainAspectPrerequisites = mainAspectPrerequisites
+        this.baseTargetToolchainContexts = baseTargetToolchainContexts
+        this.targetUsesAutoExecGroups = targetUsesAutoExecGroups
     }
-  }
 
-  /**
-   * Returns the toolchain data for the given type, or {@code null} if the toolchain type was not
-   * required in this context.
-   */
-  @Nullable
-  public AspectBaseTargetResolvedToolchainContext.ToolchainAspectsProviders getToolchainTarget(
-      Label toolchainType) {
-    var execGroupContext = baseTargetToolchainContexts.getDefaultToolchainContext();
-    if (targetUsesAutoExecGroups) {
-      execGroupContext =
-          baseTargetToolchainContexts.contextMap().entrySet().stream()
-              .filter(
-                  e ->
-                      DeclaredExecGroup.isAutomatic(e.getKey())
-                          && e.getValue().requestedToolchainTypeLabels().containsKey(toolchainType))
-              .findFirst()
-              .map(e -> e.getValue())
-              .orElse(null);
-      if (execGroupContext == null) {
-        return null;
-      }
+    /**
+     * Returns the toolchain contexts for the base target. Can be null if no aspect in the `aspects` path propagate to the toolchains.
+     */
+    fun getBaseTargetToolchainContexts(): ToolchainCollection<AspectBaseTargetResolvedToolchainContext?>? {
+        return baseTargetToolchainContexts
     }
-    return execGroupContext
-        .toolchains()
-        .get(execGroupContext.requestedToolchainTypeLabels().get(toolchainType));
-  }
 
-  /**
-   * Merge the attributes of the aspects in the aspects path.
-   *
-   * <p>For attributes with the same name, the one that is first encountered takes precedence.
-   */
-  private static ImmutableMap<String, Attribute> mergeAspectsAttributes(
-      ImmutableList<Aspect> aspects) {
-    if (aspects.isEmpty()) {
-      return ImmutableMap.of();
-    } else if (aspects.size() == 1) {
-      return aspects.get(0).getDefinition().getAttributes();
-    } else {
-      LinkedHashMap<String, Attribute> aspectAttributes = new LinkedHashMap<>();
-      for (Aspect aspect : aspects) {
-        ImmutableMap<String, Attribute> currentAttributes = aspect.getDefinition().getAttributes();
-        for (Map.Entry<String, Attribute> kv : currentAttributes.entrySet()) {
-          aspectAttributes.putIfAbsent(kv.getKey(), kv.getValue());
+    /** Returns the labels of default the toolchain types that aspects have propagated.  */
+    fun getRequestedToolchainTypesLabels(): com.google.common.collect.ImmutableSet<Label?> {
+        if (targetUsesAutoExecGroups) {
+            return baseTargetToolchainContexts.contextMap().entrySet().stream()
+                .filter({ e -> DeclaredExecGroup.isAutomatic(e.getKey()) })
+                .flatMap({ e -> e.getValue().requestedToolchainTypeLabels().keySet().stream() })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+        } else {
+            return baseTargetToolchainContexts
+                .getDefaultToolchainContext()
+                .requestedToolchainTypeLabels()
+                .keySet()
         }
-      }
-      return ImmutableMap.copyOf(aspectAttributes);
-    }
-  }
-
-  static AspectContext create(
-      Builder builder,
-      AttributeMap ruleAttributes,
-      ImmutableListMultimap<DependencyKind, ConfiguredTargetAndData> targetsMap,
-      ExecGroupCollection execGroupCollection,
-      ToolchainCollection<AspectBaseTargetResolvedToolchainContext> baseTargetToolchainContexts) {
-    return createAspectContextWithSeparatedPrerequisites(
-        builder, ruleAttributes, targetsMap, execGroupCollection, baseTargetToolchainContexts);
-  }
-
-  /**
-   * Create prerequisites collection for aspect evaluation separating the main aspect prerequisites
-   * from the underlying rule and base aspects prerequisites.
-   */
-  private static AspectContext createAspectContextWithSeparatedPrerequisites(
-      RuleContext.Builder ruleContextBuilder,
-      AttributeMap ruleAttributes,
-      ImmutableListMultimap<DependencyKind, ConfiguredTargetAndData> prerequisitesMap,
-      ExecGroupCollection execGroupCollection,
-      ToolchainCollection<AspectBaseTargetResolvedToolchainContext> baseTargetToolchainContexts) {
-    ImmutableSortedKeyListMultimap.Builder<String, ConfiguredTargetAndData>
-        mainAspectPrerequisites = ImmutableSortedKeyListMultimap.builder();
-    ImmutableSortedKeyListMultimap.Builder<String, ConfiguredTargetAndData>
-        ruleAndBaseAspectsPrerequisites = ImmutableSortedKeyListMultimap.builder();
-
-    Aspect mainAspect = Iterables.getLast(ruleContextBuilder.getAspects());
-
-    for (Map.Entry<DependencyKind, Collection<ConfiguredTargetAndData>> entry :
-        prerequisitesMap.asMap().entrySet()) {
-      String attributeName = entry.getKey().getAttribute().getName();
-
-      if (mainAspect.getAspectClass().equals(entry.getKey().getOwningAspect())) {
-        mainAspectPrerequisites.putAll(attributeName, entry.getValue());
-      } else {
-        ruleAndBaseAspectsPrerequisites.putAll(attributeName, entry.getValue());
-      }
     }
 
-    boolean targetUsesAutoExecGroups =
-        ruleContextBuilder
-            .getRule()
-            .getRuleClassObject()
-            .getAutoExecGroupsMode()
-            .isEnabled(ruleAttributes, ruleContextBuilder.getConfiguration().useAutoExecGroups());
-
-    return new AspectContext(
-        ruleContextBuilder,
-        new AspectAwareAttributeMapper(
-            ruleAttributes, mergeAspectsAttributes(ruleContextBuilder.getAspects())),
-        new PrerequisitesCollection(
-            ruleAndBaseAspectsPrerequisites.build(),
-            mergeRuleAndBaseAspectsAttributes(ruleAttributes, ruleContextBuilder.getAspects()),
-            ruleContextBuilder.getErrorConsumer(),
-            ruleContextBuilder.getRule(),
-            ruleContextBuilder.getRuleClassNameForLogging()),
-        new PrerequisitesCollection(
-            mainAspectPrerequisites.build(),
-            mainAspect.getDefinition().getAttributes(),
-            ruleContextBuilder.getErrorConsumer(),
-            ruleContextBuilder.getRule(),
-            ruleContextBuilder.getRuleClassNameForLogging()),
-        execGroupCollection,
-        baseTargetToolchainContexts,
-        targetUsesAutoExecGroups);
-  }
-
-  private static AspectAwareAttributeMapper mergeRuleAndBaseAspectsAttributes(
-      AttributeMap ruleAttributes, ImmutableList<Aspect> aspects) {
-    LinkedHashMap<String, Attribute> mergedBaseAspectsAttributes = new LinkedHashMap<>();
-    for (int i = 0; i < aspects.size() - 1; i++) {
-      for (Attribute attribute : aspects.get(i).getDefinition().getAttributes().values()) {
-        mergedBaseAspectsAttributes.putIfAbsent(attribute.getName(), attribute);
-      }
+    /**
+     * Returns the toolchain data for the given type, or `null` if the toolchain type was not
+     * required in this context.
+     */
+    fun getToolchainTarget(
+        toolchainType: Label?
+    ): ToolchainAspectsProviders? {
+        var execGroupContext: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            baseTargetToolchainContexts.getDefaultToolchainContext()
+        if (targetUsesAutoExecGroups) {
+            execGroupContext =
+                baseTargetToolchainContexts.contextMap().entrySet().stream()
+                    .filter(
+                        { e ->
+                            DeclaredExecGroup.isAutomatic(e.getKey())
+                                    && e.getValue().requestedToolchainTypeLabels().containsKey(toolchainType)
+                        })
+                    .findFirst()
+                    .map({ e -> e.getValue() })
+                    .orElse(null)
+            if (execGroupContext == null) {
+                return null
+            }
+        }
+        return execGroupContext
+            .toolchains()
+            .get(execGroupContext.requestedToolchainTypeLabels().get(toolchainType))
     }
-    return new AspectAwareAttributeMapper(
-        ruleAttributes, ImmutableMap.copyOf(mergedBaseAspectsAttributes));
-  }
 
-  @Override
-  PrerequisitesCollection getOwningPrerequisitesCollection(String attributeName) {
-    if (mainAspectPrerequisites.has(attributeName)) {
-      return mainAspectPrerequisites;
+    override fun getOwningPrerequisitesCollection(attributeName: String?): PrerequisitesCollection? {
+        if (mainAspectPrerequisites.has(attributeName)) {
+            return mainAspectPrerequisites
+        }
+        return getRulePrerequisitesCollection()
     }
-    return getRulePrerequisitesCollection();
-  }
 
-  public PrerequisitesCollection getMainAspectPrerequisitesCollection() {
-    return mainAspectPrerequisites;
-  }
-
-  @Override
-  public ImmutableList<Aspect> getAspects() {
-    return aspects;
-  }
-
-  /**
-   * Return the main aspect of this context.
-   *
-   * <p>It is the last aspect in the list of aspects applied to a target; all other aspects are the
-   * ones main aspect sees as specified by its "required_aspect_providers").
-   */
-  @Override
-  public Aspect getMainAspect() {
-    return Iterables.getLast(aspects);
-  }
-
-  /** All aspects applied to the rule. */
-  @Override
-  public ImmutableList<AspectDescriptor> getAspectDescriptors() {
-    return aspectDescriptors;
-  }
-
-  @Override
-  public boolean useAutoExecGroups() {
-    // TODO: b/370558813 - Use AutoExecGroupsMode for aspects, as well.
-    ImmutableMap<String, Attribute> aspectAttributes =
-        getMainAspect().getDefinition().getAttributes();
-    if (aspectAttributes.containsKey("$use_auto_exec_groups")) {
-      return (boolean) aspectAttributes.get("$use_auto_exec_groups").getDefaultValueUnchecked();
-    } else {
-      return getConfiguration().useAutoExecGroups();
+    fun getMainAspectPrerequisitesCollection(): PrerequisitesCollection {
+        return mainAspectPrerequisites
     }
-  }
 
-  @Override
-  public ImmutableList<? extends TransitiveInfoCollection> getAllPrerequisites() {
-    return Streams.concat(
+    override fun getAspects(): com.google.common.collect.ImmutableList<Aspect> {
+        return aspects
+    }
+
+    /**
+     * Return the main aspect of this context.
+     * 
+     * 
+     * It is the last aspect in the list of aspects applied to a target; all other aspects are the
+     * ones main aspect sees as specified by its "required_aspect_providers").
+     */
+    override fun getMainAspect(): Aspect? {
+        return com.google.common.collect.Iterables.getLast<Aspect?>(aspects)
+    }
+
+    /** All aspects applied to the rule.  */
+    override fun getAspectDescriptors(): com.google.common.collect.ImmutableList<AspectDescriptor?> {
+        return aspectDescriptors
+    }
+
+    override fun useAutoExecGroups(): Boolean {
+        // TODO: b/370558813 - Use AutoExecGroupsMode for aspects, as well.
+        val aspectAttributes: com.google.common.collect.ImmutableMap<String?, Attribute?> =
+            getMainAspect().getDefinition().getAttributes()
+        if (aspectAttributes.containsKey("\$use_auto_exec_groups")) {
+            return aspectAttributes.get("\$use_auto_exec_groups").getDefaultValueUnchecked() as Boolean
+        } else {
+            return getConfiguration().useAutoExecGroups()
+        }
+    }
+
+    override fun getAllPrerequisites(): com.google.common.collect.ImmutableList<out TransitiveInfoCollection?> {
+        return com.google.common.collect.Streams.concat<Any?>(
             mainAspectPrerequisites.getAllPrerequisites().stream(),
-            getRulePrerequisitesCollection().getAllPrerequisites().stream())
-        .collect(toImmutableList());
-  }
+            getRulePrerequisitesCollection().getAllPrerequisites().stream()
+        )
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+    }
 
-  ImmutableList<TemplateVariableInfo> getTemplateVariablesFromAspectAttributes(
-      Iterable<String> attributeNames) {
-    // Get template variable providers from the attributes.
-    return Streams.stream(attributeNames)
-        // Only process this attribute it if is present in the aspect directly.
-        .filter(attrName -> this.getMainAspectPrerequisitesCollection().has(attrName))
-        // Get the TemplateVariableInfo providers from this attribute.
-        .flatMap(
-            attrName ->
+    fun getTemplateVariablesFromAspectAttributes(
+        attributeNames: Iterable<String?>
+    ): com.google.common.collect.ImmutableList<TemplateVariableInfo?> {
+        // Get template variable providers from the attributes.
+        return com.google.common.collect.Streams.stream<String?>(attributeNames) // Only process this attribute it if is present in the aspect directly.
+            .filter { attrName: String? ->
+                this.getMainAspectPrerequisitesCollection().has(attrName)
+            }  // Get the TemplateVariableInfo providers from this attribute.
+            .flatMap { attrName: String? ->
                 this.getMainAspectPrerequisitesCollection()
                     .getPrerequisites(attrName, TemplateVariableInfo.PROVIDER)
-                    .stream())
-        .collect(toImmutableList());
-  }
+                    .stream()
+            }
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+    }
 
-  ImmutableList<TemplateVariableInfo> getTemplateVariablesFromBaseRuleAttributes(
-      Iterable<String> attributeNames) {
-    // Get template variable providers from the attributes.
-    return Streams.stream(attributeNames)
-        // Only process this attribute it if is present in the target directly.
-        .filter(attrName -> this.getRulePrerequisitesCollection().has(attrName))
-        // Get the TemplateVariableInfo providers from this attribute.
-        .flatMap(
-            attrName ->
+    fun getTemplateVariablesFromBaseRuleAttributes(
+        attributeNames: Iterable<String?>
+    ): com.google.common.collect.ImmutableList<TemplateVariableInfo?> {
+        // Get template variable providers from the attributes.
+        return com.google.common.collect.Streams.stream<String?>(attributeNames) // Only process this attribute it if is present in the target directly.
+            .filter { attrName: String? ->
+                this.getRulePrerequisitesCollection().has(attrName)
+            }  // Get the TemplateVariableInfo providers from this attribute.
+            .flatMap { attrName: String? ->
                 this.getRulePrerequisitesCollection()
                     .getPrerequisites(attrName, TemplateVariableInfo.PROVIDER)
-                    .stream())
-        .collect(toImmutableList());
-  }
-
-  private ImmutableList<TemplateVariableInfo> getTemplateVariablesFromBaseRuleToolchains() {
-    if (this.getBaseTargetToolchainContexts() == null) {
-      return ImmutableList.of();
+                    .stream()
+            }
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
     }
 
-    return this.getBaseTargetToolchainContexts().contextMap().values().stream()
-        .flatMap(context -> context.templateVariableProviders().stream())
-        .collect(toImmutableList());
-  }
+    private fun getTemplateVariablesFromBaseRuleToolchains(): com.google.common.collect.ImmutableList<TemplateVariableInfo?>? {
+        if (this.getBaseTargetToolchainContexts() == null) {
+            return com.google.common.collect.ImmutableList.of<TemplateVariableInfo?>()
+        }
 
-  @Override
-  public ImmutableList<TemplateVariableInfo> getDefaultTemplateVariableProviders() {
-    return new ImmutableList.Builder<TemplateVariableInfo>()
-        .addAll(getTemplateVariablesFromAspectAttributes(DEFAULT_MAKE_VARIABLE_ATTRIBUTES))
-        .addAll(fromToolchains())
-        .build();
-  }
-
-  /**
-   * Returns the {@link ConfigurationMakeVariableContext} for the aspect itself, including
-   * toolchains but not including the underlying target.
-   */
-  @Override
-  public ConfigurationMakeVariableContext getConfigurationMakeVariableContext() {
-    return super.getConfigurationMakeVariableContext();
-  }
-
-  /**
-   * Returns the {@link ConfigurationMakeVariableContext} for the base rule, but not including the
-   * aspect and its toolchains.
-   */
-  public ConfigurationMakeVariableContext getBaseTargetConfigurationMakeVariableContext() {
-    if (baseTargetConfigurationMakeVariableContext == null) {
-      ImmutableList<TemplateVariableInfo> templateVariableProviders =
-          new ImmutableList.Builder<TemplateVariableInfo>()
-              .addAll(getTemplateVariablesFromBaseRuleAttributes(DEFAULT_MAKE_VARIABLE_ATTRIBUTES))
-              .addAll(getTemplateVariablesFromBaseRuleToolchains())
-              .build();
-
-      baseTargetConfigurationMakeVariableContext =
-          new ConfigurationMakeVariableContext(
-              this.getRule().getPackageDeclarations(),
-              getConfiguration(),
-              templateVariableProviders);
+        return this.getBaseTargetToolchainContexts().contextMap().values().stream()
+            .flatMap({ context -> context.templateVariableProviders().stream() })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
     }
-    return baseTargetConfigurationMakeVariableContext;
-  }
+
+    override fun getDefaultTemplateVariableProviders(): com.google.common.collect.ImmutableList<TemplateVariableInfo?> {
+        return com.google.common.collect.ImmutableList.Builder<TemplateVariableInfo?>()
+            .addAll(getTemplateVariablesFromAspectAttributes(RuleContext.Companion.DEFAULT_MAKE_VARIABLE_ATTRIBUTES))
+            .addAll(fromToolchains())
+            .build()
+    }
+
+    /**
+     * Returns the [ConfigurationMakeVariableContext] for the aspect itself, including
+     * toolchains but not including the underlying target.
+     */
+    override fun getConfigurationMakeVariableContext(): ConfigurationMakeVariableContext? {
+        return super.getConfigurationMakeVariableContext()
+    }
+
+    /**
+     * Returns the [ConfigurationMakeVariableContext] for the base rule, but not including the
+     * aspect and its toolchains.
+     */
+    fun getBaseTargetConfigurationMakeVariableContext(): ConfigurationMakeVariableContext {
+        if (baseTargetConfigurationMakeVariableContext == null) {
+            val templateVariableProviders: com.google.common.collect.ImmutableList<TemplateVariableInfo?> =
+                com.google.common.collect.ImmutableList.Builder<TemplateVariableInfo?>()
+                    .addAll(getTemplateVariablesFromBaseRuleAttributes(RuleContext.Companion.DEFAULT_MAKE_VARIABLE_ATTRIBUTES))
+                    .addAll(getTemplateVariablesFromBaseRuleToolchains())
+                    .build()
+
+            baseTargetConfigurationMakeVariableContext =
+                ConfigurationMakeVariableContext(
+                    this.getRule().getPackageDeclarations(),
+                    getConfiguration(),
+                    templateVariableProviders
+                )
+        }
+        return baseTargetConfigurationMakeVariableContext
+    }
+
+    companion object {
+        /**
+         * Merge the attributes of the aspects in the aspects path.
+         * 
+         * 
+         * For attributes with the same name, the one that is first encountered takes precedence.
+         */
+        private fun mergeAspectsAttributes(
+            aspects: com.google.common.collect.ImmutableList<Aspect>
+        ): com.google.common.collect.ImmutableMap<String?, Attribute?>? {
+            if (aspects.isEmpty()) {
+                return com.google.common.collect.ImmutableMap.of<String?, Attribute?>()
+            } else if (aspects.size == 1) {
+                return aspects.get(0).getDefinition().getAttributes()
+            } else {
+                val aspectAttributes: LinkedHashMap<String?, Attribute?> = LinkedHashMap<String?, Attribute?>()
+                for (aspect in aspects) {
+                    val currentAttributes: com.google.common.collect.ImmutableMap<String?, Attribute?> =
+                        aspect.getDefinition().getAttributes()
+                    for (kv in currentAttributes.entries) {
+                        aspectAttributes.putIfAbsent(kv.key, kv.value)
+                    }
+                }
+                return com.google.common.collect.ImmutableMap.copyOf<String?, Attribute?>(aspectAttributes)
+            }
+        }
+
+        fun create(
+            builder: com.google.devtools.build.lib.analysis.RuleContext.Builder,
+            ruleAttributes: AttributeMap?,
+            targetsMap: com.google.common.collect.ImmutableListMultimap<DependencyKind?, ConfiguredTargetAndData?>,
+            execGroupCollection: ExecGroupCollection?,
+            baseTargetToolchainContexts: ToolchainCollection<AspectBaseTargetResolvedToolchainContext?>?
+        ): AspectContext {
+            return createAspectContextWithSeparatedPrerequisites(
+                builder, ruleAttributes, targetsMap, execGroupCollection, baseTargetToolchainContexts
+            )
+        }
+
+        /**
+         * Create prerequisites collection for aspect evaluation separating the main aspect prerequisites
+         * from the underlying rule and base aspects prerequisites.
+         */
+        private fun createAspectContextWithSeparatedPrerequisites(
+            ruleContextBuilder: com.google.devtools.build.lib.analysis.RuleContext.Builder,
+            ruleAttributes: AttributeMap?,
+            prerequisitesMap: com.google.common.collect.ImmutableListMultimap<DependencyKind?, ConfiguredTargetAndData?>,
+            execGroupCollection: ExecGroupCollection?,
+            baseTargetToolchainContexts: ToolchainCollection<AspectBaseTargetResolvedToolchainContext?>?
+        ): AspectContext {
+            val mainAspectPrerequisites: ImmutableSortedKeyListMultimap.Builder<String?, ConfiguredTargetAndData?> =
+                ImmutableSortedKeyListMultimap.builder()
+            val ruleAndBaseAspectsPrerequisites: ImmutableSortedKeyListMultimap.Builder<String?, ConfiguredTargetAndData?> =
+                ImmutableSortedKeyListMultimap.builder()
+
+            val mainAspect: Aspect? =
+                com.google.common.collect.Iterables.getLast<Aspect?>(ruleContextBuilder.getAspects())
+
+            for (entry in prerequisitesMap.asMap().entries) {
+                val attributeName: String? = entry.key.getAttribute().getName()
+
+                if (mainAspect.getAspectClass().equals(entry.key.getOwningAspect())) {
+                    mainAspectPrerequisites.putAll(attributeName, entry.value)
+                } else {
+                    ruleAndBaseAspectsPrerequisites.putAll(attributeName, entry.value)
+                }
+            }
+
+            val targetUsesAutoExecGroups: Boolean =
+                ruleContextBuilder
+                    .getRule()
+                    .getRuleClassObject()
+                    .getAutoExecGroupsMode()
+                    .isEnabled(ruleAttributes, ruleContextBuilder.getConfiguration().useAutoExecGroups())
+
+            return AspectContext(
+                ruleContextBuilder,
+                AspectAwareAttributeMapper(
+                    ruleAttributes, mergeAspectsAttributes(ruleContextBuilder.getAspects())
+                ),
+                PrerequisitesCollection(
+                    ruleAndBaseAspectsPrerequisites.build(),
+                    mergeRuleAndBaseAspectsAttributes(ruleAttributes, ruleContextBuilder.getAspects()),
+                    ruleContextBuilder.getErrorConsumer(),
+                    ruleContextBuilder.getRule(),
+                    ruleContextBuilder.getRuleClassNameForLogging()
+                ),
+                PrerequisitesCollection(
+                    mainAspectPrerequisites.build(),
+                    mainAspect.getDefinition().getAttributes(),
+                    ruleContextBuilder.getErrorConsumer(),
+                    ruleContextBuilder.getRule(),
+                    ruleContextBuilder.getRuleClassNameForLogging()
+                ),
+                execGroupCollection,
+                baseTargetToolchainContexts,
+                targetUsesAutoExecGroups
+            )
+        }
+
+        private fun mergeRuleAndBaseAspectsAttributes(
+            ruleAttributes: AttributeMap?, aspects: com.google.common.collect.ImmutableList<Aspect>
+        ): AspectAwareAttributeMapper {
+            val mergedBaseAspectsAttributes: LinkedHashMap<String?, Attribute?> = LinkedHashMap<String?, Attribute?>()
+            for (i in 0..<aspects.size - 1) {
+                for (attribute in aspects.get(i).getDefinition().getAttributes().values()) {
+                    mergedBaseAspectsAttributes.putIfAbsent(attribute.getName(), attribute)
+                }
+            }
+            return AspectAwareAttributeMapper(
+                ruleAttributes,
+                com.google.common.collect.ImmutableMap.copyOf<String?, Attribute?>(mergedBaseAspectsAttributes)
+            )
+        }
+    }
 }

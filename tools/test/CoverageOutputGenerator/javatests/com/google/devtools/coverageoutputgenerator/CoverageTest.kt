@@ -11,237 +11,281 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.coverageoutputgenerator
 
-package com.google.devtools.coverageoutputgenerator;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.coverageoutputgenerator.BranchCoverageItem
+import com.google.devtools.coverageoutputgenerator.Coverage
+import com.google.devtools.coverageoutputgenerator.SourceFileCoverage
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.HashSet
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Test for LcovMerger.  */
+@RunWith(JUnit4::class)
+class CoverageTest {
+    private var coverage: Coverage? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Test for LcovMerger. */
-@RunWith(JUnit4.class)
-public class CoverageTest {
-
-  private Coverage coverage;
-
-  @Before
-  public void initializeCoverage() {
-    coverage = new Coverage();
-  }
-
-  @Test
-  public void testOneTracefile() throws Exception {
-    SourceFileCoverage sourceFileCoverage = new SourceFileCoverage("src.foo");
-    sourceFileCoverage.addLine(1, 1);
-    sourceFileCoverage.addLine(2, 1);
-
-    coverage.add(sourceFileCoverage);
-
-    assertThat(coverage.getAllSourceFiles()).hasSize(1);
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 0).getLines())
-        .containsExactly(1, 1L, 2, 1L);
-  }
-
-  @Test
-  public void testOverlappingTracefilesMerge() throws Exception {
-    SourceFileCoverage sourceFileCoverage1 = new SourceFileCoverage("src.foo");
-    SourceFileCoverage sourceFileCoverage2 = new SourceFileCoverage("src.foo");
-    sourceFileCoverage1.addLine(1, 2);
-    sourceFileCoverage1.addLine(2, 1);
-    sourceFileCoverage1.addLine(3, 2);
-    sourceFileCoverage1.addBranch(1, "", "0", true, 2);
-    sourceFileCoverage1.addBranch(1, "", "1", true, 1);
-    sourceFileCoverage2.addLine(1, 3);
-    sourceFileCoverage2.addLine(2, 3);
-    sourceFileCoverage2.addLine(3, 0);
-    sourceFileCoverage2.addBranch(1, "", "0", true, 1);
-    sourceFileCoverage2.addBranch(1, "", "1", true, 2);
-
-    coverage.add(sourceFileCoverage1);
-    coverage.add(sourceFileCoverage2);
-
-    assertThat(coverage.getAllSourceFiles()).hasSize(1);
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 0).getLines())
-        .containsExactly(1, 5L, 2, 4L, 3, 2L);
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 0).getAllBranches())
-        .containsExactly(
-            BranchCoverageItem.create(1, "", "0", true, 3),
-            BranchCoverageItem.create(1, "", "1", true, 3));
-  }
-
-  @Test
-  public void testDistinctTracefiles() throws Exception {
-    SourceFileCoverage sourceFileCoverage1 = new SourceFileCoverage("src_1.foo");
-    SourceFileCoverage sourceFileCoverage2 = new SourceFileCoverage("src_2.foo");
-    sourceFileCoverage1.addLine(1, 1L);
-    sourceFileCoverage1.addLine(2, 1L);
-    sourceFileCoverage2.addLine(1, 3L);
-    sourceFileCoverage2.addLine(2, 3L);
-
-    coverage.add(sourceFileCoverage1);
-    coverage.add(sourceFileCoverage2);
-
-    assertThat(coverage.getAllSourceFiles()).hasSize(2);
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 0).sourceFileName())
-        .isEqualTo("src_1.foo");
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 1).sourceFileName())
-        .isEqualTo("src_2.foo");
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 0).getLines())
-        .containsExactly(1, 1L, 2, 1L);
-    assertThat(Iterables.get(coverage.getAllSourceFiles(), 1).getLines())
-        .containsExactly(1, 3L, 2, 3L);
-  }
-
-  @Test
-  public void testFilterSources() throws Exception {
-    Coverage coverage = new Coverage();
-
-    coverage.add(new SourceFileCoverage("/filterOut/package/file1.c"));
-    coverage.add(new SourceFileCoverage("/filterOut/package/file2.c"));
-    SourceFileCoverage validSource1 = new SourceFileCoverage("/valid/package/file3.c");
-    coverage.add(validSource1);
-    SourceFileCoverage validSource2 = new SourceFileCoverage("/valid/package/file4.c");
-    coverage.add(validSource2);
-    Collection<SourceFileCoverage> filteredSources =
-        Coverage.filterOutMatchingSources(coverage, ImmutableList.of("/filterOut/package/.+"))
-            .getAllSourceFiles();
-
-    assertThat(filteredSources).containsExactly(validSource1, validSource2);
-  }
-
-  @Test
-  public void testFilterSourcesEmptyResult() throws Exception {
-    Coverage coverage = new Coverage();
-
-    coverage.add(new SourceFileCoverage("/filterOut/package/file1.c"));
-    coverage.add(new SourceFileCoverage("/filterOut/package/file2.c"));
-    Collection<SourceFileCoverage> filteredSources =
-        Coverage.filterOutMatchingSources(coverage, ImmutableList.of("/filterOut/package/.+"))
-            .getAllSourceFiles();
-
-    assertThat(filteredSources).isEmpty();
-  }
-
-  @Test
-  public void testFilterSourcesNoMatches() throws Exception {
-    Coverage coverage = new Coverage();
-
-    SourceFileCoverage validSource1 = new SourceFileCoverage("/valid/package/file3.c");
-    coverage.add(validSource1);
-    SourceFileCoverage validSource2 = new SourceFileCoverage("/valid/package/file4.c");
-    coverage.add(validSource2);
-    Collection<SourceFileCoverage> filteredSources =
-        Coverage.filterOutMatchingSources(coverage, ImmutableList.of("/something/else/.+"))
-            .getAllSourceFiles();
-
-    assertThat(filteredSources).containsExactly(validSource1, validSource2);
-  }
-
-  @Test
-  public void testFilterSourcesMultipleRegex() throws Exception {
-    Coverage coverage = new Coverage();
-
-    coverage.add(new SourceFileCoverage("/filterOut/package/file1.c"));
-    coverage.add(new SourceFileCoverage("/filterOut/package/file2.c"));
-    coverage.add(new SourceFileCoverage("/repo/external/p.c"));
-    SourceFileCoverage validSource1 = new SourceFileCoverage("/valid/package/file3.c");
-    coverage.add(validSource1);
-    SourceFileCoverage validSource2 = new SourceFileCoverage("/valid/package/file4.c");
-    coverage.add(validSource2);
-    Collection<SourceFileCoverage> filteredSources =
-        Coverage.filterOutMatchingSources(
-                coverage, ImmutableList.of("/filterOut/package/.+", ".+external.+"))
-            .getAllSourceFiles();
-
-    assertThat(filteredSources).containsExactly(validSource1, validSource2);
-  }
-
-  @Test
-  public void testFilterSourcesNoFilter() throws Exception {
-    Coverage coverage = new Coverage();
-
-    SourceFileCoverage validSource1 = new SourceFileCoverage("/valid/package/file3.c");
-    coverage.add(validSource1);
-    SourceFileCoverage validSource2 = new SourceFileCoverage("/valid/package/file4.c");
-    coverage.add(validSource2);
-    Collection<SourceFileCoverage> filteredSources =
-        Coverage.filterOutMatchingSources(coverage, ImmutableList.of()).getAllSourceFiles();
-
-    assertThat(filteredSources).containsExactly(validSource1, validSource2);
-  }
-
-  @Test
-  public void testFilterSourcesNullCoverage() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> Coverage.filterOutMatchingSources(null, ImmutableList.of()));
-  }
-
-  @Test
-  public void testFilterSourcesNullRegex() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> Coverage.filterOutMatchingSources(new Coverage(), null));
-  }
-
-  private List<String> getSourceFileNames(
-      Collection<SourceFileCoverage> sourceFileCoverageCollection) {
-    ImmutableList.Builder<String> sourceFilenames = ImmutableList.builder();
-    for (SourceFileCoverage sourceFileCoverage : sourceFileCoverageCollection) {
-      sourceFilenames.add(sourceFileCoverage.sourceFileName());
+    @Before
+    fun initializeCoverage() {
+        coverage = Coverage()
     }
-    return sourceFilenames.build();
-  }
 
-  @Test
-  public void testGetOnlyTheseSources() throws Exception {
-    Coverage coverage = new Coverage();
-    coverage.add(new SourceFileCoverage("source/common/protobuf/utility.cc"));
-    coverage.add(new SourceFileCoverage("source/common/grpc/common.cc"));
-    coverage.add(new SourceFileCoverage("source/server/options.cc"));
-    coverage.add(new SourceFileCoverage("source/server/manager.cc"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOneTracefile() {
+        val sourceFileCoverage: SourceFileCoverage = SourceFileCoverage("src.foo")
+        sourceFileCoverage.addLine(1, 1)
+        sourceFileCoverage.addLine(2, 1)
 
-    Set<String> sourcesToKeep = new HashSet<>();
-    sourcesToKeep.add("source/common/protobuf/utility.cc");
-    sourcesToKeep.add("source/common/grpc/common.cc");
+        coverage.add(sourceFileCoverage)
 
-    assertThat(
+        Truth.assertThat(coverage.getAllSourceFiles()).hasSize(1)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 0).getLines()
+        )
+            .containsExactly(1, 1L, 2, 1L)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOverlappingTracefilesMerge() {
+        val sourceFileCoverage1: SourceFileCoverage = SourceFileCoverage("src.foo")
+        val sourceFileCoverage2: SourceFileCoverage = SourceFileCoverage("src.foo")
+        sourceFileCoverage1.addLine(1, 2)
+        sourceFileCoverage1.addLine(2, 1)
+        sourceFileCoverage1.addLine(3, 2)
+        sourceFileCoverage1.addBranch(1, "", "0", true, 2)
+        sourceFileCoverage1.addBranch(1, "", "1", true, 1)
+        sourceFileCoverage2.addLine(1, 3)
+        sourceFileCoverage2.addLine(2, 3)
+        sourceFileCoverage2.addLine(3, 0)
+        sourceFileCoverage2.addBranch(1, "", "0", true, 1)
+        sourceFileCoverage2.addBranch(1, "", "1", true, 2)
+
+        coverage.add(sourceFileCoverage1)
+        coverage.add(sourceFileCoverage2)
+
+        Truth.assertThat(coverage.getAllSourceFiles()).hasSize(1)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 0).getLines()
+        )
+            .containsExactly(1, 5L, 2, 4L, 3, 2L)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 0)
+                .getAllBranches()
+        )
+            .containsExactly(
+                BranchCoverageItem.Companion.create(1, "", "0", true, 3),
+                BranchCoverageItem.Companion.create(1, "", "1", true, 3)
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDistinctTracefiles() {
+        val sourceFileCoverage1: SourceFileCoverage = SourceFileCoverage("src_1.foo")
+        val sourceFileCoverage2: SourceFileCoverage = SourceFileCoverage("src_2.foo")
+        sourceFileCoverage1.addLine(1, 1L)
+        sourceFileCoverage1.addLine(2, 1L)
+        sourceFileCoverage2.addLine(1, 3L)
+        sourceFileCoverage2.addLine(2, 3L)
+
+        coverage.add(sourceFileCoverage1)
+        coverage.add(sourceFileCoverage2)
+
+        Truth.assertThat(coverage.getAllSourceFiles()).hasSize(2)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 0)
+                .sourceFileName()
+        )
+            .isEqualTo("src_1.foo")
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 1)
+                .sourceFileName()
+        )
+            .isEqualTo("src_2.foo")
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 0).getLines()
+        )
+            .containsExactly(1, 1L, 2, 1L)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.get<SourceFileCoverage?>(coverage.getAllSourceFiles(), 1).getLines()
+        )
+            .containsExactly(1, 3L, 2, 3L)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilterSources() {
+        val coverage: Coverage = Coverage()
+
+        coverage.add(SourceFileCoverage("/filterOut/package/file1.c"))
+        coverage.add(SourceFileCoverage("/filterOut/package/file2.c"))
+        val validSource1: SourceFileCoverage = SourceFileCoverage("/valid/package/file3.c")
+        coverage.add(validSource1)
+        val validSource2: SourceFileCoverage = SourceFileCoverage("/valid/package/file4.c")
+        coverage.add(validSource2)
+        val filteredSources: MutableCollection<SourceFileCoverage>? =
+            Coverage.Companion.filterOutMatchingSources(
+                coverage,
+                com.google.common.collect.ImmutableList.of<String?>("/filterOut/package/.+")
+            )
+                .getAllSourceFiles()
+
+        Truth.assertThat(filteredSources).containsExactly(validSource1, validSource2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilterSourcesEmptyResult() {
+        val coverage: Coverage = Coverage()
+
+        coverage.add(SourceFileCoverage("/filterOut/package/file1.c"))
+        coverage.add(SourceFileCoverage("/filterOut/package/file2.c"))
+        val filteredSources: MutableCollection<SourceFileCoverage>? =
+            Coverage.Companion.filterOutMatchingSources(
+                coverage,
+                com.google.common.collect.ImmutableList.of<String?>("/filterOut/package/.+")
+            )
+                .getAllSourceFiles()
+
+        Truth.assertThat(filteredSources).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilterSourcesNoMatches() {
+        val coverage: Coverage = Coverage()
+
+        val validSource1: SourceFileCoverage = SourceFileCoverage("/valid/package/file3.c")
+        coverage.add(validSource1)
+        val validSource2: SourceFileCoverage = SourceFileCoverage("/valid/package/file4.c")
+        coverage.add(validSource2)
+        val filteredSources: MutableCollection<SourceFileCoverage>? =
+            Coverage.Companion.filterOutMatchingSources(
+                coverage,
+                com.google.common.collect.ImmutableList.of<String?>("/something/else/.+")
+            )
+                .getAllSourceFiles()
+
+        Truth.assertThat(filteredSources).containsExactly(validSource1, validSource2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilterSourcesMultipleRegex() {
+        val coverage: Coverage = Coverage()
+
+        coverage.add(SourceFileCoverage("/filterOut/package/file1.c"))
+        coverage.add(SourceFileCoverage("/filterOut/package/file2.c"))
+        coverage.add(SourceFileCoverage("/repo/external/p.c"))
+        val validSource1: SourceFileCoverage = SourceFileCoverage("/valid/package/file3.c")
+        coverage.add(validSource1)
+        val validSource2: SourceFileCoverage = SourceFileCoverage("/valid/package/file4.c")
+        coverage.add(validSource2)
+        val filteredSources: MutableCollection<SourceFileCoverage>? =
+            Coverage.Companion.filterOutMatchingSources(
+                coverage, com.google.common.collect.ImmutableList.of<String?>("/filterOut/package/.+", ".+external.+")
+            )
+                .getAllSourceFiles()
+
+        Truth.assertThat(filteredSources).containsExactly(validSource1, validSource2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilterSourcesNoFilter() {
+        val coverage: Coverage = Coverage()
+
+        val validSource1: SourceFileCoverage = SourceFileCoverage("/valid/package/file3.c")
+        coverage.add(validSource1)
+        val validSource2: SourceFileCoverage = SourceFileCoverage("/valid/package/file4.c")
+        coverage.add(validSource2)
+        val filteredSources: MutableCollection<SourceFileCoverage>? =
+            Coverage.Companion.filterOutMatchingSources(coverage, com.google.common.collect.ImmutableList.of<String?>())
+                .getAllSourceFiles()
+
+        Truth.assertThat(filteredSources).containsExactly(validSource1, validSource2)
+    }
+
+    @org.junit.Test
+    fun testFilterSourcesNullCoverage() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                Coverage.Companion.filterOutMatchingSources(
+                    null,
+                    com.google.common.collect.ImmutableList.of<String?>()
+                )
+            })
+    }
+
+    @org.junit.Test
+    fun testFilterSourcesNullRegex() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { Coverage.Companion.filterOutMatchingSources(Coverage(), null) })
+    }
+
+    private fun getSourceFileNames(
+        sourceFileCoverageCollection: MutableCollection<SourceFileCoverage>
+    ): MutableList<String> {
+        val sourceFilenames: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        for (sourceFileCoverage in sourceFileCoverageCollection) {
+            sourceFilenames.add(sourceFileCoverage.sourceFileName())
+        }
+        return sourceFilenames.build()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetOnlyTheseSources() {
+        val coverage: Coverage = Coverage()
+        coverage.add(SourceFileCoverage("source/common/protobuf/utility.cc"))
+        coverage.add(SourceFileCoverage("source/common/grpc/common.cc"))
+        coverage.add(SourceFileCoverage("source/server/options.cc"))
+        coverage.add(SourceFileCoverage("source/server/manager.cc"))
+
+        val sourcesToKeep: MutableSet<String?> = HashSet<String?>()
+        sourcesToKeep.add("source/common/protobuf/utility.cc")
+        sourcesToKeep.add("source/common/grpc/common.cc")
+
+        Truth.assertThat(
             getSourceFileNames(
-                Coverage.getOnlyTheseSources(coverage, sourcesToKeep).getAllSourceFiles()))
-        .containsExactly("source/common/protobuf/utility.cc", "source/common/grpc/common.cc");
-  }
+                Coverage.Companion.getOnlyTheseSources(coverage, sourcesToKeep).getAllSourceFiles()
+            )
+        )
+            .containsExactly("source/common/protobuf/utility.cc", "source/common/grpc/common.cc")
+    }
 
-  @Test
-  public void testGetOnlyTheseSourcesNullCoverage() {
-    assertThrows(
-        IllegalArgumentException.class, () -> Coverage.getOnlyTheseSources(null, new HashSet<>()));
-  }
+    @org.junit.Test
+    fun testGetOnlyTheseSourcesNullCoverage() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { Coverage.Companion.getOnlyTheseSources(null, HashSet<String?>()) })
+    }
 
-  @Test
-  public void testGetOnlyTheseSourcesNullSources() {
-    assertThrows(
-        IllegalArgumentException.class, () -> Coverage.getOnlyTheseSources(new Coverage(), null));
-  }
+    @org.junit.Test
+    fun testGetOnlyTheseSourcesNullSources() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { Coverage.Companion.getOnlyTheseSources(Coverage(), null) })
+    }
 
-  @Test
-  public void testGetOnlyTheseSourcesEmptySources() throws Exception {
-    Coverage coverage = new Coverage();
-    coverage.add(new SourceFileCoverage("source/common/protobuf/utility.cc"));
-    coverage.add(new SourceFileCoverage("source/common/grpc/common.cc"));
-    coverage.add(new SourceFileCoverage("source/server/options.cc"));
-    coverage.add(new SourceFileCoverage("source/server/manager.cc"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetOnlyTheseSourcesEmptySources() {
+        val coverage: Coverage = Coverage()
+        coverage.add(SourceFileCoverage("source/common/protobuf/utility.cc"))
+        coverage.add(SourceFileCoverage("source/common/grpc/common.cc"))
+        coverage.add(SourceFileCoverage("source/server/options.cc"))
+        coverage.add(SourceFileCoverage("source/server/manager.cc"))
 
-    assertThat(Coverage.getOnlyTheseSources(coverage, new HashSet<>()).getAllSourceFiles())
-        .isEmpty();
-  }
+        Truth.assertThat(Coverage.Companion.getOnlyTheseSources(coverage, HashSet<String?>()).getAllSourceFiles())
+            .isEmpty()
+    }
 }

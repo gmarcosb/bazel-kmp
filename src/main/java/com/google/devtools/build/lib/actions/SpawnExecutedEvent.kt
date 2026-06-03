@@ -11,106 +11,96 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+/** This event is fired during the build, when a subprocess is executed.  */
+class SpawnExecutedEvent(
+    spawn: Spawn?,
+    inputMetadataProvider: InputMetadataProvider?,
+    actionFileSystem: FileSystem?,
+    fileOutErr: FileOutErr?,
+    result: SpawnResult?,
+    startTimeInstant: Instant?,
+    spawnIdentifier: String?
+) : Postable {
+    private val spawn: Spawn
+    private val inputMetadataProvider: InputMetadataProvider?
+    private val actionFileSystem: FileSystem?
+    private val fileOutErr: FileOutErr?
+    private val result: SpawnResult
+    private val startTimeInstant: Instant?
+    private val spawnIdentifier: String?
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import java.time.Instant;
-import javax.annotation.Nullable;
-
-/** This event is fired during the build, when a subprocess is executed. */
-public final class SpawnExecutedEvent implements ExtendedEventHandler.Postable {
-  private final Spawn spawn;
-  private final InputMetadataProvider inputMetadataProvider;
-  @Nullable private final FileSystem actionFileSystem;
-  private final FileOutErr fileOutErr;
-  private final SpawnResult result;
-  private final Instant startTimeInstant;
-  @Nullable private final String spawnIdentifier;
-
-  public SpawnExecutedEvent(
-      Spawn spawn,
-      InputMetadataProvider inputMetadataProvider,
-      @Nullable FileSystem actionFileSystem,
-      FileOutErr fileOutErr,
-      SpawnResult result,
-      Instant startTimeInstant,
-      @Nullable String spawnIdentifier) {
-    this.spawn = Preconditions.checkNotNull(spawn);
-    this.inputMetadataProvider = inputMetadataProvider;
-    this.actionFileSystem = actionFileSystem;
-    this.fileOutErr = fileOutErr;
-    this.result = Preconditions.checkNotNull(result);
-    this.startTimeInstant = startTimeInstant;
-    this.spawnIdentifier = spawnIdentifier;
-  }
-
-  /** Returns the Spawn. */
-  public Spawn getSpawn() {
-    return spawn;
-  }
-
-  /** Returns the input metadata provider containing information about the inputs of the Spawn. */
-  public InputMetadataProvider getInputMetadataProvider() {
-    return inputMetadataProvider;
-  }
-
-  @Nullable
-  public FileSystem getActionFileSystem() {
-    return actionFileSystem;
-  }
-
-  /** Returns the action. */
-  public ActionAnalysisMetadata getActionMetadata() {
-    return spawn.getResourceOwner();
-  }
-
-  /** Returns the action exit code. */
-  public int getExitCode() {
-    return result.exitCode();
-  }
-
-  /** Returns the distributor reply. */
-  public SpawnResult getSpawnResult() {
-    return result;
-  }
-
-  /** Returns the instant in time when the spawn starts. */
-  public Instant getStartTimeInstant() {
-    return startTimeInstant;
-  }
-
-  /** Returns the id used by the spawn runner to uniquely identify the spawn. */
-  @Nullable
-  public String getSpawnIdentifier() {
-    return spawnIdentifier;
-  }
-
-  /** Returns the FileOutErr used by the Spawn. */
-  public FileOutErr getFileOutErr() {
-    return fileOutErr;
-  }
-
-  /**
-   * This event is fired to differentiate actions with multiple spawns that are run sequentially
-   * versus parallel. An example of a use case of why this would be important is if we have flaky
-   * tests. We want to tell the {@link
-   * com.google.devtools.build.lib.metrics.criticalpath.CriticalPathComponent} that all the failed
-   * test spawns should have their Duration metrics aggregated so the test runtime matches the
-   * runtime of the entire CriticalPathComponent.
-   */
-  public static final class ChangePhase implements ExtendedEventHandler.Postable {
-    private final ActionAnalysisMetadata action;
-
-    public ChangePhase(ActionAnalysisMetadata action) {
-      this.action = action;
+    init {
+        this.spawn = com.google.common.base.Preconditions.checkNotNull<Spawn>(spawn)
+        this.inputMetadataProvider = inputMetadataProvider
+        this.actionFileSystem = actionFileSystem
+        this.fileOutErr = fileOutErr
+        this.result = com.google.common.base.Preconditions.checkNotNull<SpawnResult>(result)
+        this.startTimeInstant = startTimeInstant
+        this.spawnIdentifier = spawnIdentifier
     }
 
-    public ActionAnalysisMetadata getAction() {
-      return this.action;
+    /** Returns the Spawn.  */
+    fun getSpawn(): Spawn {
+        return spawn
     }
-  }
+
+    /** Returns the input metadata provider containing information about the inputs of the Spawn.  */
+    fun getInputMetadataProvider(): InputMetadataProvider? {
+        return inputMetadataProvider
+    }
+
+    fun getActionFileSystem(): FileSystem? {
+        return actionFileSystem
+    }
+
+    /** Returns the action.  */
+    fun getActionMetadata(): ActionAnalysisMetadata? {
+        return spawn.getResourceOwner()
+    }
+
+    /** Returns the action exit code.  */
+    fun getExitCode(): Int {
+        return result.exitCode()
+    }
+
+    /** Returns the distributor reply.  */
+    fun getSpawnResult(): SpawnResult {
+        return result
+    }
+
+    /** Returns the instant in time when the spawn starts.  */
+    fun getStartTimeInstant(): Instant? {
+        return startTimeInstant
+    }
+
+    /** Returns the id used by the spawn runner to uniquely identify the spawn.  */
+    fun getSpawnIdentifier(): String? {
+        return spawnIdentifier
+    }
+
+    /** Returns the FileOutErr used by the Spawn.  */
+    fun getFileOutErr(): FileOutErr? {
+        return fileOutErr
+    }
+
+    /**
+     * This event is fired to differentiate actions with multiple spawns that are run sequentially
+     * versus parallel. An example of a use case of why this would be important is if we have flaky
+     * tests. We want to tell the [ ] that all the failed
+     * test spawns should have their Duration metrics aggregated so the test runtime matches the
+     * runtime of the entire CriticalPathComponent.
+     */
+    class ChangePhase(action: ActionAnalysisMetadata?) : Postable {
+        private val action: ActionAnalysisMetadata?
+
+        init {
+            this.action = action
+        }
+
+        fun getAction(): ActionAnalysisMetadata? {
+            return this.action
+        }
+    }
 }

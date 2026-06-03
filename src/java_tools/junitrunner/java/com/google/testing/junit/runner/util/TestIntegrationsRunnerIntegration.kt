@@ -11,47 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import com.google.testing.junit.runner.util.TestIntegration
+import com.google.testing.junit.runner.util.TestIntegrationsExporter
+import com.google.testing.junit.runner.util.TestIntegrationsRunnerIntegration
 
-import com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback;
-import javax.annotation.Nullable;
-
-/** JUnit runner integration code for TestIntegration. */
-public class TestIntegrationsRunnerIntegration {
-  private static final ThreadLocal<Callback> callbackForThread =
-      new ThreadLocal<Callback>() {
-        @Override
-        protected Callback initialValue() {
-          return NoOpCallback.INSTANCE;
+/** JUnit runner integration code for TestIntegration.  */
+object TestIntegrationsRunnerIntegration {
+    private val callbackForThread: java.lang.ThreadLocal<com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback?> =
+        object : java.lang.ThreadLocal<com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback?>() {
+            override fun initialValue(): com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback {
+                return com.google.testing.junit.runner.util.TestIntegrationsRunnerIntegration.NoOpCallback.Companion.INSTANCE
+            }
         }
-      };
 
-  /**
-   * Sets the per-thread callback.
-   *
-   * @param callback Callback
-   */
-  public static Callback setTestCaseForThread(@Nullable Callback callback) {
-    Callback previousCallback = callbackForThread.get();
-    if (callback == null) {
-      callbackForThread.remove();
-    } else {
-      callbackForThread.set(callback);
+    /**
+     * Sets the per-thread callback.
+     * 
+     * @param callback Callback
+     */
+    fun setTestCaseForThread(callback: com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback?): com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback? {
+        val previousCallback: com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback? =
+            callbackForThread.get()
+        if (callback == null) {
+            callbackForThread.remove()
+        } else {
+            callbackForThread.set(callback)
+        }
+        return previousCallback
     }
-    return previousCallback;
-  }
 
-  static Callback getCallbackForThread() {
-    // TODO(bazel-team): This won't work if the test is running in a different thread from the test
-    // runner.
-    return callbackForThread.get();
-  }
+    fun getCallbackForThread(): com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback? {
+        // TODO(bazel-team): This won't work if the test is running in a different thread from the test
+        // runner.
+        return callbackForThread.get()
+    }
 
-  private static class NoOpCallback implements Callback {
-    private static final Callback INSTANCE = new NoOpCallback();
+    private class NoOpCallback : com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback {
+        override fun exportTestIntegration(testIntegration: TestIntegration?) {}
 
-    @Override
-    public void exportTestIntegration(TestIntegration testIntegration) {}
-  }
+        companion object {
+            private val INSTANCE: com.google.testing.junit.runner.util.TestIntegrationsExporter.Callback =
+                NoOpCallback()
+        }
+    }
 }

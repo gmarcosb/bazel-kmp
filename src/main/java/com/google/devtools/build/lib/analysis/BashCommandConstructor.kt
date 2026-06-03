@@ -11,40 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.actions.FileWriteAction;
-import com.google.devtools.build.lib.vfs.PathFragment;
+/** The class for constructing command line for Bash.  */
+class BashCommandConstructor internal constructor(shellPath: PathFragment, scriptNameSuffix: String) :
+    CommandConstructor {
+    private val shellPath: PathFragment
+    private val scriptNameSuffix: String
 
-/** The class for constructing command line for Bash. */
-public final class BashCommandConstructor implements CommandConstructor {
+    init {
+        this.shellPath = shellPath
+        this.scriptNameSuffix = scriptNameSuffix
+    }
 
-  private final PathFragment shellPath;
-  private final String scriptNameSuffix;
+    override fun asExecArgv(scriptFileArtifact: Artifact): com.google.common.collect.ImmutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<E?>(
+            shellPath.getPathString(),
+            scriptFileArtifact.getExecPathString()
+        )
+    }
 
-  BashCommandConstructor(PathFragment shellPath, String scriptNameSuffix) {
-    this.shellPath = shellPath;
-    this.scriptNameSuffix = scriptNameSuffix;
-  }
+    override fun asExecArgv(command: String?): com.google.common.collect.ImmutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<E?>(shellPath.getPathString(), "-c", command)
+    }
 
-  @Override
-  public ImmutableList<String> asExecArgv(Artifact scriptFileArtifact) {
-    return ImmutableList.of(shellPath.getPathString(), scriptFileArtifact.getExecPathString());
-  }
-
-  @Override
-  public ImmutableList<String> asExecArgv(String command) {
-    return ImmutableList.of(shellPath.getPathString(), "-c", command);
-  }
-
-  @Override
-  public Artifact commandAsScript(RuleContext ruleContext, String command) {
-    String scriptFileName = ruleContext.getTarget().getName() + scriptNameSuffix;
-    String scriptFileContents = "#!/bin/bash\n" + command;
-    return FileWriteAction.createFile(
-        ruleContext, scriptFileName, scriptFileContents, /*executable=*/ true);
-  }
+    override fun commandAsScript(ruleContext: RuleContext, command: String): Artifact? {
+        val scriptFileName = ruleContext.getTarget().getName() + scriptNameSuffix
+        val scriptFileContents = "#!/bin/bash\n" + command
+        return FileWriteAction.Companion.createFile(
+            ruleContext, scriptFileName, scriptFileContents,  /*executable=*/true
+        )
+    }
 }

@@ -11,28 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.util.DetailedExitCode
 
-import com.google.devtools.build.lib.util.DetailedExitCode;
+/** An action failed to execute due to a failure in a Spawn.  */
+class SpawnActionExecutionException(
+    e: ExecException,
+    message: String?,
+    action: com.google.devtools.build.lib.actions.Action?,
+    code: DetailedExitCode?,
+    spawnResult: SpawnResult?
+) : ActionExecutionException(message, e, action, e.isCatastrophic(), code) {
+    private val spawnResult: SpawnResult?
 
-/** An action failed to execute due to a failure in a Spawn. */
-public class SpawnActionExecutionException extends ActionExecutionException {
+    init {
+        this.spawnResult = spawnResult
+    }
 
-  private final SpawnResult spawnResult;
-
-  public SpawnActionExecutionException(
-      ExecException e,
-      String message,
-      Action action,
-      DetailedExitCode code,
-      SpawnResult spawnResult) {
-    super(message, e, action, e.isCatastrophic(), code);
-    this.spawnResult = spawnResult;
-  }
-
-  /** Get the failed {@link SpawnResult} that led to this exception. */
-  public SpawnResult getSpawnResult() {
-    return spawnResult;
-  }
+    /** Get the failed [SpawnResult] that led to this exception.  */
+    fun getSpawnResult(): SpawnResult? {
+        return spawnResult
+    }
 }

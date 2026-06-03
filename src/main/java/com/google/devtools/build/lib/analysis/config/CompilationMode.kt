@@ -11,35 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.devtools.common.options.EnumConverter;
+import com.google.devtools.common.options.EnumConverter
 
-/** This class represents the debug/optimization mode the binaries will be built for. */
-public enum CompilationMode {
+/** This class represents the debug/optimization mode the binaries will be built for.  */
+enum class CompilationMode(mode: String) {
+    // Fast build mode (-g0).
+    FASTBUILD("fastbuild"),
 
-  // Fast build mode (-g0).
-  FASTBUILD("fastbuild"),
-  // Debug mode (-g).
-  DBG("dbg"),
-  // Release mode (-g0 -O2 -DNDEBUG).
-  OPT("opt");
+    // Debug mode (-g).
+    DBG("dbg"),
 
-  private final String mode;
+    // Release mode (-g0 -O2 -DNDEBUG).
+    OPT("opt");
 
-  private CompilationMode(String mode) {
-    this.mode = mode;
-  }
+    private val mode: String?
 
-  @Override
-  public String toString() {
-    return mode;
-  }
-
-  /** Converts to {@link CompilationMode}. */
-  public static class Converter extends EnumConverter<CompilationMode> {
-    public Converter() {
-      super(CompilationMode.class, "compilation mode");
+    init {
+        this.mode = mode
     }
-  }
+
+    override fun toString(): String {
+        return mode!!
+    }
+
+    /** Converts to [CompilationMode].  */
+    class Converter : EnumConverter<CompilationMode?>(CompilationMode::class.java, "compilation mode")
 }

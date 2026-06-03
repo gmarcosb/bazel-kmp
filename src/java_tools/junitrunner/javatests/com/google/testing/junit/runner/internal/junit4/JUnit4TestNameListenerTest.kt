@@ -11,167 +11,173 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import static com.google.common.base.Throwables.throwIfUnchecked;
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.testing.junit.runner.util.TestNameProvider;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestName;
-import org.junit.runner.Description;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestNameListener
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestNameListener.testFinished
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestNameListener.testRunStarted
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestNameListener.testStarted
+import com.google.testing.junit.runner.internal.junit4.JUnit4TestXmlListener.testRunStarted
+import com.google.testing.junit.runner.internal.junit4.SettableCurrentRunningTest
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import com.google.testing.junit.runner.util.TestNameProvider
+import org.junit.Before
+import org.junit.rules.TestName
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
- * Tests for {@link JUnit4TestNameListener}.
+ * Tests for [JUnit4TestNameListener].
  */
-@RunWith(JUnit4.class)
-public class JUnit4TestNameListenerTest {
-  private JUnit4TestNameListener testNameListener;
-  private TestNameProvider testNameProviderForTesting;
-  @Rule public TestName name = new TestName();
+@RunWith(JUnit4::class)
+class JUnit4TestNameListenerTest {
+    private var testNameListener: JUnit4TestNameListener? = null
+    private var testNameProviderForTesting: TestNameProvider? = null
 
-  @Before
-  public void setCurrentRunningTest() {
-    SettableCurrentRunningTest currentRunningTest = new SettableCurrentRunningTest() {
-      @Override
-      public void setGlobalTestNameProvider(TestNameProvider provider) {
-        testNameProviderForTesting = provider;
-      }
-    };
+    @org.junit.Rule
+    var name: TestName = TestName()
 
-    testNameListener = new JUnit4TestNameListener(currentRunningTest);
-  }
+    @Before
+    fun setCurrentRunningTest() {
+        val currentRunningTest: SettableCurrentRunningTest = object : SettableCurrentRunningTest() {
+            public override fun setGlobalTestNameProvider(provider: TestNameProvider) {
+                testNameProviderForTesting = provider
+            }
+        }
 
-  @Test
-  public void testJUnit4Listener_normalUsage() throws Exception {
-    assertThat(testNameProviderForTesting).isNull();
+        testNameListener = JUnit4TestNameListener(currentRunningTest)
+    }
 
-    Description description = Description.createSuiteDescription(FakeTest.class);
-    testNameListener.testRunStarted(description);
-    assertThat(testNameProviderForTesting.get()).isNull();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testJUnit4Listener_normalUsage() {
+        Truth.assertThat(testNameProviderForTesting).isNull()
 
-    description = Description.createTestDescription(FakeTest.class, "methodName");
-    testNameListener.testStarted(description);
-    assertThat(testNameProviderForTesting.get()).isEqualTo(description);
-    testNameListener.testFinished(description);
-    assertThat(testNameProviderForTesting.get()).isNull();
+        var description: org.junit.runner.Description =
+            org.junit.runner.Description.createSuiteDescription(FakeTest::class.java)
+        testNameListener.testRunStarted(description)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
 
-    description = Description.createTestDescription(FakeTest.class, "anotherMethodName");
-    testNameListener.testStarted(description);
-    assertThat(testNameProviderForTesting.get()).isEqualTo(description);
-    testNameListener.testFinished(description);
-    assertThat(testNameProviderForTesting.get()).isNull();
+        description = org.junit.runner.Description.createTestDescription(FakeTest::class.java, "methodName")
+        testNameListener.testStarted(description)
+        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description)
+        testNameListener.testFinished(description)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
 
-    testNameListener.testRunFinished(null);
-    assertThat(testNameProviderForTesting.get()).isNull();
-  }
+        description = org.junit.runner.Description.createTestDescription(FakeTest::class.java, "anotherMethodName")
+        testNameListener.testStarted(description)
+        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description)
+        testNameListener.testFinished(description)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
 
-  @Test
-  public void testJUnit4Listener_hasExpectedDisplayName() throws Exception {
-    Description description = Description.createSuiteDescription(FakeTest.class);
-    testNameListener.testRunStarted(description);
+        testNameListener.testRunFinished(null)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+    }
 
-    description = Description.createTestDescription(this.getClass(), name.getMethodName());
-    testNameListener.testStarted(description);
-    assertThat(testNameProviderForTesting.get().getDisplayName())
-        .isEqualTo(
-            "testJUnit4Listener_hasExpectedDisplayName("
-                + JUnit4TestNameListenerTest.class.getCanonicalName()
-                + ")");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testJUnit4Listener_hasExpectedDisplayName() {
+        var description: org.junit.runner.Description =
+            org.junit.runner.Description.createSuiteDescription(FakeTest::class.java)
+        testNameListener.testRunStarted(description)
 
-  @Test
-  public void testJUnit4Listener_multipleThreads() throws Exception {
-    ExecutorService executorService = Executors.newSingleThreadExecutor();
-    Description description1 =
-        Description.createTestDescription(FakeTest.class, "methodName");
-    final Description description2 =
-        Description.createTestDescription(FakeTest.class, "anotherMethodName");
+        description = org.junit.runner.Description.createTestDescription(this.javaClass, name.getMethodName())
+        testNameListener.testStarted(description)
+        Truth.assertThat(testNameProviderForTesting.get().getDisplayName())
+            .isEqualTo(
+                ("testJUnit4Listener_hasExpectedDisplayName("
+                        + JUnit4TestNameListenerTest::class.java.getCanonicalName()
+                        + ")")
+            )
+    }
 
-    testNameListener.testRunStarted(Description.createSuiteDescription(FakeTest.class));
-    assertThat(testNameProviderForTesting.get()).isNull();
-    testNameListener.testStarted(description1);
-    assertThat(testNameProviderForTesting.get()).isEqualTo(description1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testJUnit4Listener_multipleThreads() {
+        val executorService: ExecutorService = Executors.newSingleThreadExecutor()
+        val description1: org.junit.runner.Description =
+            org.junit.runner.Description.createTestDescription(FakeTest::class.java, "methodName")
+        val description2: org.junit.runner.Description =
+            org.junit.runner.Description.createTestDescription(FakeTest::class.java, "anotherMethodName")
 
-    Future<?> startSecondTestFuture =
-        executorService.submit(
-            new Runnable() {
-              @Override
-              public void run() {
-                assertThat(testNameProviderForTesting.get()).isNull();
-                try {
-                  testNameListener.testStarted(description2);
-                } catch (Exception e) {
-                  throwIfUnchecked(e);
-                  throw new RuntimeException(e);
-                }
-                assertThat(testNameProviderForTesting.get()).isEqualTo(description2);
-              }
-            });
-    startSecondTestFuture.get();
+        testNameListener.testRunStarted(org.junit.runner.Description.createSuiteDescription(FakeTest::class.java))
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+        testNameListener.testStarted(description1)
+        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description1)
 
-    assertThat(testNameProviderForTesting.get()).isEqualTo(description1);
-    testNameListener.testFinished(description1);
-    assertThat(testNameProviderForTesting.get()).isNull();
+        val startSecondTestFuture: java.util.concurrent.Future<*> =
+            executorService.submit(
+                object : java.lang.Runnable {
+                    override fun run() {
+                        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+                        try {
+                            testNameListener.testStarted(description2)
+                        } catch (e: java.lang.Exception) {
+                            com.google.common.base.Throwables.throwIfUnchecked(e)
+                            throw java.lang.RuntimeException(e)
+                        }
+                        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description2)
+                    }
+                })
+        startSecondTestFuture.get()
 
-    Future<?> endSecondTestFuture =
-        executorService.submit(
-            new Runnable() {
-              @Override
-              public void run() {
-                assertThat(testNameProviderForTesting.get()).isEqualTo(description2);
-                try {
-                  testNameListener.testFinished(description2);
-                } catch (Exception e) {
-                  throwIfUnchecked(e);
-                  throw new RuntimeException(e);
-                }
-                assertThat(testNameProviderForTesting.get()).isNull();
-              }
-            });
-    endSecondTestFuture.get();
+        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description1)
+        testNameListener.testFinished(description1)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
 
-    assertThat(testNameProviderForTesting.get()).isNull();
-  }
+        val endSecondTestFuture: java.util.concurrent.Future<*> =
+            executorService.submit(
+                object : java.lang.Runnable {
+                    override fun run() {
+                        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description2)
+                        try {
+                            testNameListener.testFinished(description2)
+                        } catch (e: java.lang.Exception) {
+                            com.google.common.base.Throwables.throwIfUnchecked(e)
+                            throw java.lang.RuntimeException(e)
+                        }
+                        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+                    }
+                })
+        endSecondTestFuture.get()
 
-  /**
-   * Typically, {@link junit.framework.TestListener#startTest(junit.framework.Test)}
-   * and {@link junit.framework.TestListener#endTest(junit.framework.Test)}
-   * should be called in pairs, but if they're not for some reason, the
-   * listener will try to handle it as best as possible.
-   */
-  @Test
-  public void testJUnit4Listener_invalidStatesAreHandled() throws Exception {
-    testNameListener.testRunStarted(Description.createSuiteDescription(FakeTest.class));
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+    }
 
-    Description description1 =
-        Description.createTestDescription(FakeTest.class, "methodName");
-    Description description2 =
-        Description.createTestDescription(FakeTest.class, "anotherMethodName");
+    /**
+     * Typically, [junit.framework.TestListener.startTest]
+     * and [junit.framework.TestListener.endTest]
+     * should be called in pairs, but if they're not for some reason, the
+     * listener will try to handle it as best as possible.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testJUnit4Listener_invalidStatesAreHandled() {
+        testNameListener.testRunStarted(org.junit.runner.Description.createSuiteDescription(FakeTest::class.java))
 
-    testNameListener.testStarted(description1);
-    testNameListener.testStarted(description1);
-    assertThat(testNameProviderForTesting.get()).isEqualTo(description1);
+        val description1: org.junit.runner.Description =
+            org.junit.runner.Description.createTestDescription(FakeTest::class.java, "methodName")
+        val description2: org.junit.runner.Description =
+            org.junit.runner.Description.createTestDescription(FakeTest::class.java, "anotherMethodName")
 
-    testNameListener.testStarted(description2);
-    assertThat(testNameProviderForTesting.get()).isEqualTo(description2);
+        testNameListener.testStarted(description1)
+        testNameListener.testStarted(description1)
+        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description1)
 
-    testNameListener.testFinished(description1);
-    assertThat(testNameProviderForTesting.get()).isNull();
+        testNameListener.testStarted(description2)
+        Truth.assertThat(testNameProviderForTesting.get()).isEqualTo(description2)
 
-    testNameListener.testFinished(description2);
-    assertThat(testNameProviderForTesting.get()).isNull();
-  }
+        testNameListener.testFinished(description1)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+
+        testNameListener.testFinished(description2)
+        Truth.assertThat(testNameProviderForTesting.get()).isNull()
+    }
 
 
-  private static class FakeTest {
-  }
+    private class FakeTest
 }

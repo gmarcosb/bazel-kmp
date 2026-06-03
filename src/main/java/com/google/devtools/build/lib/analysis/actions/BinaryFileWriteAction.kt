@@ -11,89 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.io.ByteSource;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.Fingerprint;
-import java.io.IOException;
-import java.io.InputStream;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
 /**
  * Action to write a binary file.
  */
 @Immutable // if source is immutable
-public final class BinaryFileWriteAction extends AbstractFileWriteAction {
+class BinaryFileWriteAction(
+    owner: ActionOwner?,
+    output: Artifact?,
+    source: com.google.common.io.ByteSource?,
+    private val makeExecutable: Boolean
+) : AbstractFileWriteAction(owner,  /* inputs= */NestedSetBuilder.emptySet(Order.STABLE_ORDER), output) {
+    private val source: com.google.common.io.ByteSource
 
-  private static final String GUID = "eeee07fe-4b40-11e4-82d6-eba0b4f713e2";
-
-  private final ByteSource source;
-  private final boolean makeExecutable;
-
-  /**
-   * Creates a new BinaryFileWriteAction instance without inputs.
-   *
-   * @param owner the action owner.
-   * @param output the Artifact that will be created by executing this Action.
-   * @param source a source of bytes that will be written to the file.
-   * @param makeExecutable iff true will change the output file to be executable.
-   */
-  public BinaryFileWriteAction(
-      ActionOwner owner, Artifact output, ByteSource source, boolean makeExecutable) {
-    super(owner, /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER), output);
-    this.source = Preconditions.checkNotNull(source);
-    this.makeExecutable = makeExecutable;
-  }
-
-  @Override
-  public boolean makeExecutable() {
-    return makeExecutable;
-  }
-
-  @VisibleForTesting
-  public ByteSource getSource() {
-    return source;
-  }
-
-  @Override
-  public DeterministicWriter newDeterministicWriter(ActionExecutionContext ctx) {
-    return out -> {
-      try (InputStream in = source.openStream()) {
-        ByteStreams.copy(in, out);
-      }
-      out.flush();
-    };
-  }
-
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    fp.addString(GUID);
-    fp.addBoolean(makeExecutable());
-
-    try (InputStream in = source.openStream()) {
-      byte[] buffer = new byte[512];
-      int amountRead;
-      while ((amountRead = in.read(buffer)) != -1) {
-        fp.addBytes(buffer, 0, amountRead);
-      }
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+    /**
+     * Creates a new BinaryFileWriteAction instance without inputs.
+     * 
+     * @param owner the action owner.
+     * @param output the Artifact that will be created by executing this Action.
+     * @param source a source of bytes that will be written to the file.
+     * @param makeExecutable iff true will change the output file to be executable.
+     */
+    init {
+        this.source = com.google.common.base.Preconditions.checkNotNull<com.google.common.io.ByteSource>(source)
     }
-  }
+
+    override fun makeExecutable(): Boolean {
+        return makeExecutable
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun getSource(): com.google.common.io.ByteSource {
+        return source
+    }
+
+    override fun newDeterministicWriter(ctx: ActionExecutionContext?): DeterministicWriter {
+        return DeterministicWriter { out ->
+            source.openStream().use { `in` ->
+                com.google.common.io.ByteStreams.copy(`in`, out)
+            }
+            out.flush()
+        }
+    }
+
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addString(GUID)
+        fp.addBoolean(makeExecutable())
+
+        try {
+            source.openStream().use { `in` ->
+                val buffer = ByteArray(512)
+                var amountRead: Int
+                while ((`in`.read(buffer).also { amountRead = it }) != -1) {
+                    fp.addBytes(buffer, 0, amountRead)
+                }
+            }
+        } catch (e: IOException) {
+            throw java.lang.RuntimeException(e)
+        }
+    }
+
+    companion object {
+        private const val GUID = "eeee07fe-4b40-11e4-82d6-eba0b4f713e2"
+    }
 }

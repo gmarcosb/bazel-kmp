@@ -11,16 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.testing.coverage;
+package com.google.testing.coverage
 
 /**
  * Thrown when BitField.fromString() is called with a string with either odd number of or
  * non-hexadecimal characters
  */
-public class IllegalStringException extends RuntimeException {
-
-  public IllegalStringException(String message) {
-    super(message);
-  }
-}
+class IllegalStringException(message: String?) : java.lang.RuntimeException(message)

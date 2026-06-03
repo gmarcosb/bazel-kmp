@@ -11,66 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
+import com.google.devtools.build.lib.buildeventstream.BuildEventContext
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithOrderConstraint;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import java.util.Collection;
-import java.util.Map;
+/** This event is fired once build info data is available.  */
+class BuildInfoEvent
+    (buildInfo: MutableMap<String?, String?>) : BuildEventWithOrderConstraint, Postable {
+    private val buildInfoMap: MutableMap<String?, String?>
 
-/** This event is fired once build info data is available. */
-public final class BuildInfoEvent
-    implements BuildEventWithOrderConstraint, ExtendedEventHandler.Postable {
-  private final Map<String, String> buildInfoMap;
-
-  /**
-   * Construct the event from a map.
-   */
-  public BuildInfoEvent(Map<String, String> buildInfo) {
-    buildInfoMap = ImmutableMap.copyOf(buildInfo);
-  }
-
-  /**
-   * Return immutable map populated with build info key/value pairs.
-   */
-  public Map<String, String> getBuildInfoMap() {
-    return buildInfoMap;
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.workspaceStatusId();
-  }
-
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
-
-  @Override
-  public Collection<BuildEventId> postedAfter() {
-    return ImmutableList.of(BuildEventIdUtil.buildStartedId());
-  }
-
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.WorkspaceStatus.Builder status =
-        BuildEventStreamProtos.WorkspaceStatus.newBuilder();
-    for (Map.Entry<String, String> entry : getBuildInfoMap().entrySet()) {
-      status.addItem(
-          BuildEventStreamProtos.WorkspaceStatus.Item.newBuilder()
-              .setKey(entry.getKey())
-              .setValue(entry.getValue())
-              .build());
+    /**
+     * Construct the event from a map.
+     */
+    init {
+        buildInfoMap = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(buildInfo)
     }
-    return GenericBuildEvent.protoChaining(this).setWorkspaceStatus(status.build()).build();
-  }
+
+    /**
+     * Return immutable map populated with build info key/value pairs.
+     */
+    fun getBuildInfoMap(): MutableMap<String?, String?> {
+        return buildInfoMap
+    }
+
+    public override fun getEventId(): BuildEventId {
+        return BuildEventIdUtil.workspaceStatusId()
+    }
+
+    public override fun getChildrenEvents(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<BuildEventId?>()
+    }
+
+    public override fun postedAfter(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<E?>(BuildEventIdUtil.buildStartedId())
+    }
+
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        val status: BuildEventStreamProtos.WorkspaceStatus.Builder =
+            BuildEventStreamProtos.WorkspaceStatus.newBuilder()
+        for (entry in getBuildInfoMap().entrySet()) {
+            status.addItem(
+                BuildEventStreamProtos.WorkspaceStatus.Item.newBuilder()
+                    .setKey(entry.getKey())
+                    .setValue(entry.getValue())
+                    .build()
+            )
+        }
+        return GenericBuildEvent.protoChaining(this).setWorkspaceStatus(status.build()).build()
+    }
 }

@@ -11,246 +11,252 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.util.FileType;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import java.util.regex.Pattern;
+import com.google.devtools.build.lib.util.FileType
 
 /**
  * All the constants for the Docgen project.
  */
-public class DocgenConsts {
+object DocgenConsts {
+    const val LS: String = "\n"
 
-  public static final String LS = "\n";
+    const val BE_TEMPLATE_DIR: String = "com/google/devtools/build/docgen/templates/be"
+    val SINGLE_BE_TEMPLATE: String = BE_TEMPLATE_DIR + "/single-page.vm"
+    val COMMON_DEFINITIONS_TEMPLATE: String = BE_TEMPLATE_DIR + "/common-definitions.vm"
+    val OVERVIEW_TEMPLATE: String = BE_TEMPLATE_DIR + "/overview.vm"
+    val RULES_TEMPLATE: String = BE_TEMPLATE_DIR + "/rules.vm"
+    val BE_NAV_TEMPLATE: String = BE_TEMPLATE_DIR + "/be-nav.vm"
+    val BE_TOC_TEMPLATE: String = BE_TEMPLATE_DIR + "/be-toc.vm"
 
-  public static final String BE_TEMPLATE_DIR =
-      "com/google/devtools/build/docgen/templates/be";
-  public static final String SINGLE_BE_TEMPLATE = BE_TEMPLATE_DIR + "/single-page.vm";
-  public static final String COMMON_DEFINITIONS_TEMPLATE =
-      BE_TEMPLATE_DIR + "/common-definitions.vm";
-  public static final String OVERVIEW_TEMPLATE = BE_TEMPLATE_DIR + "/overview.vm";
-  public static final String RULES_TEMPLATE = BE_TEMPLATE_DIR + "/rules.vm";
-  public static final String BE_NAV_TEMPLATE = BE_TEMPLATE_DIR + "/be-nav.vm";
-  public static final String BE_TOC_TEMPLATE = BE_TEMPLATE_DIR + "/be-toc.vm";
+    const val STARLARK_LIBRARY_TEMPLATE: String = "com/google/devtools/build/docgen/templates/starlark-library.vm"
+    const val STARLARK_MODULE_CATEGORY_TEMPLATE: String =
+        "com/google/devtools/build/docgen/templates/starlark-category.vm"
+    const val STARLARK_OVERVIEW_TEMPLATE: String = "com/google/devtools/build/docgen/templates/starlark-overview.vm"
+    const val STARLARK_TOC_TEMPLATE: String = "com/google/devtools/build/docgen/templates/starlark-toc.vm"
 
-  public static final String STARLARK_LIBRARY_TEMPLATE =
-      "com/google/devtools/build/docgen/templates/starlark-library.vm";
-  public static final String STARLARK_MODULE_CATEGORY_TEMPLATE =
-      "com/google/devtools/build/docgen/templates/starlark-category.vm";
-  public static final String STARLARK_OVERVIEW_TEMPLATE =
-      "com/google/devtools/build/docgen/templates/starlark-overview.vm";
-  public static final String STARLARK_TOC_TEMPLATE =
-      "com/google/devtools/build/docgen/templates/starlark-toc.vm";
+    const val VAR_LEFT_PANEL: String = "LEFT_PANEL"
 
-  public static final String VAR_LEFT_PANEL = "LEFT_PANEL";
+    const val VAR_SECTION_BINARY: String = "SECTION_BINARY"
+    const val VAR_SECTION_LIBRARY: String = "SECTION_LIBRARY"
+    const val VAR_SECTION_TEST: String = "SECTION_TEST"
+    const val VAR_SECTION_OTHER: String = "SECTION_OTHER"
 
-  public static final String VAR_SECTION_BINARY = "SECTION_BINARY";
-  public static final String VAR_SECTION_LIBRARY = "SECTION_LIBRARY";
-  public static final String VAR_SECTION_TEST = "SECTION_TEST";
-  public static final String VAR_SECTION_OTHER = "SECTION_OTHER";
+    const val VAR_IMPLICIT_OUTPUTS: String = "IMPLICIT_OUTPUTS"
+    const val VAR_NAME: String = "NAME"
+    const val VAR_LANG_SPECIFIC_HEADER_TABLE: String = "LANG_SPECIFIC_HEADER_TABLE"
+    const val VAR_OTHER_RULES_HEADER_TABLE: String = "OTHER_RULES_HEADER_TABLE"
+    const val VAR_COMMON_ATTRIBUTE_DEFINITION: String = "COMMON_ATTRIBUTE_DEFINITION"
+    const val VAR_TEST_ATTRIBUTE_DEFINITION: String = "TEST_ATTRIBUTE_DEFINITION"
+    const val VAR_BINARY_ATTRIBUTE_DEFINITION: String = "BINARY_ATTRIBUTE_DEFINITION"
 
-  public static final String VAR_IMPLICIT_OUTPUTS = "IMPLICIT_OUTPUTS";
-  public static final String VAR_NAME = "NAME";
-  public static final String VAR_LANG_SPECIFIC_HEADER_TABLE = "LANG_SPECIFIC_HEADER_TABLE";
-  public static final String VAR_OTHER_RULES_HEADER_TABLE = "OTHER_RULES_HEADER_TABLE";
-  public static final String VAR_COMMON_ATTRIBUTE_DEFINITION = "COMMON_ATTRIBUTE_DEFINITION";
-  public static final String VAR_TEST_ATTRIBUTE_DEFINITION = "TEST_ATTRIBUTE_DEFINITION";
-  public static final String VAR_BINARY_ATTRIBUTE_DEFINITION = "BINARY_ATTRIBUTE_DEFINITION";
+    const val VAR_SECTION_STARLARK_BUILTIN: String = "SECTION_BUILTIN"
 
-  public static final String VAR_SECTION_STARLARK_BUILTIN = "SECTION_BUILTIN";
+    const val TYPICAL_ATTRIBUTES: String = "typical"
+    const val COMMON_ATTRIBUTES: String = "common"
+    const val TEST_ATTRIBUTES: String = "test"
+    const val BINARY_ATTRIBUTES: String = "binary"
 
-  public static final String TYPICAL_ATTRIBUTES = "typical";
-  public static final String COMMON_ATTRIBUTES = "common";
-  public static final String TEST_ATTRIBUTES = "test";
-  public static final String BINARY_ATTRIBUTES = "binary";
+    /**
+     * Mark the attribute as deprecated in the Build Encyclopedia.
+     */
+    const val FLAG_DEPRECATED: String = "DEPRECATED"
+    const val FLAG_GENERIC_RULE: String = "GENERIC_RULE"
 
-  /**
-   * Mark the attribute as deprecated in the Build Encyclopedia.
-   */
-  public static final String FLAG_DEPRECATED = "DEPRECATED";
-  public static final String FLAG_GENERIC_RULE = "GENERIC_RULE";
+    val HEADER_COMMENT: String = com.google.common.base.Joiner.on("\n").join(
+        com.google.common.collect.ImmutableList.of<String?>(
+            "<!DOCTYPE html>",
+            "<!--",
+            " This document is synchronized with Bazel releases.",
+            " To edit, submit changes to the Bazel source code.",
+            "-->",
+            "",
+            "<!-- Generated by //java/com/google/devtools/build/docgen:build-encyclopedia.zip -->"
+        )
+    )
 
-  public static final String HEADER_COMMENT = Joiner.on("\n").join(ImmutableList.<String>of(
-      "<!DOCTYPE html>",
-      "<!--",
-      " This document is synchronized with Bazel releases.",
-      " To edit, submit changes to the Bazel source code.",
-      "-->",
-      "",
-      "<!-- Generated by //java/com/google/devtools/build/docgen:build-encyclopedia.zip -->"));
+    val JAVA_SOURCE_FILE_SUFFIX: FileTypeSet? = FileTypeSet.of(FileType.of(".java"))
 
-  public static final FileTypeSet JAVA_SOURCE_FILE_SUFFIX = FileTypeSet.of(FileType.of(".java"));
+    const val META_KEY_NAME: String = "NAME"
+    const val META_KEY_TYPE: String = "TYPE"
+    const val META_KEY_FAMILY: String = "FAMILY"
 
-  public static final String META_KEY_NAME = "NAME";
-  public static final String META_KEY_TYPE = "TYPE";
-  public static final String META_KEY_FAMILY = "FAMILY";
+    /**
+     * For Starlark rules, this type name is equivalent to [RuleType.OTHER] with the [ ] flag set.
+     * 
+     * 
+     * Example: "generic_rules.genrule" would be classified as a generic rule of type OTHER.
+     */
+    const val STARLARK_GENERIC_RULE_TYPE: String = "GENERIC"
 
-  /**
-   * For Starlark rules, this type name is equivalent to {@link RuleType#OTHER} with the {@link
-   * FLAG_GENERIC_RULE} flag set.
-   *
-   * <p>Example: "generic_rules.genrule" would be classified as a generic rule of type OTHER.
-   */
-  public static final String STARLARK_GENERIC_RULE_TYPE = "GENERIC";
+    /**
+     * Reference to another rule or Build Encyclopedia section.
+     * 
+     * 
+     * The format of a link reference is rule.attribute (e.g. cc_library.deps). In the case of
+     * static pages such as common definitions the format is page.heading
+     * (e.g. common-definitions.label-expansion).
+     */
+    val BLAZE_RULE_LINK: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "\\$\\{link (([a-zA-Z_-]+)(\\.([a-zA-Z_\\.-]+))?)\\}"
+    )
 
-  /**
-   * Types a rule can have (Binary, Library, Test, Flag or Other).
-   *
-   * <p>{@code FLAG} is a ruleset flag, like a Java or Go flag. While flags aren't rules, the doc
-   * generator reads .bzl rule definitions from stardoc. So we create fake rule definitions for
-   * flags to document them. We should ideally replace this with a proper documentation API for
-   * Starlark flags.
-   */
-  public static enum RuleType {
-    BINARY,
-    LIBRARY,
-    TEST,
-    FLAG,
-    OTHER
-  }
+    val BLAZE_RULE_HEADING_LINK: java.util.regex.Pattern =
+        java.util.regex.Pattern.compile("\\$\\{link (([a-zA-Z_-]+)\\#([a-zA-Z0-9_\\.-]+))\\}")
 
-  /**
-   * Reference to another rule or Build Encyclopedia section.
-   *
-   * <p>The format of a link reference is rule.attribute (e.g. cc_library.deps). In the case of
-   * static pages such as common definitions the format is page.heading
-   * (e.g. common-definitions.label-expansion).
-   */
-  public static final Pattern BLAZE_RULE_LINK = Pattern.compile(
-      "\\$\\{link (([a-zA-Z_-]+)(\\.([a-zA-Z_\\.-]+))?)\\}");
+    /**
+     * i.e.
+     * 
+     */
+    val FAMILY_SUMMARY_START: java.util.regex.Pattern =
+        java.util.regex.Pattern.compile("([\\s]*/\\*)?[\\s]*\\<!--[\\s]*#FAMILY_SUMMARY[\\s]*--\\>[\\s]*")
 
-  public static final Pattern BLAZE_RULE_HEADING_LINK =
-      Pattern.compile("\\$\\{link (([a-zA-Z_-]+)\\#([a-zA-Z0-9_\\.-]+))\\}");
+    /**
+     * i.e.
+     * 
+     */
+    val FAMILY_SUMMARY_END: java.util.regex.Pattern =
+        java.util.regex.Pattern.compile("[\\s]*\\<!--[\\s]*#END_FAMILY_SUMMARY[\\s]*--\\>[\\s]*(\\*/[\\s]*)?")
 
-  /**
-   * i.e.
-   * <!-- #FAMILY_SUMMARY -->
-   */
-  public static final Pattern FAMILY_SUMMARY_START =
-      Pattern.compile("([\\s]*/\\*)?[\\s]*\\<!--[\\s]*#FAMILY_SUMMARY[\\s]*--\\>[\\s]*");
+    /**
+     * i.e. 
+     * i.e. 
+     */
+    val BLAZE_RULE_START: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "^[\\s]*/\\*[\\s]*\\<!\\-\\-[\\s]*#BLAZE_RULE[\\s]*\\(([\\w\\s=,+/()-]+)\\)"
+                + "(\\[[\\w,]+\\])?[\\s]*\\-\\-\\>"
+    )
 
-  /**
-   * i.e.
-   * <!-- #END_FAMILY_SUMMARY -->
-   */
-  public static final Pattern FAMILY_SUMMARY_END =
-      Pattern.compile("[\\s]*\\<!--[\\s]*#END_FAMILY_SUMMARY[\\s]*--\\>[\\s]*(\\*/[\\s]*)?");
+    /**
+     * i.e. 
+     */
+    val BLAZE_RULE_END: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "^[\\s]*\\<!\\-\\-[\\s]*#END_BLAZE_RULE[\\s]*\\-\\-\\>[\\s]*\\*/"
+    )
 
-  /**
-   * i.e. <!-- #BLAZE_RULE(NAME = RULE_NAME, TYPE = RULE_TYPE, FAMILY = RULE_FAMILY) -->
-   * i.e. <!-- #BLAZE_RULE(...)[DEPRECATED] -->
-   */
-  public static final Pattern BLAZE_RULE_START = Pattern.compile(
-      "^[\\s]*/\\*[\\s]*\\<!\\-\\-[\\s]*#BLAZE_RULE[\\s]*\\(([\\w\\s=,+/()-]+)\\)"
-      + "(\\[[\\w,]+\\])?[\\s]*\\-\\-\\>");
-  /**
-   * i.e. <!-- #END_BLAZE_RULE -->
-   */
-  public static final Pattern BLAZE_RULE_END = Pattern.compile(
-      "^[\\s]*\\<!\\-\\-[\\s]*#END_BLAZE_RULE[\\s]*\\-\\-\\>[\\s]*\\*/");
-  /**
-   * i.e. <!-- #BLAZE_RULE(RULE_NAME).VARIABLE_NAME -->
-   */
-  public static final Pattern BLAZE_RULE_VAR_START = Pattern.compile(
-      "^[\\s]*/\\*[\\s]*\\<!\\-\\-[\\s]*#BLAZE_RULE\\(([\\w\\$]+)\\)\\.([\\w]+)[\\s]*\\-\\-\\>");
-  /**
-   * i.e. <!-- #END_BLAZE_RULE.VARIABLE_NAME -->
-   */
-  public static final Pattern BLAZE_RULE_VAR_END = Pattern.compile(
-      "^[\\s]*\\<!\\-\\-[\\s]*#END_BLAZE_RULE\\.([\\w]+)[\\s]*\\-\\-\\>[\\s]*\\*/");
-  /**
-   * i.e. <!-- #BLAZE_RULE(RULE_NAME).ATTRIBUTE(ATTR_NAME) -->
-   * i.e. <!-- #BLAZE_RULE(RULE_NAME).ATTRIBUTE(ATTR_NAME)[DEPRECATED] -->
-   */
-  public static final Pattern BLAZE_RULE_ATTR_START = Pattern.compile(
-      "^[\\s]*/\\*[\\s]*\\<!\\-\\-[\\s]*#BLAZE_RULE\\(([\\w\\$]+)\\)\\."
-      + "ATTRIBUTE\\(([\\w]+)\\)(\\[[\\w,]+\\])?[\\s]*\\-\\-\\>");
-  /**
-   * i.e. <!-- #END_BLAZE_RULE.ATTRIBUTE -->
-   */
-  public static final Pattern BLAZE_RULE_ATTR_END = Pattern.compile(
-      "^[\\s]*\\<!\\-\\-[\\s]*#END_BLAZE_RULE\\.ATTRIBUTE[\\s]*\\-\\-\\>[\\s]*\\*/");
+    /**
+     * i.e. 
+     */
+    val BLAZE_RULE_VAR_START: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "^[\\s]*/\\*[\\s]*\\<!\\-\\-[\\s]*#BLAZE_RULE\\(([\\w\\$]+)\\)\\.([\\w]+)[\\s]*\\-\\-\\>"
+    )
 
-  /** e.g. "[DEPRECATED]" in &lt;!-- #BLAZE_RULE(...).ATTRIBUTE(...)[DEPRECATED] --&gt; */
-  public static final Pattern BLAZE_RULE_FLAGS = Pattern.compile("^.*\\[(.*)\\].*$");
+    /**
+     * i.e. 
+     */
+    val BLAZE_RULE_VAR_END: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "^[\\s]*\\<!\\-\\-[\\s]*#END_BLAZE_RULE\\.([\\w]+)[\\s]*\\-\\-\\>[\\s]*\\*/"
+    )
 
-  /**
-   * Example:
-   *
-   * <pre>
-   * """
-   * FooLang
-   *
-   * Note that native FooLang rules are experimental.
-   * """
-   * </pre>
-   *
-   * where "FooLang" is the family name and "Note that ..." is the summary.
-   */
-  public static final Pattern STARDOC_OUTPUT_FAMILY_NAME_AND_SUMMARY =
-      Pattern.compile("^(?<family>[^\n]+)(?:\n\n(?<summary>[^\n].*))?$");
+    /**
+     * i.e. 
+     * i.e. 
+     */
+    val BLAZE_RULE_ATTR_START: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "^[\\s]*/\\*[\\s]*\\<!\\-\\-[\\s]*#BLAZE_RULE\\(([\\w\\$]+)\\)\\."
+                + "ATTRIBUTE\\(([\\w]+)\\)(\\[[\\w,]+\\])?[\\s]*\\-\\-\\>"
+    )
 
-  /**
-   * Example: "library_rules.java_import", where "library" is the rule type and "java_import" is the
-   * rule name.
-   */
-  public static final Pattern STARDOC_OUTPUT_RULE_NAME =
-      Pattern.compile("^(?<type>[^.\\s]+)_rules\\.(?<name>[^.\\s]+)$");
+    /**
+     * i.e. 
+     */
+    val BLAZE_RULE_ATTR_END: java.util.regex.Pattern = java.util.regex.Pattern.compile(
+        "^[\\s]*\\<!\\-\\-[\\s]*#END_BLAZE_RULE\\.ATTRIBUTE[\\s]*\\-\\-\\>[\\s]*\\*/"
+    )
 
-  /**
-   * Examples:
-   *
-   * <ul>
-   *   <li>"Deprecated: Use <code>other_attribute</code> instead."
-   *   <li>"(File|str) Deprecated: Use <code>other_field</code> instead."
-   * </ul>
-   */
-  public static final Pattern STARDOC_OUTPUT_DEPRECATED_DOCSTRING =
-      Pattern.compile("^(?:\\(.*\\) )?Deprecated: (?<reason>.+)$");
+    /** e.g. "[DEPRECATED]" in &lt;!-- #BLAZE_RULE(...).ATTRIBUTE(...)[DEPRECATED] --&gt;  */
+    val BLAZE_RULE_FLAGS: java.util.regex.Pattern = java.util.regex.Pattern.compile("^.*\\[(.*)\\].*$")
 
-  public static final ImmutableMap<String, Integer> ATTRIBUTE_ORDERING =
-      ImmutableMap.<String, Integer>builder()
-          .put("name", -99)
-          .put("deps", -98)
-          .put("src", -97)
-          .put("srcs", -96)
-          .put("data", -95)
-          .put("resource", -94)
-          .put("resources", -93)
-          .put("out", -92)
-          .put("outs", -91)
-          .put("hdrs", -90)
-          .buildOrThrow();
+    /**
+     * Example:
+     * 
+     * <pre>
+     * """
+     * FooLang
+     * 
+     * Note that native FooLang rules are experimental.
+     * """
+    </pre> * 
+     * 
+     * where "FooLang" is the family name and "Note that ..." is the summary.
+     */
+    val STARDOC_OUTPUT_FAMILY_NAME_AND_SUMMARY: java.util.regex.Pattern =
+        java.util.regex.Pattern.compile("^(?<family>[^\n]+)(?:\n\n(?<summary>[^\n].*))?$")
 
-  // The following variables are not constants as they can be overridden from
-  // StarlarkDocumentationProcessor#parseOptions
-  // Their purpose is to allow generated Starlark documentation to link into the build encyclopedia.
+    /**
+     * Example: "library_rules.java_import", where "library" is the rule type and "java_import" is the
+     * rule name.
+     */
+    val STARDOC_OUTPUT_RULE_NAME: java.util.regex.Pattern =
+        java.util.regex.Pattern.compile("^(?<type>[^.\\s]+)_rules\\.(?<name>[^.\\s]+)$")
 
-  // Root directory of *narrative* Starlark documentation files such as rules.md
-  public static String starlarkDocsRoot = "/rules";
+    /**
+     * Examples:
+     * 
+     * 
+     *  * "Deprecated: Use `other_attribute` instead."
+     *  * "(File|str) Deprecated: Use `other_field` instead."
+     * 
+     */
+    val STARDOC_OUTPUT_DEPRECATED_DOCSTRING: java.util.regex.Pattern =
+        java.util.regex.Pattern.compile("^(?:\\(.*\\) )?Deprecated: (?<reason>.+)$")
 
-  static String toCommandLineFormat(String cmdDoc) {
-    // Replace html <br> tags with line breaks
-    cmdDoc = cmdDoc.replaceAll("(<br>|<br[\\s]*/>)", "\n") + "\n";
-    // Replace other links <a href=".*">s with human readable links
-    cmdDoc = cmdDoc.replaceAll("\\<a href=\"([^\"]+)\">[^\\<]*\\</a\\>", "$1");
-    // Delete other html tags
-    cmdDoc = cmdDoc.replaceAll("\\<[/]?[^\\>]+\\>", "");
-    // Delete docgen variables
-    cmdDoc = cmdDoc.replaceAll("\\$\\{[\\w_]+\\}", "");
-    // Substitute more than 2 line breaks in a row with 2 line breaks
-    cmdDoc = cmdDoc.replaceAll("[\\n]{2,}", "\n\n");
-    // Ensure that the doc starts and ends with exactly two line breaks
-    cmdDoc = cmdDoc.replaceAll("^[\\n]+", "\n\n");
-    cmdDoc = cmdDoc.replaceAll("[\\n]+$", "\n\n");
-    return cmdDoc;
-  }
+    val ATTRIBUTE_ORDERING: com.google.common.collect.ImmutableMap<String?, Int?> =
+        com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+            .put("name", -99)
+            .put("deps", -98)
+            .put("src", -97)
+            .put("srcs", -96)
+            .put("data", -95)
+            .put("resource", -94)
+            .put("resources", -93)
+            .put("out", -92)
+            .put("outs", -91)
+            .put("hdrs", -90)
+            .buildOrThrow()
 
-  static String removeDuplicatedNewLines(String doc) {
-    return doc.replaceAll("[\\n][\\s]*[\\n]", "\n");
-  }
+    // The following variables are not constants as they can be overridden from
+    // StarlarkDocumentationProcessor#parseOptions
+    // Their purpose is to allow generated Starlark documentation to link into the build encyclopedia.
+    // Root directory of *narrative* Starlark documentation files such as rules.md
+    var starlarkDocsRoot: String = "/rules"
+
+    fun toCommandLineFormat(cmdDoc: String): String {
+        // Replace html <br> tags with line breaks
+        var cmdDoc = cmdDoc
+        cmdDoc = cmdDoc.replace("(<br>|<br[\\s]*/>)".toRegex(), "\n") + "\n"
+        // Replace other links <a href=".*">s with human readable links
+        cmdDoc = cmdDoc.replace("\\<a href=\"([^\"]+)\">[^\\<]*\\</a\\>".toRegex(), "$1")
+        // Delete other html tags
+        cmdDoc = cmdDoc.replace("\\<[/]?[^\\>]+\\>".toRegex(), "")
+        // Delete docgen variables
+        cmdDoc = cmdDoc.replace("\\$\\{[\\w_]+\\}".toRegex(), "")
+        // Substitute more than 2 line breaks in a row with 2 line breaks
+        cmdDoc = cmdDoc.replace("[\\n]{2,}".toRegex(), "\n\n")
+        // Ensure that the doc starts and ends with exactly two line breaks
+        cmdDoc = cmdDoc.replace("^[\\n]+".toRegex(), "\n\n")
+        cmdDoc = cmdDoc.replace("[\\n]+$".toRegex(), "\n\n")
+        return cmdDoc
+    }
+
+    fun removeDuplicatedNewLines(doc: String): String? {
+        return doc.replace("[\\n][\\s]*[\\n]".toRegex(), "\n")
+    }
+
+    /**
+     * Types a rule can have (Binary, Library, Test, Flag or Other).
+     * 
+     * 
+     * `FLAG` is a ruleset flag, like a Java or Go flag. While flags aren't rules, the doc
+     * generator reads .bzl rule definitions from stardoc. So we create fake rule definitions for
+     * flags to document them. We should ideally replace this with a proper documentation API for
+     * Starlark flags.
+     */
+    enum class RuleType {
+        BINARY,
+        LIBRARY,
+        TEST,
+        FLAG,
+        OTHER
+    }
 }

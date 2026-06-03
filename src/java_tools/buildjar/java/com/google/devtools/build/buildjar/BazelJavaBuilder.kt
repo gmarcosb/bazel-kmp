@@ -11,130 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.buildjar
 
-package com.google.devtools.build.buildjar;
+import com.google.devtools.build.lib.worker.ProtoWorkerMessageProcessor
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.buildjar.javac.BlazeJavacResult;
-import com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status;
-import com.google.devtools.build.buildjar.javac.FormattedDiagnostic;
-import com.google.devtools.build.buildjar.javac.JavacOptions;
-import com.google.devtools.build.buildjar.javac.plugins.BlazeJavaCompilerPlugin;
-import com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule;
-import com.google.devtools.build.buildjar.javac.plugins.errorprone.ErrorPronePlugin;
-import com.google.devtools.build.lib.worker.ProtoWorkerMessageProcessor;
-import com.google.devtools.build.lib.worker.WorkRequestHandler;
-import com.google.devtools.build.lib.worker.WorkRequestHandler.WorkRequestHandlerBuilder;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.io.Writer;
-import java.nio.charset.Charset;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
-
-/** The JavaBuilder main called by bazel. */
-public class BazelJavaBuilder {
-
-  private static final String CMDNAME = "BazelJavaBuilder";
-
-  /** The main method of the BazelJavaBuilder. */
-  public static void main(String[] args) {
-    BazelJavaBuilder builder = new BazelJavaBuilder();
-    if (args.length == 1 && args[0].equals("--persistent_worker")) {
-      WorkRequestHandler workerHandler =
-          new WorkRequestHandlerBuilder(
-                  new WorkRequestHandler.WorkRequestCallback(
-                      (workRequest, printWriter) ->
-                          builder.parseAndBuild(
-                              workRequest.getArgumentsList(),
-                              Path.of(workRequest.getSandboxDir()),
-                              printWriter)),
-                  System.err,
-                  new ProtoWorkerMessageProcessor(System.in, System.out))
-              .setCpuUsageBeforeGc(Duration.ofSeconds(10))
-              .build();
-      int exitCode = 1;
-      try {
-        workerHandler.processRequests();
-        exitCode = 0;
-      } catch (IOException e) {
-        System.err.println(e.getMessage());
-      } finally {
-        // Prevent hanging threads from keeping the worker alive.
-        System.exit(exitCode);
-      }
-    } else {
-      PrintWriter pw =
-          new PrintWriter(new OutputStreamWriter(System.err, Charset.defaultCharset()));
-      int returnCode;
-      try {
-        returnCode = builder.parseAndBuild(Arrays.asList(args), Path.of(""), pw);
-      } finally {
-        pw.flush();
-      }
-      System.exit(returnCode);
+/** The JavaBuilder main called by bazel.  */
+class BazelJavaBuilder {
+    fun parseAndBuild(args: MutableList<String?>?, workDir: Path?, pw: PrintWriter): Int {
+        try {
+            val build: JavaLibraryBuildRequest = parse(args, workDir)
+            if (build.getDependencyModule().reduceClasspath())
+                ReducedClasspathJavaLibraryBuilder()
+            else
+                SimpleJavaLibraryBuilder().use { builder ->
+                    return build(builder, build, pw)
+                }
+        } catch (e: InvalidCommandLineException) {
+            pw.println(CMDNAME + " threw exception: " + e.message)
+            return 1
+        } catch (e: java.lang.Exception) {
+            e.printStackTrace()
+            return 1
+        }
     }
-  }
 
-  public int parseAndBuild(List<String> args, Path workDir, PrintWriter pw) {
-    try {
-      JavaLibraryBuildRequest build = parse(args, workDir);
-      try (SimpleJavaLibraryBuilder builder =
-          build.getDependencyModule().reduceClasspath()
-              ? new ReducedClasspathJavaLibraryBuilder()
-              : new SimpleJavaLibraryBuilder()) {
-
-        return build(builder, build, pw);
-      }
-    } catch (InvalidCommandLineException e) {
-      pw.println(CMDNAME + " threw exception: " + e.getMessage());
-      return 1;
-    } catch (Exception e) {
-      e.printStackTrace();
-      return 1;
+    /**
+     * Uses `builder` to build the target passed in `buildRequest`. All errors and
+     * diagnostics should be written to `err`.
+     * 
+     * @return An error code, 0 is success, any other value is an error.
+     */
+    @Throws(java.lang.Exception::class)
+    protected fun build(
+        builder: SimpleJavaLibraryBuilder, buildRequest: JavaLibraryBuildRequest?, err: java.io.Writer
+    ): Int {
+        val result: BlazeJavacResult = builder.run(buildRequest)
+        if (result.status() == com.google.devtools.build.buildjar.javac.BlazeJavacResult.Status.REQUIRES_FALLBACK) {
+            return 0
+        }
+        for (d in result.diagnostics()) {
+            err.write(d.getFormatted() + "\n")
+        }
+        err.write(result.output())
+        return if (result.isOk()) 0 else 1
     }
-  }
 
-  /**
-   * Uses {@code builder} to build the target passed in {@code buildRequest}. All errors and
-   * diagnostics should be written to {@code err}.
-   *
-   * @return An error code, 0 is success, any other value is an error.
-   */
-  protected int build(
-      SimpleJavaLibraryBuilder builder, JavaLibraryBuildRequest buildRequest, Writer err)
-      throws Exception {
-    BlazeJavacResult result = builder.run(buildRequest);
-    if (result.status() == Status.REQUIRES_FALLBACK) {
-      return 0;
+    /**
+     * Parses the list of arguments into a [JavaLibraryBuildRequest]. The returned [ ] object can be then used to configure the compilation itself.
+     * 
+     * @throws IOException if the argument list contains a file (with the @ prefix) and reading that
+     * file failed
+     * @throws InvalidCommandLineException on any command line error
+     */
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(IOException::class, InvalidCommandLineException::class)
+    fun parse(args: MutableList<String?>?, workDir: Path?): JavaLibraryBuildRequest {
+        val optionsParser: com.google.devtools.build.buildjar.OptionsParser =
+            com.google.devtools.build.buildjar.OptionsParser(
+                args,
+                JavacOptions.Companion.createWithWarningsAsErrorsDefault(com.google.common.collect.ImmutableList.of<String?>())
+            )
+        val plugins: com.google.common.collect.ImmutableList<BlazeJavaCompilerPlugin?> =
+            com.google.common.collect.ImmutableList.of<E?>(ErrorPronePlugin(BazelScannerSuppliers.bazelChecks()))
+        return JavaLibraryBuildRequest(
+            optionsParser,
+            plugins,
+            com.google.devtools.build.buildjar.javac.plugins.dependency.DependencyModule.Builder(),
+            workDir
+        )
     }
-    for (FormattedDiagnostic d : result.diagnostics()) {
-      err.write(d.getFormatted() + "\n");
-    }
-    err.write(result.output());
-    return result.isOk() ? 0 : 1;
-  }
 
-  /**
-   * Parses the list of arguments into a {@link JavaLibraryBuildRequest}. The returned {@link
-   * JavaLibraryBuildRequest} object can be then used to configure the compilation itself.
-   *
-   * @throws IOException if the argument list contains a file (with the @ prefix) and reading that
-   *     file failed
-   * @throws InvalidCommandLineException on any command line error
-   */
-  @VisibleForTesting
-  public JavaLibraryBuildRequest parse(List<String> args, Path workDir)
-      throws IOException, InvalidCommandLineException {
-    OptionsParser optionsParser =
-        new OptionsParser(args, JavacOptions.createWithWarningsAsErrorsDefault(ImmutableList.of()));
-    ImmutableList<BlazeJavaCompilerPlugin> plugins =
-        ImmutableList.of(new ErrorPronePlugin(BazelScannerSuppliers.bazelChecks()));
-    return new JavaLibraryBuildRequest(
-        optionsParser, plugins, new DependencyModule.Builder(), workDir);
-  }
+    companion object {
+        private const val CMDNAME = "BazelJavaBuilder"
+
+        /** The main method of the BazelJavaBuilder.  */
+        @kotlin.jvm.JvmStatic
+        fun main(args: Array<String>) {
+            val builder = BazelJavaBuilder()
+            if (args.size == 1 && args[0] == "--persistent_worker") {
+                val workerHandler: WorkRequestHandler =
+                    WorkRequestHandlerBuilder(
+                        WorkRequestCallback(
+                            { workRequest, printWriter ->
+                                builder.parseAndBuild(
+                                    workRequest.getArgumentsList(),
+                                    Path.of(workRequest.getSandboxDir()),
+                                    printWriter
+                                )
+                            }),
+                        java.lang.System.err,
+                        ProtoWorkerMessageProcessor(java.lang.System.`in`, java.lang.System.out)
+                    )
+                        .setCpuUsageBeforeGc(java.time.Duration.ofSeconds(10))
+                        .build()
+                var exitCode = 1
+                try {
+                    workerHandler.processRequests()
+                    exitCode = 0
+                } catch (e: IOException) {
+                    java.lang.System.err.println(e.message)
+                } finally {
+                    // Prevent hanging threads from keeping the worker alive.
+                    java.lang.System.exit(exitCode)
+                }
+            } else {
+                val pw: PrintWriter =
+                    PrintWriter(OutputStreamWriter(java.lang.System.err, java.nio.charset.Charset.defaultCharset()))
+                var returnCode: Int
+                try {
+                    returnCode = builder.parseAndBuild(java.util.Arrays.asList<String?>(*args), Path.of(""), pw)
+                } finally {
+                    pw.flush()
+                }
+                java.lang.System.exit(returnCode)
+            }
+        }
+    }
 }

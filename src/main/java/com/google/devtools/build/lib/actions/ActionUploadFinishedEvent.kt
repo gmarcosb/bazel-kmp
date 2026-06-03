@@ -11,33 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static java.util.Objects.requireNonNull;
-
-import build.bazel.remote.execution.v2.Digest;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import com.google.devtools.build.lib.remote.Store;
+import build.bazel.remote.execution.v2.Digest
 
 /**
  * The event fired when a resource is done uploading to a remote or disk cache upon completion of a
  * local action.
- *
+ * 
  * @param action Returns the associated action.
- * @param store Returns the {@link Store} that the resource belongs to.
- * @param digest Returns the {@link Digest} that uniquely identifies the resource.
+ * @param store Returns the [Store] that the resource belongs to.
+ * @param digest Returns the [Digest] that uniquely identifies the resource.
  */
-public record ActionUploadFinishedEvent(ActionExecutionMetadata action, Store store, Digest digest)
-    implements Postable {
-  public ActionUploadFinishedEvent {
-    requireNonNull(action, "action");
-    requireNonNull(store, "store");
-    requireNonNull(digest, "digest");
-  }
+class ActionUploadFinishedEvent(action: ActionExecutionMetadata?, store: Store?, digest: Digest?) : Postable {
+    val action: ActionExecutionMetadata?
+    val store: Store?
+    val digest: Digest?
 
-  public static ActionUploadFinishedEvent create(
-      ActionExecutionMetadata action, Store store, Digest digest) {
-    return new ActionUploadFinishedEvent(action, store, digest);
-  }
+    init {
+        this.digest = digest
+        this.store = store
+        this.action = action
+        java.util.Objects.requireNonNull<ActionExecutionMetadata?>(action, "action")
+        java.util.Objects.requireNonNull<Any?>(store, "store")
+        java.util.Objects.requireNonNull<Any?>(digest, "digest")
+    }
 
+    companion object {
+        fun create(
+            action: ActionExecutionMetadata?, store: Store?, digest: Digest?
+        ): ActionUploadFinishedEvent {
+            return ActionUploadFinishedEvent(action, store, digest)
+        }
+    }
 }

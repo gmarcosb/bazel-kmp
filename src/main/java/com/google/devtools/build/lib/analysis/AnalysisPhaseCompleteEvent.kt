@@ -11,81 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.TotalAndConfiguredTargetOnlyMetric;
-import com.google.devtools.build.lib.pkgcache.PackageManager.PackageManagerStatistics;
-import java.util.Collection;
+import com.google.devtools.build.lib.pkgcache.PackageManager.PackageManagerStatistics
 
 /**
  * This event is fired after the analysis phase is complete.
  */
-public class AnalysisPhaseCompleteEvent {
+class AnalysisPhaseCompleteEvent(
+    topLevelTargets: MutableCollection<out ConfiguredTarget?>,
+    targetsConfigured: TotalAndConfiguredTargetOnlyMetric?,
+    actionsConstructed: TotalAndConfiguredTargetOnlyMetric?,
+    actionsConstructedByMnemonic: com.google.common.collect.ImmutableMap<String?, Int?>?,
+    private val timeInMs: Long,
+    pkgManagerStats: PackageManagerStatistics?,
+    analysisCacheDropped: Boolean
+) {
+    private val topLevelTargets: MutableCollection<ConfiguredTarget?>
+    private val targetsConfigured: TotalAndConfiguredTargetOnlyMetric?
+    private val pkgManagerStats: PackageManagerStatistics?
+    private val actionsConstructed: TotalAndConfiguredTargetOnlyMetric?
+    private val actionsConstructedByMnemonic: com.google.common.collect.ImmutableMap<String?, Int?>? = null
+    private val analysisCacheDropped: Boolean
 
-  private final Collection<ConfiguredTarget> topLevelTargets;
-  private final long timeInMs;
-  private final TotalAndConfiguredTargetOnlyMetric targetsConfigured;
-  private final PackageManagerStatistics pkgManagerStats;
-  private final TotalAndConfiguredTargetOnlyMetric actionsConstructed;
-  private final ImmutableMap<String, Integer> actionsConstructedByMnemonic;
-  private final boolean analysisCacheDropped;
+    init {
+        this.topLevelTargets = com.google.common.collect.ImmutableList.copyOf<ConfiguredTarget?>(topLevelTargets)
+            .also {
+                this.targetsConfigured = it
+            }<TotalAndConfiguredTargetOnlyMetric> com . google . common . base . Preconditions . checkNotNull < TotalAndConfiguredTargetOnlyMetric ? > (targetsConfigured)
+        this.pkgManagerStats = pkgManagerStats
+            .also {
+                this.actionsConstructed = it
+            }<TotalAndConfiguredTargetOnlyMetric> com . google . common . base . Preconditions . checkNotNull < TotalAndConfiguredTargetOnlyMetric ? > (actionsConstructed)
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |this.actionsConstructedByMnemonic = <ImmutableMap<String, Integer>>checkNotNull(actionsConstructedByMnemonic);
+            """.trimMargin()
+        )
+        this.analysisCacheDropped = analysisCacheDropped
+    }
 
-  public AnalysisPhaseCompleteEvent(
-      Collection<? extends ConfiguredTarget> topLevelTargets,
-      TotalAndConfiguredTargetOnlyMetric targetsConfigured,
-      TotalAndConfiguredTargetOnlyMetric actionsConstructed,
-      ImmutableMap<String, Integer> actionsConstructedByMnemonic,
-      long timeInMs,
-      PackageManagerStatistics pkgManagerStats,
-      boolean analysisCacheDropped) {
-    this.timeInMs = timeInMs;
-    this.topLevelTargets = ImmutableList.copyOf(topLevelTargets);
-    this.targetsConfigured = checkNotNull(targetsConfigured);
-    this.pkgManagerStats = pkgManagerStats;
-    this.actionsConstructed = checkNotNull(actionsConstructed);
-    this.actionsConstructedByMnemonic = checkNotNull(actionsConstructedByMnemonic);
-    this.analysisCacheDropped = analysisCacheDropped;
-  }
+    /**
+     * Returns the set of active topLevelTargets remaining, which is a subset of the topLevelTargets
+     * we attempted to analyze.
+     */
+    fun getTopLevelTargets(): MutableCollection<ConfiguredTarget?> {
+        return topLevelTargets
+    }
 
-  /**
-   * Returns the set of active topLevelTargets remaining, which is a subset of the topLevelTargets
-   * we attempted to analyze.
-   */
-  public Collection<ConfiguredTarget> getTopLevelTargets() {
-    return topLevelTargets;
-  }
+    /** Returns the number of targets/aspects configured during analysis.  */
+    fun getTargetsConfigured(): TotalAndConfiguredTargetOnlyMetric? {
+        return targetsConfigured
+    }
 
-  /** Returns the number of targets/aspects configured during analysis. */
-  public TotalAndConfiguredTargetOnlyMetric getTargetsConfigured() {
-    return targetsConfigured;
-  }
+    fun getTimeInMs(): Long {
+        return timeInMs
+    }
 
-  public long getTimeInMs() {
-    return timeInMs;
-  }
+    /** Returns the actions constructed during this analysis.  */
+    fun getActionsConstructed(): TotalAndConfiguredTargetOnlyMetric? {
+        return actionsConstructed
+    }
 
-  /** Returns the actions constructed during this analysis. */
-  public TotalAndConfiguredTargetOnlyMetric getActionsConstructed() {
-    return actionsConstructed;
-  }
+    fun getActionsConstructedByMnemonic(): com.google.common.collect.ImmutableMap<String?, Int?>? {
+        return actionsConstructedByMnemonic
+    }
 
-  public ImmutableMap<String, Integer> getActionsConstructedByMnemonic() {
-    return actionsConstructedByMnemonic;
-  }
+    fun wasAnalysisCacheDropped(): Boolean {
+        return analysisCacheDropped
+    }
 
-  public boolean wasAnalysisCacheDropped() {
-    return analysisCacheDropped;
-  }
-
-  /**
-   * Returns package manager statistics.
-   */
-  public PackageManagerStatistics getPkgManagerStats() {
-    return pkgManagerStats;
-  }
+    /**
+     * Returns package manager statistics.
+     */
+    fun getPkgManagerStats(): PackageManagerStatistics? {
+        return pkgManagerStats
+    }
 }

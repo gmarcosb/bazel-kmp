@@ -11,505 +11,521 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions.cache
 
-package com.google.devtools.build.lib.actions.cache;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FileArtifactValue.ProxyFileArtifactValue;
-import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics;
-import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics.MissReason;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue.ArchivedRepresentation;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.DigestUtils;
-import com.google.devtools.build.lib.vfs.OutputPermissions;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics
 
 /**
  * An interface defining a cache of already-executed Actions.
- *
- * <p>The name of this class is misleading; it doesn't cache the actual actions, only a fingerprint
+ * 
+ * 
+ * The name of this class is misleading; it doesn't cache the actual actions, only a fingerprint
  * of all action properties that matter for cache invalidation (action key, path and contents of
  * input and outputs files, environment variables, execution properties, and certain flags), so we
  * can tell if we need to rerun an action given the current state of the file system.
- *
- * <p>Each action entry uses the path of the action's primary output as the key.
+ * 
+ * 
+ * Each action entry uses the path of the action's primary output as the key.
  */
 @ThreadCompatible
-public interface ActionCache {
+interface ActionCache {
+    /** Updates the cache entry for the specified key.  */
+    fun put(key: String?, entry: Entry?)
 
-  /** Updates the cache entry for the specified key. */
-  void put(String key, ActionCache.Entry entry);
+    /**
+     * Returns the cache entry for the specified key, or null if not found.
+     * 
+     * 
+     * If an entry exists but is corrupted, returns [ActionCache.Entry.CORRUPTED]. Callers
+     * should check [ActionCache.Entry.isCorrupted] before inspecting anything else on the
+     * entry.
+     */
+    fun get(key: String?): Entry?
 
-  /**
-   * Returns the cache entry for the specified key, or null if not found.
-   *
-   * <p>If an entry exists but is corrupted, returns {@link ActionCache.Entry#CORRUPTED}. Callers
-   * should check {@link ActionCache.Entry#isCorrupted()} before inspecting anything else on the
-   * entry.
-   */
-  @Nullable
-  ActionCache.Entry get(String key);
+    /** Removes entry from cache  */
+    fun remove(key: String?)
 
-  /** Removes entry from cache */
-  void remove(String key);
+    /** Removes entry from cache that matches the predicate.  */
+    fun removeIf(predicate: java.util.function.Predicate<Entry?>?)
 
-  /** Removes entry from cache that matches the predicate. */
-  void removeIf(Predicate<ActionCache.Entry> predicate);
+    /** An action cache entry.  */
+    class Entry internal constructor(
+        digest: ByteArray?,
+        discoveredInputPaths: com.google.common.collect.ImmutableList<String?>?,
+        prunedInputs: Boolean,
+        outputFileMetadata: com.google.common.collect.ImmutableMap<String?, FileArtifactValue?>,
+        outputTreeMetadata: com.google.common.collect.ImmutableMap<String?, SerializableTreeArtifactValue?>,
+        proxyOutputs: com.google.common.collect.ImmutableList<String?>
+    ) {
+        // Digest of all relevant properties of the action for cache invalidation purposes.
+        // Null if the entry is corrupted.
+        private val digest: ByteArray?
 
-  /** An action cache entry. */
-  final class Entry {
-    /** Unique instance standing for a corrupted cache entry. */
-    public static final ActionCache.Entry CORRUPTED =
-        new Entry(null, null, false, ImmutableMap.of(), ImmutableMap.of(), ImmutableList.of());
+        // List of input paths discovered by the action.
+        // Null if the action does not discover inputs.
+        private val discoveredInputPaths: com.google.common.collect.ImmutableList<String?>?
 
-    // Digest of all relevant properties of the action for cache invalidation purposes.
-    // Null if the entry is corrupted.
-    @Nullable private final byte[] digest;
+        private val prunedInputs: Boolean
 
-    // List of input paths discovered by the action.
-    // Null if the action does not discover inputs.
-    @Nullable private final ImmutableList<String> discoveredInputPaths;
+        // Output metadata.
+        // Only present when building without the bytes, and even then, only for remotely stored files.
+        private val outputFileMetadata: com.google.common.collect.ImmutableMap<String?, FileArtifactValue?>
+        private val outputTreeMetadata: com.google.common.collect.ImmutableMap<String?, SerializableTreeArtifactValue?>
+        private val proxyOutputs: com.google.common.collect.ImmutableList<String?>
 
-    private final boolean prunedInputs;
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                !prunedInputs || discoveredInputPaths != null,
+                "Action had unused inputs but no discovered inputs"
+            )
+            this.digest = digest
+            this.discoveredInputPaths = discoveredInputPaths
+            this.prunedInputs = prunedInputs
+            this.outputFileMetadata = outputFileMetadata
+            this.outputTreeMetadata = outputTreeMetadata
+            this.proxyOutputs = proxyOutputs
+        }
 
-    // Output metadata.
-    // Only present when building without the bytes, and even then, only for remotely stored files.
-    private final ImmutableMap<String, FileArtifactValue> outputFileMetadata;
-    private final ImmutableMap<String, SerializableTreeArtifactValue> outputTreeMetadata;
-    private final ImmutableList<String> proxyOutputs;
+        /** Returns whether this cache entry is corrupted and should be ignored.  */
+        fun isCorrupted(): Boolean {
+            return digest == null
+        }
 
-    Entry(
-        @Nullable byte[] digest,
-        @Nullable ImmutableList<String> discoveredInputPaths,
-        boolean prunedInputs,
-        ImmutableMap<String, FileArtifactValue> outputFileMetadata,
-        ImmutableMap<String, SerializableTreeArtifactValue> outputTreeMetadata,
-        ImmutableList<String> proxyOutputs) {
-      checkArgument(
-          !prunedInputs || discoveredInputPaths != null,
-          "Action had unused inputs but no discovered inputs");
-      this.digest = digest;
-      this.discoveredInputPaths = discoveredInputPaths;
-      this.prunedInputs = prunedInputs;
-      this.outputFileMetadata = outputFileMetadata;
-      this.outputTreeMetadata = outputTreeMetadata;
-      this.proxyOutputs = proxyOutputs;
-    }
+        /**
+         * Returns a digest encoding all relevant properties of the action for cache invalidation
+         * purposes.
+         */
+        fun getDigest(): ByteArray? {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return digest
+        }
 
-    /** Returns whether this cache entry is corrupted and should be ignored. */
-    public boolean isCorrupted() {
-      return digest == null;
+        /** Returns whether the action discovers inputs.  */
+        fun discoversInputs(): Boolean {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return discoveredInputPaths != null
+        }
+
+        /**
+         * Whether the action detected unused inputs.
+         * 
+         * 
+         * If true, implies [.discoversInputs], and [.getDiscoveredInputPaths]
+         * returns the used inputs.
+         */
+        fun prunedInputs(): Boolean {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return prunedInputs
+        }
+
+        /**
+         * Returns the list of discovered input paths, or null if the action does not discover inputs.
+         */
+        fun getDiscoveredInputPaths(): com.google.common.collect.ImmutableList<String?>? {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return discoveredInputPaths
+        }
+
+        /** Gets the metadata of an output file.  */
+        fun getOutputFile(output: Artifact): FileArtifactValue? {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return outputFileMetadata.get(output.getExecPathString())
+        }
+
+        /** Gets the metadata of all output files.  */
+        fun getOutputFiles(): com.google.common.collect.ImmutableMap<String?, FileArtifactValue?> {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return outputFileMetadata
+        }
+
+        /** Gets the metadata of an output tree.  */
+        fun getOutputTree(output: SpecialArtifact): SerializableTreeArtifactValue? {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return outputTreeMetadata.get(output.getExecPathString())
+        }
+
+        /** Gets the metadata of all output trees.  */
+        fun getOutputTrees(): com.google.common.collect.ImmutableMap<String?, SerializableTreeArtifactValue?> {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return outputTreeMetadata
+        }
+
+        /**
+         * Returns a list of exec path strings for [proxied][ProxyFileArtifactValue] outputs.
+         */
+        fun getProxyOutputs(): com.google.common.collect.ImmutableList<String?> {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return proxyOutputs
+        }
+
+        /** Returns whether this entry stores any output metadata.  */
+        fun hasOutputMetadata(): Boolean {
+            com.google.common.base.Preconditions.checkState(!isCorrupted())
+            return !outputFileMetadata.isEmpty() || !outputTreeMetadata.isEmpty() || !proxyOutputs.isEmpty()
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("digest", digest)
+                .add("discoveredInputPaths", discoveredInputPaths)
+                .add("outputFileMetadata", outputFileMetadata)
+                .add("outputTreeMetadata", outputTreeMetadata)
+                .add("proxyOutputs", proxyOutputs)
+                .toString()
+        }
+
+        fun dump(out: PrintStream) {
+            if (isCorrupted()) {
+                out.println("  CORRUPTED")
+                return
+            }
+            out.format(
+                "  digest = %s\n",
+                com.google.devtools.build.lib.actions.cache.ActionCache.Entry.Companion.formatDigest(digest)
+            )
+            if (discoveredInputPaths != null) {
+                out.println("  discoveredInputPaths =")
+                for (path in com.google.common.collect.ImmutableList.sortedCopyOf<String?>(discoveredInputPaths)) {
+                    out.format("    %s\n", path)
+                }
+            }
+
+            if (!outputFileMetadata.isEmpty()) {
+                out.println("  outputFileMetadata =")
+                for (path in com.google.common.collect.ImmutableList.sortedCopyOf<String?>(outputFileMetadata.keySet())) {
+                    out.format("    %s = %s\n", path, outputFileMetadata.get(path))
+                }
+            }
+
+            if (!outputTreeMetadata.isEmpty()) {
+                out.println("  outputTreeMetadata =")
+                for (path in com.google.common.collect.ImmutableList.sortedCopyOf<String?>(outputTreeMetadata.keySet())) {
+                    out.format("    %s = %s\n", path, outputTreeMetadata.get(path))
+                }
+            }
+        }
+
+        /** Serializable representation of [TreeArtifactValue].  */
+        class SerializableTreeArtifactValue(
+            childValues: com.google.common.collect.ImmutableMap<String?, FileArtifactValue?>?,
+            archivedFileValue: java.util.Optional<FileArtifactValue?>?,
+            resolvedPath: java.util.Optional<PathFragment?>?
+        ) {
+            val childValues: com.google.common.collect.ImmutableMap<String?, FileArtifactValue?>?
+            val archivedFileValue: java.util.Optional<FileArtifactValue?>?
+            val resolvedPath: java.util.Optional<PathFragment?>?
+
+            init {
+                this.resolvedPath = resolvedPath
+                this.archivedFileValue = archivedFileValue
+                this.childValues = childValues
+                java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, FileArtifactValue?>?>(
+                    childValues,
+                    "childValues"
+                )
+                java.util.Objects.requireNonNull<java.util.Optional<FileArtifactValue?>?>(
+                    archivedFileValue,
+                    "archivedFileValue"
+                )
+                java.util.Objects.requireNonNull<java.util.Optional<PathFragment?>?>(resolvedPath, "resolvedPath")
+            }
+
+            companion object {
+                /**
+                 * Creates [SerializableTreeArtifactValue] from [TreeArtifactValue] by collecting
+                 * children and archived artifact which are remote.
+                 */
+                fun create(treeMetadata: TreeArtifactValue): SerializableTreeArtifactValue {
+                    val childValues: com.google.common.collect.ImmutableMap<String?, FileArtifactValue?>? =
+                        treeMetadata.getChildValues().entrySet().stream() // Only save remote tree file
+                            .filter({ e -> e.getValue().isRemote() })
+                            .collect(
+                                com.google.common.collect.ImmutableMap.toImmutableMap<T?, K?, V?>(
+                                    java.util.function.Function { e: T? -> e.getKey().getTreeRelativePathString() },
+                                    java.util.function.Function { java.util.Map.Entry.getValue() })
+                            )
+
+                    // Only save remote archived artifact
+                    val archivedFileValue: java.util.Optional<FileArtifactValue?>? =
+                        treeMetadata
+                            .getArchivedRepresentation()
+                            .filter({ ar -> ar.archivedFileValue().isRemote() })
+                            .map(ArchivedRepresentation::archivedFileValue)
+
+                    val resolvedPath: java.util.Optional<PathFragment?>? = treeMetadata.getResolvedPath()
+
+                    return SerializableTreeArtifactValue(childValues, archivedFileValue, resolvedPath)
+                }
+            }
+        }
+
+        /** A builder for an action cache entry.  */
+        class Builder(
+            private val actionKey: String?,
+            discoversInputs: Boolean,
+            clientEnv: com.google.common.collect.ImmutableMap<String?, String?>,
+            actionExecutionSalt: String?,
+            outputPermissions: OutputPermissions,
+            useArchivedTreeArtifacts: Boolean
+        ) {
+            // Combined input and output metadata.
+            private val metadataMap: HashMap<String?, FileArtifactValue?> = HashMap<String?, FileArtifactValue?>()
+
+            private val clientEnv: com.google.common.collect.ImmutableMap<String?, String?>
+
+            private val actionExecutionSalt: String?
+
+            // Discovered inputs.
+            // Null if the action does not discover inputs.
+            private val discoveredInputPaths: com.google.common.collect.ImmutableList.Builder<String?>?
+            private var prunedInputs = false
+
+            private val outputFileMetadata: com.google.common.collect.ImmutableMap.Builder<String?, FileArtifactValue?> =
+                com.google.common.collect.ImmutableMap.builder<String?, FileArtifactValue?>()
+            private val outputTreeMetadata: com.google.common.collect.ImmutableMap.Builder<String?, SerializableTreeArtifactValue?> =
+                com.google.common.collect.ImmutableMap.builder<String?, SerializableTreeArtifactValue?>()
+
+            private val proxyOutputs: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+
+            // Settings that affect the outcome of an action but aren't captured in the file metadata.
+            private val outputPermissions: OutputPermissions
+            private val useArchivedTreeArtifacts: Boolean
+
+            /**
+             * Creates a new builder.
+             * 
+             * @param discoversInputs whether the action discovers inputs.
+             * @param outputPermissions the requested output permissions.
+             * @param useArchivedTreeArtifacts whether archived tree artifacts are enabled.
+             */
+            init {
+                this.clientEnv = clientEnv
+                this.actionExecutionSalt = actionExecutionSalt
+                this.discoveredInputPaths =
+                    if (discoversInputs) com.google.common.collect.ImmutableList.builder<String?>() else null
+                this.outputPermissions = outputPermissions
+                this.useArchivedTreeArtifacts = useArchivedTreeArtifacts
+            }
+
+            /** Adds metadata of an input file.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addInputFile(artifact: Artifact, metadata: FileArtifactValue?): Builder {
+                addInputFile(artifact, metadata,  /* saveExecPath= */false)
+                return this
+            }
+
+            /** Adds metadata of an input file.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addInputFile(
+                artifact: Artifact, metadata: FileArtifactValue?, saveExecPath: Boolean
+            ): Builder {
+                val execPath: String = artifact.getExecPathString()
+                if (discoveredInputPaths != null && saveExecPath) {
+                    discoveredInputPaths.add(execPath)
+                }
+                metadataMap.put(execPath, metadata)
+                return this
+            }
+
+            /** Adds an output file.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addOutputFile(output: Artifact, metadata: FileArtifactValue): Builder {
+                return addOutputFile(output, metadata,  /* saveFileMetadata= */false)
+            }
+
+            /** Adds an output file.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addOutputFile(
+                output: Artifact, metadata: FileArtifactValue, saveFileMetadata: Boolean
+            ): Builder {
+                com.google.common.base.Preconditions.checkArgument(
+                    !output.isTreeArtifact() && !output.isChildOfDeclaredDirectory(),
+                    "Must use addOutputTree to save tree artifacts and their children: %s",
+                    output
+                )
+                val execPath: String = output.getExecPathString()
+                // Only save remote and proxy file metadata.
+                if (saveFileMetadata) {
+                    if (metadata.isRemote()) {
+                        outputFileMetadata.put(execPath, metadata)
+                    } else if (metadata is ProxyFileArtifactValue) {
+                        proxyOutputs.add(execPath)
+                    }
+                }
+                metadataMap.put(execPath, metadata)
+                return this
+            }
+
+            /** Adds an output tree.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addOutputTree(output: SpecialArtifact, metadata: TreeArtifactValue): Builder {
+                return addOutputTree(output, metadata,  /* saveTreeMetadata= */false)
+            }
+
+            /** Adds an output tree.  */
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun addOutputTree(
+                output: SpecialArtifact, metadata: TreeArtifactValue, saveTreeMetadata: Boolean
+            ): Builder {
+                com.google.common.base.Preconditions.checkArgument(
+                    output.isTreeArtifact(),
+                    "artifact must be a tree artifact: %s",
+                    output
+                )
+                val execPath: String = output.getExecPathString()
+                if (saveTreeMetadata) {
+                    if (!metadata.getChildValues().isEmpty()
+                        && metadata.getChildValues().values().stream()
+                            .allMatch({ obj: Any? -> ProxyFileArtifactValue::class.java.isInstance(obj) })
+                    ) {
+                        proxyOutputs.add(output.getExecPathString())
+                    } else {
+                        outputTreeMetadata.put(execPath, SerializableTreeArtifactValue.Companion.create(metadata))
+                    }
+                }
+                metadataMap.put(execPath, metadata.getMetadata())
+                return this
+            }
+
+            @com.google.errorprone.annotations.CanIgnoreReturnValue
+            fun setPrunedInputs(prunedInputs: Boolean): Builder {
+                this.prunedInputs = prunedInputs
+                return this
+            }
+
+            fun build(): Entry {
+                return com.google.devtools.build.lib.actions.cache.ActionCache.Entry(
+                    com.google.devtools.build.lib.actions.cache.ActionCache.Entry.Builder.Companion.computeDigest(
+                        actionKey,
+                        discoveredInputPaths != null,
+                        metadataMap,
+                        clientEnv,
+                        actionExecutionSalt,
+                        outputPermissions,
+                        useArchivedTreeArtifacts
+                    ),
+                    if (discoveredInputPaths != null) discoveredInputPaths.build() else null,
+                    prunedInputs,
+                    outputFileMetadata.buildOrThrow(),
+                    outputTreeMetadata.buildOrThrow(),
+                    proxyOutputs.build()
+                )
+            }
+
+            companion object {
+                private fun computeDigest(
+                    actionKey: String?,
+                    discoversInputs: Boolean,
+                    metadataMap: MutableMap<String?, FileArtifactValue?>,
+                    clientEnv: MutableMap<String?, String?>,
+                    actionExecutionSalt: String?,
+                    outputPermissions: OutputPermissions,
+                    useArchivedTreeArtifacts: Boolean
+                ): ByteArray {
+                    val fp: Fingerprint = Fingerprint()
+                    fp.addString(actionKey)
+                    fp.addBoolean(discoversInputs)
+                    fp.addBytes(MetadataDigestUtils.fromMetadata(metadataMap))
+                    fp.addBytes(
+                        com.google.devtools.build.lib.actions.cache.ActionCache.Entry.Builder.Companion.computeMapDigest(
+                            clientEnv
+                        )
+                    )
+                    fp.addString(actionExecutionSalt)
+                    fp.addInt(outputPermissions.getPermissionsMode())
+                    fp.addBoolean(useArchivedTreeArtifacts)
+                    return fp.digestAndReset()
+                }
+
+                private fun computeMapDigest(map: MutableMap<String?, String?>): ByteArray? {
+                    var result: ByteArray? = ByteArray(0)
+                    val fp: Fingerprint = Fingerprint()
+                    for (entry in map.entrySet()) {
+                        fp.addString(entry.getKey())
+                        fp.addString(entry.getValue())
+                        result = DigestUtils.combineUnordered(result, fp.digestAndReset())
+                    }
+                    return result
+                }
+            }
+        }
+
+        companion object {
+            /** Unique instance standing for a corrupted cache entry.  */
+            val CORRUPTED: Entry = com.google.devtools.build.lib.actions.cache.ActionCache.Entry(
+                null,
+                null,
+                false,
+                com.google.common.collect.ImmutableMap.of<String?, FileArtifactValue?>(),
+                com.google.common.collect.ImmutableMap.of<String?, SerializableTreeArtifactValue?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            )
+
+            private fun formatDigest(digest: ByteArray): String {
+                return com.google.common.io.BaseEncoding.base16().lowerCase().encode(digest)
+            }
+        }
     }
 
     /**
-     * Returns a digest encoding all relevant properties of the action for cache invalidation
-     * purposes.
+     * Give persistent cache implementations a notification to write to disk.
+     * 
+     * @return size in bytes of the serialized cache.
      */
-    public byte[] getDigest() {
-      checkState(!isCorrupted());
-      return digest;
-    }
+    @Throws(IOException::class)
+    fun save(): Long
 
-    /** Returns whether the action discovers inputs. */
-    public boolean discoversInputs() {
-      checkState(!isCorrupted());
-      return discoveredInputPaths != null;
-    }
+    /** Clear the action cache, closing all opened file handle.  */
+    fun clear()
 
     /**
-     * Whether the action detected unused inputs.
-     *
-     * <p>If true, implies {@link #discoversInputs()}, and {@link #getDiscoveredInputPaths()}
-     * returns the used inputs.
+     * Returns an [ActionCache] with the same backing directory, but whose contents may have
+     * been garbage collected.
+     * 
+     * 
+     * May be safely interrupted. Upon interruption, this instance, including its backing
+     * directory, remains valid. Otherwise, the return value may be the current instance or a
+     * different one, depending on whether garbage collection was deemed necessary. If a different
+     * instance is returned, the current instance must not be used further. Thus, safe usage of this
+     * method looks like `actionCache = actionCache.trim(threshold, maxAge)`.
+     * 
+     * @param threshold the fraction of stale entries required to trigger garbage collection
+     * @param maxAge the age at which entries are considered stale
+     * @return either the current instance, or a fresh instance that replaces it
+     * @throws IOException if an I/O error occurs
+     * @throws InterruptedException in case of interruption
      */
-    public boolean prunedInputs() {
-      checkState(!isCorrupted());
-      return prunedInputs;
-    }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun trim(threshold: Float, maxAge: java.time.Duration?): ActionCache?
+
+    /** Dumps the action cache into a human-readable format.  */
+    fun dump(out: PrintStream?)
+
+    /** The number of entries in the cache.  */
+    fun size(): Int
+
+    /** Accounts one cache hit.  */
+    fun accountHit()
+
+    /** Accounts one cache miss for the given reason.  */
+    fun accountMiss(reason: MissReason?)
 
     /**
-     * Returns the list of discovered input paths, or null if the action does not discover inputs.
+     * Populates the given builder with statistics.
+     * 
+     * 
+     * The extracted values are not guaranteed to be a consistent snapshot of the metrics tracked
+     * by the action cache. Therefore, even if it is safe to call this function at any point in time,
+     * this should only be called once there are no actions running.
      */
-    @Nullable
-    public ImmutableList<String> getDiscoveredInputPaths() {
-      checkState(!isCorrupted());
-      return discoveredInputPaths;
+    fun mergeIntoActionCacheStatistics(builder: ActionCacheStatistics.Builder?)
+
+    /** Resets the current statistics to zero.  */
+    fun resetStatistics()
+
+    /** Duration it took to load the action cache. Might be null if not loaded in this invocation.  */
+    fun getLoadTime(): java.time.Duration? {
+        return null
     }
-
-    /** Gets the metadata of an output file. */
-    @Nullable
-    public FileArtifactValue getOutputFile(Artifact output) {
-      checkState(!isCorrupted());
-      return outputFileMetadata.get(output.getExecPathString());
-    }
-
-    /** Gets the metadata of all output files. */
-    public ImmutableMap<String, FileArtifactValue> getOutputFiles() {
-      checkState(!isCorrupted());
-      return outputFileMetadata;
-    }
-
-    /** Gets the metadata of an output tree. */
-    @Nullable
-    public SerializableTreeArtifactValue getOutputTree(SpecialArtifact output) {
-      checkState(!isCorrupted());
-      return outputTreeMetadata.get(output.getExecPathString());
-    }
-
-    /** Gets the metadata of all output trees. */
-    public ImmutableMap<String, SerializableTreeArtifactValue> getOutputTrees() {
-      checkState(!isCorrupted());
-      return outputTreeMetadata;
-    }
-
-    /**
-     * Returns a list of exec path strings for {@linkplain ProxyFileArtifactValue proxied} outputs.
-     */
-    public ImmutableList<String> getProxyOutputs() {
-      checkState(!isCorrupted());
-      return proxyOutputs;
-    }
-
-    /** Returns whether this entry stores any output metadata. */
-    public boolean hasOutputMetadata() {
-      checkState(!isCorrupted());
-      return !outputFileMetadata.isEmpty()
-          || !outputTreeMetadata.isEmpty()
-          || !proxyOutputs.isEmpty();
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("digest", digest)
-          .add("discoveredInputPaths", discoveredInputPaths)
-          .add("outputFileMetadata", outputFileMetadata)
-          .add("outputTreeMetadata", outputTreeMetadata)
-          .add("proxyOutputs", proxyOutputs)
-          .toString();
-    }
-
-    void dump(PrintStream out) {
-      if (isCorrupted()) {
-        out.println("  CORRUPTED");
-        return;
-      }
-      out.format("  digest = %s\n", formatDigest(digest));
-      if (discoveredInputPaths != null) {
-        out.println("  discoveredInputPaths =");
-        for (String path : ImmutableList.sortedCopyOf(discoveredInputPaths)) {
-          out.format("    %s\n", path);
-        }
-      }
-
-      if (!outputFileMetadata.isEmpty()) {
-        out.println("  outputFileMetadata =");
-        for (String path : ImmutableList.sortedCopyOf(outputFileMetadata.keySet())) {
-          out.format("    %s = %s\n", path, outputFileMetadata.get(path));
-        }
-      }
-
-      if (!outputTreeMetadata.isEmpty()) {
-        out.println("  outputTreeMetadata =");
-        for (String path : ImmutableList.sortedCopyOf(outputTreeMetadata.keySet())) {
-          out.format("    %s = %s\n", path, outputTreeMetadata.get(path));
-        }
-      }
-    }
-
-    private static String formatDigest(byte[] digest) {
-      return BaseEncoding.base16().lowerCase().encode(digest);
-    }
-
-    /** Serializable representation of {@link TreeArtifactValue}. */
-    public record SerializableTreeArtifactValue(
-        ImmutableMap<String, FileArtifactValue> childValues,
-        Optional<FileArtifactValue> archivedFileValue,
-        Optional<PathFragment> resolvedPath) {
-      public SerializableTreeArtifactValue {
-        requireNonNull(childValues, "childValues");
-        requireNonNull(archivedFileValue, "archivedFileValue");
-        requireNonNull(resolvedPath, "resolvedPath");
-      }
-
-      /**
-       * Creates {@link SerializableTreeArtifactValue} from {@link TreeArtifactValue} by collecting
-       * children and archived artifact which are remote.
-       */
-      public static SerializableTreeArtifactValue create(TreeArtifactValue treeMetadata) {
-        ImmutableMap<String, FileArtifactValue> childValues =
-            treeMetadata.getChildValues().entrySet().stream()
-                // Only save remote tree file
-                .filter(e -> e.getValue().isRemote())
-                .collect(
-                    toImmutableMap(
-                        e -> e.getKey().getTreeRelativePathString(), Map.Entry::getValue));
-
-        // Only save remote archived artifact
-        Optional<FileArtifactValue> archivedFileValue =
-            treeMetadata
-                .getArchivedRepresentation()
-                .filter(ar -> ar.archivedFileValue().isRemote())
-                .map(ArchivedRepresentation::archivedFileValue);
-
-        Optional<PathFragment> resolvedPath = treeMetadata.getResolvedPath();
-
-        return new SerializableTreeArtifactValue(childValues, archivedFileValue, resolvedPath);
-      }
-    }
-
-    /** A builder for an action cache entry. */
-    public static final class Builder {
-      private final String actionKey;
-
-      // Combined input and output metadata.
-      private final HashMap<String, FileArtifactValue> metadataMap = new HashMap<>();
-
-      private final ImmutableMap<String, String> clientEnv;
-
-      private final String actionExecutionSalt;
-
-      // Discovered inputs.
-      // Null if the action does not discover inputs.
-      @Nullable private final ImmutableList.Builder<String> discoveredInputPaths;
-      private boolean prunedInputs = false;
-
-      private final ImmutableMap.Builder<String, FileArtifactValue> outputFileMetadata =
-          ImmutableMap.builder();
-      private final ImmutableMap.Builder<String, SerializableTreeArtifactValue> outputTreeMetadata =
-          ImmutableMap.builder();
-
-      private final ImmutableList.Builder<String> proxyOutputs = ImmutableList.builder();
-
-      // Settings that affect the outcome of an action but aren't captured in the file metadata.
-      private final OutputPermissions outputPermissions;
-      private final boolean useArchivedTreeArtifacts;
-
-      /**
-       * Creates a new builder.
-       *
-       * @param discoversInputs whether the action discovers inputs.
-       * @param outputPermissions the requested output permissions.
-       * @param useArchivedTreeArtifacts whether archived tree artifacts are enabled.
-       */
-      public Builder(
-          String actionKey,
-          boolean discoversInputs,
-          ImmutableMap<String, String> clientEnv,
-          String actionExecutionSalt,
-          OutputPermissions outputPermissions,
-          boolean useArchivedTreeArtifacts) {
-        this.actionKey = actionKey;
-        this.clientEnv = clientEnv;
-        this.actionExecutionSalt = actionExecutionSalt;
-        this.discoveredInputPaths = discoversInputs ? ImmutableList.builder() : null;
-        this.outputPermissions = outputPermissions;
-        this.useArchivedTreeArtifacts = useArchivedTreeArtifacts;
-      }
-
-      /** Adds metadata of an input file. */
-      @CanIgnoreReturnValue
-      public Builder addInputFile(Artifact artifact, FileArtifactValue metadata) {
-        addInputFile(artifact, metadata, /* saveExecPath= */ false);
-        return this;
-      }
-
-      /** Adds metadata of an input file. */
-      @CanIgnoreReturnValue
-      public Builder addInputFile(
-          Artifact artifact, FileArtifactValue metadata, boolean saveExecPath) {
-        String execPath = artifact.getExecPathString();
-        if (discoveredInputPaths != null && saveExecPath) {
-          discoveredInputPaths.add(execPath);
-        }
-        metadataMap.put(execPath, metadata);
-        return this;
-      }
-
-      /** Adds an output file. */
-      @CanIgnoreReturnValue
-      public Builder addOutputFile(Artifact output, FileArtifactValue metadata) {
-        return addOutputFile(output, metadata, /* saveFileMetadata= */ false);
-      }
-
-      /** Adds an output file. */
-      @CanIgnoreReturnValue
-      public Builder addOutputFile(
-          Artifact output, FileArtifactValue metadata, boolean saveFileMetadata) {
-        checkArgument(
-            !output.isTreeArtifact() && !output.isChildOfDeclaredDirectory(),
-            "Must use addOutputTree to save tree artifacts and their children: %s",
-            output);
-        String execPath = output.getExecPathString();
-        // Only save remote and proxy file metadata.
-        if (saveFileMetadata) {
-          if (metadata.isRemote()) {
-            outputFileMetadata.put(execPath, metadata);
-          } else if (metadata instanceof ProxyFileArtifactValue) {
-            proxyOutputs.add(execPath);
-          }
-        }
-        metadataMap.put(execPath, metadata);
-        return this;
-      }
-
-      /** Adds an output tree. */
-      @CanIgnoreReturnValue
-      public Builder addOutputTree(SpecialArtifact output, TreeArtifactValue metadata) {
-        return addOutputTree(output, metadata, /* saveTreeMetadata= */ false);
-      }
-
-      /** Adds an output tree. */
-      @CanIgnoreReturnValue
-      public Builder addOutputTree(
-          SpecialArtifact output, TreeArtifactValue metadata, boolean saveTreeMetadata) {
-        checkArgument(output.isTreeArtifact(), "artifact must be a tree artifact: %s", output);
-        String execPath = output.getExecPathString();
-        if (saveTreeMetadata) {
-          if (!metadata.getChildValues().isEmpty()
-              && metadata.getChildValues().values().stream()
-                  .allMatch(ProxyFileArtifactValue.class::isInstance)) {
-            proxyOutputs.add(output.getExecPathString());
-          } else {
-            outputTreeMetadata.put(execPath, SerializableTreeArtifactValue.create(metadata));
-          }
-        }
-        metadataMap.put(execPath, metadata.getMetadata());
-        return this;
-      }
-
-      @CanIgnoreReturnValue
-      public Builder setPrunedInputs(boolean prunedInputs) {
-        this.prunedInputs = prunedInputs;
-        return this;
-      }
-
-      public Entry build() {
-        return new Entry(
-            computeDigest(
-                actionKey,
-                discoveredInputPaths != null,
-                metadataMap,
-                clientEnv,
-                actionExecutionSalt,
-                outputPermissions,
-                useArchivedTreeArtifacts),
-            discoveredInputPaths != null ? discoveredInputPaths.build() : null,
-            prunedInputs,
-            outputFileMetadata.buildOrThrow(),
-            outputTreeMetadata.buildOrThrow(),
-            proxyOutputs.build());
-      }
-
-      private static byte[] computeDigest(
-          String actionKey,
-          boolean discoversInputs,
-          Map<String, FileArtifactValue> metadataMap,
-          Map<String, String> clientEnv,
-          String actionExecutionSalt,
-          OutputPermissions outputPermissions,
-          boolean useArchivedTreeArtifacts) {
-        Fingerprint fp = new Fingerprint();
-        fp.addString(actionKey);
-        fp.addBoolean(discoversInputs);
-        fp.addBytes(MetadataDigestUtils.fromMetadata(metadataMap));
-        fp.addBytes(computeMapDigest(clientEnv));
-        fp.addString(actionExecutionSalt);
-        fp.addInt(outputPermissions.getPermissionsMode());
-        fp.addBoolean(useArchivedTreeArtifacts);
-        return fp.digestAndReset();
-      }
-
-      private static byte[] computeMapDigest(Map<String, String> map) {
-        byte[] result = new byte[0];
-        Fingerprint fp = new Fingerprint();
-        for (Map.Entry<String, String> entry : map.entrySet()) {
-          fp.addString(entry.getKey());
-          fp.addString(entry.getValue());
-          result = DigestUtils.combineUnordered(result, fp.digestAndReset());
-        }
-        return result;
-      }
-    }
-  }
-
-  /**
-   * Give persistent cache implementations a notification to write to disk.
-   *
-   * @return size in bytes of the serialized cache.
-   */
-  long save() throws IOException;
-
-  /** Clear the action cache, closing all opened file handle. */
-  void clear();
-
-  /**
-   * Returns an {@link ActionCache} with the same backing directory, but whose contents may have
-   * been garbage collected.
-   *
-   * <p>May be safely interrupted. Upon interruption, this instance, including its backing
-   * directory, remains valid. Otherwise, the return value may be the current instance or a
-   * different one, depending on whether garbage collection was deemed necessary. If a different
-   * instance is returned, the current instance must not be used further. Thus, safe usage of this
-   * method looks like {@code actionCache = actionCache.trim(threshold, maxAge)}.
-   *
-   * @param threshold the fraction of stale entries required to trigger garbage collection
-   * @param maxAge the age at which entries are considered stale
-   * @return either the current instance, or a fresh instance that replaces it
-   * @throws IOException if an I/O error occurs
-   * @throws InterruptedException in case of interruption
-   */
-  ActionCache trim(float threshold, Duration maxAge) throws IOException, InterruptedException;
-
-  /** Dumps the action cache into a human-readable format. */
-  void dump(PrintStream out);
-
-  /** The number of entries in the cache. */
-  int size();
-
-  /** Accounts one cache hit. */
-  void accountHit();
-
-  /** Accounts one cache miss for the given reason. */
-  void accountMiss(MissReason reason);
-
-  /**
-   * Populates the given builder with statistics.
-   *
-   * <p>The extracted values are not guaranteed to be a consistent snapshot of the metrics tracked
-   * by the action cache. Therefore, even if it is safe to call this function at any point in time,
-   * this should only be called once there are no actions running.
-   */
-  void mergeIntoActionCacheStatistics(ActionCacheStatistics.Builder builder);
-
-  /** Resets the current statistics to zero. */
-  void resetStatistics();
-
-  /** Duration it took to load the action cache. Might be null if not loaded in this invocation. */
-  @Nullable
-  default Duration getLoadTime() {
-    return null;
-  }
 }

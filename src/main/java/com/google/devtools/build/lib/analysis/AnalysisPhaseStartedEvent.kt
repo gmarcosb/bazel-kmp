@@ -11,41 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Target;
-import java.util.Collection;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * This event is fired before the analysis phase is started.
  */
-public class AnalysisPhaseStartedEvent {
+class AnalysisPhaseStartedEvent(targets: MutableCollection<Target?>) {
+    private val targets: com.google.common.collect.ImmutableSet<Target?>
 
-  private final ImmutableSet<Target> targets;
+    /**
+     * Construct the event.
+     * @param targets The set of active targets that remain.
+     */
+    init {
+        this.targets = com.google.common.collect.ImmutableSet.copyOf<Target?>(targets)
+    }
 
-  /**
-   * Construct the event.
-   * @param targets The set of active targets that remain.
-   */
-  public AnalysisPhaseStartedEvent(Collection<Target> targets) {
-    this.targets = ImmutableSet.copyOf(targets);
-  }
-
-  /**
-   * @return The set of active targets remaining, which is a subset
-   *     of the targets we attempted to load.
-   */
-  public Iterable<Label> getLabels() {
-    return Iterables.transform(targets, new Function<Target, Label>() {
-      @Override
-      public Label apply(Target input) {
-        return input.getLabel();
-      }
-    });
-  }
+    /**
+     * @return The set of active targets remaining, which is a subset
+     * of the targets we attempted to load.
+     */
+    fun getLabels(): Iterable<Label?> {
+        return com.google.common.collect.Iterables.transform<Target?, Label?>(
+            targets,
+            object : com.google.common.base.Function<Target?, Label?> {
+                override fun apply(input: Target): Label {
+                    return input.getLabel()
+                }
+            })
+    }
 }

@@ -11,50 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.actions;
+package com.google.devtools.build.lib.analysis.actions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.util.DeterministicWriter;
+import com.google.devtools.build.lib.actions.AbstractAction
 
 /**
- * The action context for {@link AbstractFileWriteAction} instances (technically instances of
+ * The action context for [AbstractFileWriteAction] instances (technically instances of
  * subclasses).
  */
-public interface FileWriteActionContext extends ActionContext {
+interface FileWriteActionContext : ActionContext {
+    @Throws(java.lang.InterruptedException::class, ExecException::class)
+    fun writeOutputToFile(
+        action: AbstractAction?,
+        actionExecutionContext: ActionExecutionContext?,
+        deterministicWriter: DeterministicWriter?,
+        makeExecutable: Boolean,
+        isRemotable: Boolean,
+        output: Artifact?
+    ): com.google.common.collect.ImmutableList<SpawnResult?>?
 
-  ImmutableList<SpawnResult> writeOutputToFile(
-      AbstractAction action,
-      ActionExecutionContext actionExecutionContext,
-      DeterministicWriter deterministicWriter,
-      boolean makeExecutable,
-      boolean isRemotable,
-      Artifact output)
-      throws InterruptedException, ExecException;
-
-  /**
-   * Writes the output created by the {@link DeterministicWriter} to the sole output of the given
-   * action.
-   */
-  default ImmutableList<SpawnResult> writeOutputToFile(
-      AbstractAction action,
-      ActionExecutionContext actionExecutionContext,
-      DeterministicWriter deterministicWriter,
-      boolean makeExecutable,
-      boolean isRemotable)
-      throws InterruptedException, ExecException {
-    return writeOutputToFile(
-        action,
-        actionExecutionContext,
-        deterministicWriter,
-        makeExecutable,
-        isRemotable,
-        Iterables.getOnlyElement(action.getOutputs()));
-  }
+    /**
+     * Writes the output created by the [DeterministicWriter] to the sole output of the given
+     * action.
+     */
+    @Throws(java.lang.InterruptedException::class, ExecException::class)
+    fun writeOutputToFile(
+        action: AbstractAction,
+        actionExecutionContext: ActionExecutionContext?,
+        deterministicWriter: DeterministicWriter?,
+        makeExecutable: Boolean,
+        isRemotable: Boolean
+    ): com.google.common.collect.ImmutableList<SpawnResult?>? {
+        return writeOutputToFile(
+            action,
+            actionExecutionContext,
+            deterministicWriter,
+            makeExecutable,
+            isRemotable,
+            com.google.common.collect.Iterables.getOnlyElement<T?>(action.getOutputs())
+        )
+    }
 }

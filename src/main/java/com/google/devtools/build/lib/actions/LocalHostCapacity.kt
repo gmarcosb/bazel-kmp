@@ -11,46 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible
 
 /**
  * This class estimates the local host's resource capacity.
  */
 @ThreadCompatible
-public final class LocalHostCapacity {
+object LocalHostCapacity {
+    private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    private var localHostCapacity: ResourceSet? = null
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private static ResourceSet localHostCapacity;
-
-  private LocalHostCapacity() {}
-
-  public static ResourceSet getLocalHostCapacity() {
-    if (localHostCapacity == null) {
-      localHostCapacity = getNewLocalHostCapacity();
+    fun getLocalHostCapacity(): ResourceSet {
+        if (localHostCapacity == null) {
+            localHostCapacity = getNewLocalHostCapacity()
+        }
+        return localHostCapacity
     }
-    return localHostCapacity;
-  }
 
-  private static ResourceSet getNewLocalHostCapacity() {
-    ResourceSet localResources = LocalHostResource.get();
-    logger.atInfo().log(
-        "Determined local resources: RAM=%dMB, CPU=%.1f",
-        (int) localResources.getMemoryMb(), localResources.getCpuUsage());
-    return localResources;
-  }
+    private fun getNewLocalHostCapacity(): ResourceSet {
+        val localResources: ResourceSet = LocalHostResource.get()
+        logger.atInfo().log(
+            "Determined local resources: RAM=%dMB, CPU=%.1f",
+            localResources.getMemoryMb().toInt(), localResources.getCpuUsage()
+        )
+        return localResources
+    }
 
-  /**
-   * Sets the local host capacity to hardcoded values.
-   *
-   * @param capacity the explicit capacity, or null to use the machine-specific values again
-   */
-  @VisibleForTesting
-  public static void setLocalHostCapacity(ResourceSet capacity) {
-    localHostCapacity = capacity;
-  }
+    /**
+     * Sets the local host capacity to hardcoded values.
+     * 
+     * @param capacity the explicit capacity, or null to use the machine-specific values again
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun setLocalHostCapacity(capacity: ResourceSet?) {
+        localHostCapacity = capacity
+    }
 }

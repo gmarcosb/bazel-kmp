@@ -11,39 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.AbstractCommandLine;
-import com.google.devtools.build.lib.actions.CommandLine;
-import com.google.devtools.build.lib.vfs.PathFragment;
+import com.google.devtools.build.lib.actions.AbstractCommandLine
 
 /**
- * Memory-efficient {@link CommandLine} for a shell command.
- *
- * <p>Equivalent to invoking {@link #shExecutable} (e.g. {@code /bin/bash}) followed by {@code -c}
- * and {@link #command}. Supports optionally padding the command line with an empty argument, which
- * can be useful to ensure that any subsequent arguments get assigned to {@code $1} etc.
+ * Memory-efficient [CommandLine] for a shell command.
+ * 
+ * 
+ * Equivalent to invoking [.shExecutable] (e.g. `/bin/bash`) followed by `-c`
+ * and [.command]. Supports optionally padding the command line with an empty argument, which
+ * can be useful to ensure that any subsequent arguments get assigned to `$1` etc.
  */
-final class ShellCommand extends AbstractCommandLine {
+internal class ShellCommand(shExecutable: PathFragment?, command: String?, private val pad: Boolean) :
+    AbstractCommandLine() {
+    private val shExecutable: PathFragment
+    private val command: String
 
-  private final PathFragment shExecutable;
-  private final String command;
-  private final boolean pad;
+    init {
+        this.shExecutable = com.google.common.base.Preconditions.checkNotNull<PathFragment>(shExecutable)
+        this.command = com.google.common.base.Preconditions.checkNotNull<String>(command)
+    }
 
-  ShellCommand(PathFragment shExecutable, String command, boolean pad) {
-    this.shExecutable = checkNotNull(shExecutable);
-    this.command = checkNotNull(command);
-    this.pad = pad;
-  }
-
-  @Override
-  public ImmutableList<String> arguments() {
-    return pad
-        ? ImmutableList.of(shExecutable.expandToCommandLine(), "-c", command, "")
-        : ImmutableList.of(shExecutable.expandToCommandLine(), "-c", command);
-  }
+    public override fun arguments(): com.google.common.collect.ImmutableList<String?> {
+        return if (pad)
+            com.google.common.collect.ImmutableList.of<E?>(shExecutable.expandToCommandLine(), "-c", command, "")
+        else
+            com.google.common.collect.ImmutableList.of<E?>(shExecutable.expandToCommandLine(), "-c", command)
+    }
 }

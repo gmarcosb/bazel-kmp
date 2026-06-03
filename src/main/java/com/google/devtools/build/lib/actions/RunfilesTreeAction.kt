@@ -11,23 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.BulkDeleter;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.platform.PlatformInfo
 
 /**
  * An action that depends on a set of inputs and creates a single output file whenever it runs. This
@@ -35,139 +21,148 @@ import javax.annotation.Nullable;
  * the action graph; for example generated header files.
  */
 @Immutable
-public final class RunfilesTreeAction extends AbstractAction implements RichDataProducingAction {
-  public static final String MNEMONIC = "RunfilesTree";
+class RunfilesTreeAction(
+    owner: ActionOwner?,
+    runfilesTree: RunfilesTree?,
+    inputs: NestedSet<Artifact?>?,
+    outputs: com.google.common.collect.ImmutableSet<Artifact?>
+) : com.google.devtools.build.lib.actions.AbstractAction(owner, inputs, outputs), RichDataProducingAction {
+    /** The runfiles tree created by this action.  */
+    private val runfilesTree: RunfilesTree?
 
-  /** The runfiles tree created by this action. */
-  private final RunfilesTree runfilesTree;
-
-  public RunfilesTreeAction(
-      ActionOwner owner,
-      RunfilesTree runfilesTree,
-      NestedSet<Artifact> inputs,
-      ImmutableSet<Artifact> outputs) {
-    super(owner, inputs, outputs);
-
-    this.runfilesTree = runfilesTree;
-    Preconditions.checkArgument(Iterables.getOnlyElement(outputs).isRunfilesTree(), outputs);
-  }
-
-  public RunfilesTree getRunfilesTree() {
-    return runfilesTree;
-  }
-
-  private RunfilesArtifactValue createRunfilesArtifactValue(
-      InputMetadataProvider inputMetadataProvider)
-      throws IOException {
-    ImmutableList<Artifact> inputs = getInputs().toList();
-    ImmutableList.Builder<Artifact> files = ImmutableList.builder();
-    ImmutableList.Builder<FileArtifactValue> fileValues = ImmutableList.builder();
-    ImmutableList.Builder<Artifact> trees = ImmutableList.builder();
-    ImmutableList.Builder<TreeArtifactValue> treeValues = ImmutableList.builder();
-    ImmutableList.Builder<Artifact> filesets = ImmutableList.builder();
-    ImmutableList.Builder<FilesetOutputTree> filesetValues = ImmutableList.builder();
-
-    // Sort for better equality in RunfilesArtifactValue.
-    ImmutableList<Artifact> sortedInputs =
-        ImmutableList.sortedCopyOf(Artifact.EXEC_PATH_COMPARATOR, inputs);
-    for (Artifact input : sortedInputs) {
-      if (input.isFileset()) {
-        filesets.add(input);
-        filesetValues.add(inputMetadataProvider.getFileset(input));
-      } else if (input.isTreeArtifact()) {
-        trees.add(input);
-        treeValues.add(inputMetadataProvider.getTreeMetadata(input));
-      } else {
-        files.add(input);
-        fileValues.add(inputMetadataProvider.getInputMetadata(input));
-      }
+    init {
+        this.runfilesTree = runfilesTree
+        com.google.common.base.Preconditions.checkArgument(
+            com.google.common.collect.Iterables.getOnlyElement<Artifact?>(
+                outputs
+            ).isRunfilesTree(), outputs
+        )
     }
 
-    return new RunfilesArtifactValue(
-        runfilesTree,
-        files.build(),
-        fileValues.build(),
-        trees.build(),
-        treeValues.build(),
-        filesets.build(),
-        filesetValues.build());
-  }
-
-  @Override
-  public RichArtifactData reconstructRichDataOnActionCacheHit(
-      InputMetadataProvider inputMetadataProvider) {
-    try {
-      return createRunfilesArtifactValue(inputMetadataProvider);
-    } catch (IOException e) {
-      // On action cache hits, all input metadata should already be in RAM
-      throw new IllegalStateException(e);
-    }
-  }
-
-  @Override
-  public ActionResult execute(ActionExecutionContext actionExecutionContext) {
-    try {
-      RunfilesArtifactValue runfilesArtifactValue =
-          createRunfilesArtifactValue(
-              actionExecutionContext.getInputMetadataProvider());
-      actionExecutionContext.setRichArtifactData(runfilesArtifactValue);
-    } catch (IOException e) {
-      throw new IllegalStateException(e);
+    fun getRunfilesTree(): RunfilesTree? {
+        return runfilesTree
     }
 
-    return ActionResult.EMPTY;
-  }
+    @Throws(IOException::class)
+    private fun createRunfilesArtifactValue(
+        inputMetadataProvider: InputMetadataProvider
+    ): RunfilesArtifactValue {
+        val inputs: com.google.common.collect.ImmutableList<Artifact?> = getInputs().toList()
+        val files: com.google.common.collect.ImmutableList.Builder<Artifact?> =
+            com.google.common.collect.ImmutableList.builder<Artifact?>()
+        val fileValues: com.google.common.collect.ImmutableList.Builder<FileArtifactValue?> =
+            com.google.common.collect.ImmutableList.builder<FileArtifactValue?>()
+        val trees: com.google.common.collect.ImmutableList.Builder<Artifact?> =
+            com.google.common.collect.ImmutableList.builder<Artifact?>()
+        val treeValues: com.google.common.collect.ImmutableList.Builder<TreeArtifactValue?> =
+            com.google.common.collect.ImmutableList.builder<TreeArtifactValue?>()
+        val filesets: com.google.common.collect.ImmutableList.Builder<Artifact?> =
+            com.google.common.collect.ImmutableList.builder<Artifact?>()
+        val filesetValues: com.google.common.collect.ImmutableList.Builder<FilesetOutputTree?> =
+            com.google.common.collect.ImmutableList.builder<FilesetOutputTree?>()
 
-  @Override
-  public void prepare(
-      Path execRoot,
-      ArtifactPathResolver pathResolver,
-      @Nullable BulkDeleter bulkDeleter,
-      boolean cleanupArchivedArtifacts) {
-    // Runfiles trees are created as a side effect of building the output manifest, not the runfiles
-    // tree artifact. This method is overridden so that depending on the runfiles tree does not
-    // delete the runfiles tree that's on the file system that someone decided it must be there.
-  }
+        // Sort for better equality in RunfilesArtifactValue.
+        val sortedInputs: com.google.common.collect.ImmutableList<Artifact> =
+            com.google.common.collect.ImmutableList.sortedCopyOf<Artifact?>(
+                Artifact.Companion.EXEC_PATH_COMPARATOR,
+                inputs
+            )
+        for (input in sortedInputs) {
+            if (input.isFileset()) {
+                filesets.add(input)
+                filesetValues.add(inputMetadataProvider.getFileset(input))
+            } else if (input.isTreeArtifact()) {
+                trees.add(input)
+                treeValues.add(inputMetadataProvider.getTreeMetadata(input))
+            } else {
+                files.add(input)
+                fileValues.add(inputMetadataProvider.getInputMetadata(input))
+            }
+        }
 
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    // Only the set of inputs matters, and the dependency checker is
-    // responsible for considering those.
-  }
+        return RunfilesArtifactValue(
+            runfilesTree,
+            files.build(),
+            fileValues.build(),
+            trees.build(),
+            treeValues.build(),
+            filesets.build(),
+            filesetValues.build()
+        )
+    }
 
-  @Nullable
-  @Override
-  protected String getRawProgressMessage() {
-    return null; // this action doesn't actually do anything so let's not report it
-  }
+    override fun reconstructRichDataOnActionCacheHit(
+        inputMetadataProvider: InputMetadataProvider
+    ): RichArtifactData {
+        try {
+            return createRunfilesArtifactValue(inputMetadataProvider)
+        } catch (e: IOException) {
+            // On action cache hits, all input metadata should already be in RAM
+            throw java.lang.IllegalStateException(e)
+        }
+    }
 
-  @Override
-  public String prettyPrint() {
-    return "runfiles for " + Label.print(getOwner().getLabel());
-  }
+    override fun execute(actionExecutionContext: ActionExecutionContext): ActionResult? {
+        try {
+            val runfilesArtifactValue: RunfilesArtifactValue =
+                createRunfilesArtifactValue(
+                    actionExecutionContext.getInputMetadataProvider()
+                )
+            actionExecutionContext.setRichArtifactData(runfilesArtifactValue)
+        } catch (e: IOException) {
+            throw java.lang.IllegalStateException(e)
+        }
 
-  @Override
-  public String getMnemonic() {
-    return MNEMONIC;
-  }
+        return ActionResult.Companion.EMPTY
+    }
 
-  @Override
-  public boolean mayInsensitivelyPropagateInputs() {
-    return true;
-  }
+    override fun prepare(
+        execRoot: Path?,
+        pathResolver: ArtifactPathResolver?,
+        bulkDeleter: BulkDeleter?,
+        cleanupArchivedArtifacts: Boolean
+    ) {
+        // Runfiles trees are created as a side effect of building the output manifest, not the runfiles
+        // tree artifact. This method is overridden so that depending on the runfiles tree does not
+        // delete the runfiles tree that's on the file system that someone decided it must be there.
+    }
 
-  @Override
-  public PlatformInfo getExecutionPlatform() {
-    return PlatformInfo.EMPTY_PLATFORM_INFO;
-  }
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint?
+    ) {
+        // Only the set of inputs matters, and the dependency checker is
+        // responsible for considering those.
+    }
 
-  @Override
-  public ImmutableMap<String, String> getExecProperties() {
-    // Runfiles tree actions do not execute actual actions, and therefore have no execution
-    // platform.
-    return ImmutableMap.of();
-  }
+    override fun getRawProgressMessage(): String? {
+        return null // this action doesn't actually do anything so let's not report it
+    }
+
+    override fun prettyPrint(): String {
+        return "runfiles for " + Label.print(getOwner().getLabel())
+    }
+
+    override fun getMnemonic(): String {
+        return MNEMONIC
+    }
+
+    override fun mayInsensitivelyPropagateInputs(): Boolean {
+        return true
+    }
+
+    override fun getExecutionPlatform(): PlatformInfo {
+        return PlatformInfo.EMPTY_PLATFORM_INFO
+    }
+
+    override fun getExecProperties(): com.google.common.collect.ImmutableMap<String?, String?> {
+        // Runfiles tree actions do not execute actual actions, and therefore have no execution
+        // platform.
+        return com.google.common.collect.ImmutableMap.of<String?, String?>()
+    }
+
+    companion object {
+        const val MNEMONIC: String = "RunfilesTree"
+    }
 }

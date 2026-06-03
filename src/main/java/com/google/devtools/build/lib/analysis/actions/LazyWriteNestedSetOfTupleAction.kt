@@ -11,73 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
 
-
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.unsafe.StringUnsafe;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.Fingerprint;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Tuple;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
 /**
  * Lazily writes the content of a nested set of tuplesToWrite to an output file.
- *
- * <p>Writes delimiter separated Tuple elements to the output file.
+ * 
+ * 
+ * Writes delimiter separated Tuple elements to the output file.
  */
-public final class LazyWriteNestedSetOfTupleAction extends AbstractFileWriteAction {
+class LazyWriteNestedSetOfTupleAction(
+    owner: ActionOwner?,
+    output: Artifact?,
+    tuplesToWrite: NestedSet<Tuple?>,
+    delimiter: String?
+) : AbstractFileWriteAction(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), output) {
+    private val tuplesToWrite: NestedSet<Tuple?>
+    private var fileContents: String? = null
+    private val delimiter: String?
 
-  private final NestedSet<Tuple> tuplesToWrite;
-  private String fileContents;
-  private final String delimiter;
-
-  public LazyWriteNestedSetOfTupleAction(
-      ActionOwner owner, Artifact output, NestedSet<Tuple> tuplesToWrite, String delimiter) {
-    super(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), output);
-    this.tuplesToWrite = tuplesToWrite;
-    this.delimiter = delimiter;
-  }
-
-  @Override
-  public DeterministicWriter newDeterministicWriter(ActionExecutionContext ctx) {
-    return out -> out.write(StringUnsafe.getInternalStringBytes(getContents(delimiter)));
-  }
-
-  /** Computes the Action key for this action by computing the fingerprint for the file contents. */
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp)
-      throws CommandLineExpansionException, InterruptedException {
-    actionKeyContext.addNestedSetToFingerprint(fp, tuplesToWrite);
-  }
-
-  private String getContents(String delimiter) {
-    if (fileContents == null) {
-      StringBuilder stringBuilder = new StringBuilder();
-      for (Tuple tuple : tuplesToWrite.toList()) {
-        if (tuple.isEmpty()) {
-          continue;
-        }
-        stringBuilder.append(tuple.get(0));
-        for (int i = 1; i < tuple.size(); i++) {
-          stringBuilder.append(delimiter).append(tuple.get(i));
-        }
-        stringBuilder.append("\n");
-      }
-      fileContents = stringBuilder.toString();
+    init {
+        this.tuplesToWrite = tuplesToWrite
+        this.delimiter = delimiter
     }
-    return fileContents;
-  }
+
+    override fun newDeterministicWriter(ctx: ActionExecutionContext?): DeterministicWriter {
+        return DeterministicWriter { out -> out.write(StringUnsafe.getInternalStringBytes(getContents(delimiter))) }
+    }
+
+    /** Computes the Action key for this action by computing the fingerprint for the file contents.  */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint?
+    ) {
+        actionKeyContext.addNestedSetToFingerprint(fp, tuplesToWrite)
+    }
+
+    private fun getContents(delimiter: String?): String {
+        if (fileContents == null) {
+            val stringBuilder: java.lang.StringBuilder = java.lang.StringBuilder()
+            for (tuple in tuplesToWrite.toList()) {
+                if (tuple.isEmpty()) {
+                    continue
+                }
+                stringBuilder.append(tuple.get(0))
+                for (i in 1..<tuple.size()) {
+                    stringBuilder.append(delimiter).append(tuple.get(i))
+                }
+                stringBuilder.append("\n")
+            }
+            fileContents = stringBuilder.toString()
+        }
+        return fileContents!!
+    }
 }

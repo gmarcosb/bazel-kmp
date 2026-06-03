@@ -11,41 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import java.util.function.Supplier;
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
 
 /**
- * Returns a {@link Supplier} which caches the instance retrieved during the first call to
- * {@code get()} and returns that value on subsequent calls to {@code get()}. See:
- * <a href="http://en.wikipedia.org/wiki/Memoization">memoization</a>.
- *
- * <p>The returned supplier is thread-safe. The delegate's {@code get()} method will be invoked at
+ * Returns a [Supplier] which caches the instance retrieved during the first call to
+ * `get()` and returns that value on subsequent calls to `get()`. See:
+ * [memoization](http://en.wikipedia.org/wiki/Memoization).
+ * 
+ * 
+ * The returned supplier is thread-safe. The delegate's `get()` method will be invoked at
  * most once.
- *
- * <p>The returned supplier is not serializable.
+ * 
+ * 
+ * The returned supplier is not serializable.
  */
-public class MemoizingSupplier<T> implements Supplier<T> {
-  private final Supplier<T> delegate;
-  private volatile boolean initialized;
-  private T instance;
+class MemoizingSupplier<T>(delegate: java.util.function.Supplier<T?>) : java.util.function.Supplier<T?> {
+    private val delegate: java.util.function.Supplier<T?>
 
-  public MemoizingSupplier(Supplier<T> delegate) {
-    this.delegate = delegate;
-  }
+    @kotlin.concurrent.Volatile
+    private var initialized = false
+    private var instance: T? = null
 
-  @Override
-  public T get() {
-    if (!initialized) {
-      synchronized (this) {
-        if (!initialized) {
-          initialized = true;
-          instance = delegate.get();
-        }
-      }
+    init {
+        this.delegate = delegate
     }
-    return instance;
-  }
+
+    override fun get(): T? {
+        if (!initialized) {
+            synchronized(this) {
+                if (!initialized) {
+                    initialized = true
+                    instance = delegate.get()
+                }
+            }
+        }
+        return instance
+    }
 }
 

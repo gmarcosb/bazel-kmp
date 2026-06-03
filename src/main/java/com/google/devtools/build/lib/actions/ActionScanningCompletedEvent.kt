@@ -11,38 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * An event that is fired when a input-discovering secondary shared action completes. Such actions
- * are not actually executed, so there is no corresponding {@link ActionCompletionEvent}.
+ * are not actually executed, so there is no corresponding [ActionCompletionEvent].
  */
-public final class ActionScanningCompletedEvent implements Postable {
-  private final Action action;
-  private final ActionLookupData actionLookupData;
+class ActionScanningCompletedEvent(
+    action: com.google.devtools.build.lib.actions.Action?,
+    actionLookupData: ActionLookupData?
+) : Postable {
+    private val action: com.google.devtools.build.lib.actions.Action?
+    private val actionLookupData: ActionLookupData?
 
-  public ActionScanningCompletedEvent(Action action, ActionLookupData actionLookupData) {
-    this.action = action;
-    this.actionLookupData = actionLookupData;
-  }
+    init {
+        this.action = action
+        this.actionLookupData = actionLookupData
+    }
 
-  /** Returns the action. */
-  public Action getAction() {
-    return action;
-  }
+    /** Returns the action.  */
+    fun getAction(): com.google.devtools.build.lib.actions.Action? {
+        return action
+    }
 
-  public ActionLookupData getActionLookupData() {
-    return actionLookupData;
-  }
+    fun getActionLookupData(): ActionLookupData? {
+        return actionLookupData
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper("ActionScanningCompletedEvent")
-        .add("action", action)
-        .add("actionLookupData", actionLookupData)
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper("ActionScanningCompletedEvent")
+            .add("action", action)
+            .add("actionLookupData", actionLookupData)
+            .toString()
+    }
 }

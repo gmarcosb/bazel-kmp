@@ -11,22 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
 /**
  * Exception to be thrown if an action failed to execute because it is missing Skyframe
  * dependencies.
  */
-public final class MissingDepExecException extends ExecException {
-
-  public MissingDepExecException() {
-    super("Missing skyframe dependency");
-  }
-
-  @Override
-  protected FailureDetail getFailureDetail(String message) {
-    throw new UnsupportedOperationException("MissingDepException should be handled");
-  }
+class MissingDepExecException : ExecException("Missing skyframe dependency") {
+    protected override fun getFailureDetail(message: String?): FailureDetail? {
+        throw java.lang.UnsupportedOperationException("MissingDepException should be handled")
+    }
 }

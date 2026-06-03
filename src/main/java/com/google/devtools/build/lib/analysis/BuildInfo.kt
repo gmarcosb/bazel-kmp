@@ -11,41 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
 /**
  * A class to hold and query the build information and support methods to read
  * it from disk.
  */
-public class BuildInfo {
-  /**
-   * Named constants for the BuildInfo keys.
-   */
-  public static final String BUILD_EMBED_LABEL = "BUILD_EMBED_LABEL";
+object BuildInfo {
+    /**
+     * Named constants for the BuildInfo keys.
+     */
+    const val BUILD_EMBED_LABEL: String = "BUILD_EMBED_LABEL"
 
-  /**
-   * The name of the user that performs the build.
-   */
-  public static final String BUILD_USER = "BUILD_USER";
+    /**
+     * The name of the user that performs the build.
+     */
+    const val BUILD_USER: String = "BUILD_USER"
 
-  /**
-   * The host where the build happens
-   */
-  public static final String BUILD_HOST = "BUILD_HOST";
+    /**
+     * The host where the build happens
+     */
+    const val BUILD_HOST: String = "BUILD_HOST"
 
-  /**
-   * Build time as seconds since epoch
-   */
-  public static final String BUILD_TIMESTAMP = "BUILD_TIMESTAMP";
+    /**
+     * Build time as seconds since epoch
+     */
+    const val BUILD_TIMESTAMP: String = "BUILD_TIMESTAMP"
 
-  /**
-   * The revision of source tree reported by source control system
-   */
-  public static final String BUILD_SCM_REVISION = "BUILD_SCM_REVISION";
+    /**
+     * The revision of source tree reported by source control system
+     */
+    const val BUILD_SCM_REVISION: String = "BUILD_SCM_REVISION"
 
-  /**
-   * The status of source tree reported by source control system
-   */
-  public static final String BUILD_SCM_STATUS = "BUILD_SCM_STATUS";
+    /**
+     * The status of source tree reported by source control system
+     */
+    const val BUILD_SCM_STATUS: String = "BUILD_SCM_STATUS"
 }

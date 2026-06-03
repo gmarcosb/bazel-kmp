@@ -11,99 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.config
 
-package com.google.devtools.build.lib.analysis.config;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Streams;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
 
 /**
  * Represents a set of "on" features and a set of "off" features. The two sets are guaranteed not to
  * intersect.
  */
 @AutoCodec
-public record FeatureSet(ImmutableSet<String> on, ImmutableSet<String> off) {
-  public FeatureSet {
-    requireNonNull(on, "on");
-    requireNonNull(off, "off");
-  }
-
-  public static final FeatureSet EMPTY = of(ImmutableSet.of(), ImmutableSet.of());
-
-  private static FeatureSet of(Set<String> on, Set<String> off) {
-    return new FeatureSet(ImmutableSortedSet.copyOf(on), ImmutableSortedSet.copyOf(off));
-  }
-
-  /** Parses a {@link FeatureSet} instance from a list of strings. */
-  public static FeatureSet parse(Iterable<String> features) {
-    Map<String, Boolean> featureToState = new HashMap<>();
-    for (String feature : features) {
-      if (feature.startsWith("-")) {
-        featureToState.put(feature.substring(1), false);
-      } else if (feature.equals("no_layering_check")) {
-        // TODO(bazel-team): Remove once we do not have BUILD files left that contain
-        // 'no_layering_check'.
-        featureToState.put("layering_check", false);
-      } else {
-        // -X always trumps X.
-        featureToState.putIfAbsent(feature, true);
-      }
+class FeatureSet(
+    on: com.google.common.collect.ImmutableSet<String?>?,
+    off: com.google.common.collect.ImmutableSet<String?>?
+) {
+    fun toStringList(): com.google.common.collect.ImmutableList<String?> {
+        return com.google.common.collect.Streams.concat<String?>(
+            this.on.stream(),
+            this.off.stream().map<String?>(java.util.function.Function { s: String? -> "-" + s })
+        )
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
     }
-    return fromMap(featureToState);
-  }
 
-  private static FeatureSet fromMap(Map<String, Boolean> featureToState) {
-    return of(
-        Maps.filterValues(featureToState, Boolean.TRUE::equals).keySet(),
-        Maps.filterValues(featureToState, Boolean.FALSE::equals).keySet());
-  }
+    val on: com.google.common.collect.ImmutableSet<String?>?
+    val off: com.google.common.collect.ImmutableSet<String?>?
 
-  private static void mergeSetIntoMap(
-      Set<String> features, boolean state, Map<String, Boolean> featureToState) {
-    for (String feature : features) {
-      featureToState.put(feature, state);
+    init {
+        this.off = off
+        this.on = on
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<String?>?>(on, "on")
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<String?>?>(off, "off")
     }
-  }
 
-  /**
-   * Merges two {@link FeatureSet}s into one, with {@code coarse} being the coarser-grained set
-   * (e.g. the package default feature set), and {@code fine} being the finer-grained set (e.g. the
-   * rule-level feature set). Note that this operation is not commutative.
-   */
-  public static FeatureSet merge(FeatureSet coarse, FeatureSet fine) {
-    Map<String, Boolean> featureToState = new HashMap<>();
-    mergeSetIntoMap(coarse.on(), true, featureToState);
-    mergeSetIntoMap(coarse.off(), false, featureToState);
-    mergeSetIntoMap(fine.on(), true, featureToState);
-    mergeSetIntoMap(fine.off(), false, featureToState);
-    return fromMap(featureToState);
-  }
+    companion object {
+        val EMPTY: FeatureSet = of(
+            com.google.common.collect.ImmutableSet.of<String?>(),
+            com.google.common.collect.ImmutableSet.of<String?>()
+        )
 
-  /**
-   * Merges a {@link FeatureSet} with the global feature set. This differs from {@link #merge} in
-   * that the globally disabled features are <strong>always</strong> disabled.
-   */
-  public static FeatureSet mergeWithGlobalFeatures(FeatureSet base, FeatureSet global) {
-    Map<String, Boolean> featureToState = new HashMap<>();
-    mergeSetIntoMap(global.on(), true, featureToState);
-    mergeSetIntoMap(base.on(), true, featureToState);
-    mergeSetIntoMap(base.off(), false, featureToState);
-    mergeSetIntoMap(global.off(), false, featureToState);
-    return fromMap(featureToState);
-  }
+        private fun of(on: MutableSet<String?>, off: MutableSet<String?>): FeatureSet {
+            return FeatureSet(
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(on),
+                com.google.common.collect.ImmutableSortedSet.copyOf<String?>(off)
+            )
+        }
 
-  public final ImmutableList<String> toStringList() {
-    return Streams.concat(on().stream(), off().stream().map(s -> "-" + s))
-        .collect(toImmutableList());
-  }
+        /** Parses a [FeatureSet] instance from a list of strings.  */
+        fun parse(features: Iterable<String>): FeatureSet {
+            val featureToState: MutableMap<String?, Boolean?> = HashMap<String?, Boolean?>()
+            for (feature in features) {
+                if (feature.startsWith("-")) {
+                    featureToState.put(feature.substring(1), false)
+                } else if (feature == "no_layering_check") {
+                    // TODO(bazel-team): Remove once we do not have BUILD files left that contain
+                    // 'no_layering_check'.
+                    featureToState.put("layering_check", false)
+                } else {
+                    // -X always trumps X.
+                    featureToState.putIfAbsent(feature, true)
+                }
+            }
+            return fromMap(featureToState)
+        }
+
+        private fun fromMap(featureToState: MutableMap<String?, Boolean?>): FeatureSet {
+            return of(
+                com.google.common.collect.Maps.filterValues<String?, Boolean?>(
+                    featureToState,
+                    com.google.common.base.Predicate { obj: Boolean? -> java.lang.Boolean.TRUE.equals(obj) }).keySet(),
+                com.google.common.collect.Maps.filterValues<String?, Boolean?>(
+                    featureToState,
+                    com.google.common.base.Predicate { obj: Boolean? -> java.lang.Boolean.FALSE.equals(obj) }).keySet()
+            )
+        }
+
+        private fun mergeSetIntoMap(
+            features: MutableSet<String?>, state: Boolean, featureToState: MutableMap<String?, Boolean?>
+        ) {
+            for (feature in features) {
+                featureToState.put(feature, state)
+            }
+        }
+
+        /**
+         * Merges two [FeatureSet]s into one, with `coarse` being the coarser-grained set
+         * (e.g. the package default feature set), and `fine` being the finer-grained set (e.g. the
+         * rule-level feature set). Note that this operation is not commutative.
+         */
+        fun merge(coarse: FeatureSet, fine: FeatureSet): FeatureSet {
+            val featureToState: MutableMap<String?, Boolean?> = HashMap<String?, Boolean?>()
+            mergeSetIntoMap(coarse.on, true, featureToState)
+            mergeSetIntoMap(coarse.off, false, featureToState)
+            mergeSetIntoMap(fine.on, true, featureToState)
+            mergeSetIntoMap(fine.off, false, featureToState)
+            return fromMap(featureToState)
+        }
+
+        /**
+         * Merges a [FeatureSet] with the global feature set. This differs from [.merge] in
+         * that the globally disabled features are **always** disabled.
+         */
+        fun mergeWithGlobalFeatures(base: FeatureSet, global: FeatureSet): FeatureSet {
+            val featureToState: MutableMap<String?, Boolean?> = HashMap<String?, Boolean?>()
+            mergeSetIntoMap(global.on, true, featureToState)
+            mergeSetIntoMap(base.on, true, featureToState)
+            mergeSetIntoMap(base.off, false, featureToState)
+            mergeSetIntoMap(global.off, false, featureToState)
+            return fromMap(featureToState)
+        }
+    }
 }

@@ -11,126 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Objects;
-import javax.annotation.concurrent.Immutable;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
 /**
  * An object that encapsulates how a params file should be constructed: what is the filetype, what
  * charset to use and what prefix (typically "@") to use.
  */
-@Immutable
-public final class ParamFileInfo {
-  private final ParameterFileType fileType;
-  private final String flagFormatString;
-  private final boolean always;
-  private final boolean flagsOnly;
+@javax.annotation.concurrent.Immutable
+class ParamFileInfo private constructor(builder: Builder) {
+    private val fileType: ParameterFileType
+    private val flagFormatString: String
+    private val always: Boolean
+    private val flagsOnly: Boolean
 
-  private static final Interner<ParamFileInfo> paramFileInfoInterner =
-      BlazeInterners.newWeakInterner();
-
-  private ParamFileInfo(Builder builder) {
-    this.fileType = Preconditions.checkNotNull(builder.fileType);
-    this.flagFormatString = Preconditions.checkNotNull(builder.flagFormatString);
-    this.always = builder.always;
-    this.flagsOnly = builder.flagsOnly;
-  }
-
-  /** Returns the file type. */
-  public ParameterFileType getFileType() {
-    return fileType;
-  }
-
-  /** Returns the format string for the params filename on the command line (typically "@%s"). */
-  public String getFlagFormatString() {
-    return flagFormatString;
-  }
-
-  /** Returns true if a params file should always be used. */
-  public boolean always() {
-    return always;
-  }
-
-  /**
-   * If true, only the flags will be spilled to the file, leaving positional args on the command
-   * line.
-   */
-  public boolean flagsOnly() {
-    return flagsOnly;
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(flagFormatString, fileType, always);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (!(obj instanceof ParamFileInfo other)) {
-      return false;
-    }
-    return fileType.equals(other.fileType)
-        && flagFormatString.equals(other.flagFormatString)
-        && always == other.always
-        && flagsOnly == other.flagsOnly;
-  }
-
-  public static Builder builder(ParameterFileType parameterFileType) {
-    return new Builder(parameterFileType);
-  }
-
-  /** Builder for a ParamFileInfo. */
-  public static class Builder {
-    private final ParameterFileType fileType;
-    private String flagFormatString = "@%s";
-    private boolean always;
-    private boolean flagsOnly;
-
-    private Builder(ParameterFileType fileType) {
-      this.fileType = fileType;
+    init {
+        this.fileType = com.google.common.base.Preconditions.checkNotNull<ParameterFileType>(builder.fileType)
+        this.flagFormatString = com.google.common.base.Preconditions.checkNotNull<String>(builder.flagFormatString)
+        this.always = builder.always
+        this.flagsOnly = builder.flagsOnly
     }
 
-    /**
-     * Sets a format string to use for the flag that is passed to original command.
-     *
-     * <p>The format string must have a single "%s" that will be replaced by the execution path to
-     * the param file.
-     */
-    @CanIgnoreReturnValue
-    public Builder setFlagFormatString(String flagFormatString) {
-      this.flagFormatString = flagFormatString;
-      return this;
+    /** Returns the file type.  */
+    fun getFileType(): ParameterFileType {
+        return fileType
     }
 
-    /** Set whether the parameter file is always used, regardless of parameter file length. */
-    @CanIgnoreReturnValue
-    public Builder setUseAlways(boolean always) {
-      this.always = always;
-      return this;
+    /** Returns the format string for the params filename on the command line (typically "@%s").  */
+    fun getFlagFormatString(): String {
+        return flagFormatString
+    }
+
+    /** Returns true if a params file should always be used.  */
+    fun always(): Boolean {
+        return always
     }
 
     /**
      * If true, only the flags will be spilled to the file, leaving positional args on the command
-     * line. (Default is false.)
+     * line.
      */
-    @CanIgnoreReturnValue
-    public Builder setFlagsOnly(boolean flagsOnly) {
-      this.flagsOnly = flagsOnly;
-      return this;
+    fun flagsOnly(): Boolean {
+        return flagsOnly
     }
 
-    public ParamFileInfo build() {
-      return paramFileInfoInterner.intern(new ParamFileInfo(this));
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(flagFormatString, fileType, always)
     }
-  }
+
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is ParamFileInfo) {
+            return false
+        }
+        return fileType == obj.fileType
+                && flagFormatString == obj.flagFormatString
+                && always == obj.always && flagsOnly == obj.flagsOnly
+    }
+
+    /** Builder for a ParamFileInfo.  */
+    class Builder private constructor(fileType: ParameterFileType?) {
+        private val fileType: ParameterFileType?
+        private var flagFormatString: String? = "@%s"
+        private var always = false
+        private var flagsOnly = false
+
+        init {
+            this.fileType = fileType
+        }
+
+        /**
+         * Sets a format string to use for the flag that is passed to original command.
+         * 
+         * 
+         * The format string must have a single "%s" that will be replaced by the execution path to
+         * the param file.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setFlagFormatString(flagFormatString: String?): Builder {
+            this.flagFormatString = flagFormatString
+            return this
+        }
+
+        /** Set whether the parameter file is always used, regardless of parameter file length.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setUseAlways(always: Boolean): Builder {
+            this.always = always
+            return this
+        }
+
+        /**
+         * If true, only the flags will be spilled to the file, leaving positional args on the command
+         * line. (Default is false.)
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setFlagsOnly(flagsOnly: Boolean): Builder {
+            this.flagsOnly = flagsOnly
+            return this
+        }
+
+        fun build(): ParamFileInfo {
+            return paramFileInfoInterner.intern(ParamFileInfo(this))
+        }
+    }
+
+    companion object {
+        private val paramFileInfoInterner: com.google.common.collect.Interner<ParamFileInfo> =
+            BlazeInterners.newWeakInterner()
+
+        fun builder(parameterFileType: ParameterFileType?): Builder {
+            return com.google.devtools.build.lib.actions.ParamFileInfo.Builder(parameterFileType)
+        }
+    }
 }

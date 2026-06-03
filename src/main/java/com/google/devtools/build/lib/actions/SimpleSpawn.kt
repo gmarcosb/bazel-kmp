@@ -11,84 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.analysis.platform.PlatformInfo
 
-import static com.google.common.base.Preconditions.checkState;
+/** Immutable implementation of a Spawn that does not perform any processing on the parameters.  */
+@javax.annotation.concurrent.Immutable
+class SimpleSpawn private constructor(
+    owner: ActionExecutionMetadata?,
+    arguments: com.google.common.collect.ImmutableList<String?>?,
+    environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+    executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+    inputs: NestedSet<out ActionInput?>?,
+    tools: NestedSet<out ActionInput?>?,
+    outputs: MutableCollection<out ActionInput?>,
+    mandatoryOutputs: MutableSet<out ActionInput?>?,
+    localResources: ResourceSet?,
+    localResourcesSupplier: LocalResourcesSupplier?,
+    pathMapper: PathMapper?
+) : Spawn {
+    private val owner: ActionExecutionMetadata
+    private val arguments: com.google.common.collect.ImmutableList<String?>
+    private val environment: com.google.common.collect.ImmutableMap<String?, String?>
+    private val executionInfo: com.google.common.collect.ImmutableMap<String?, String?>
+    private val inputs: NestedSet<out ActionInput?>
+    private val tools: NestedSet<out ActionInput?>
+    private val outputs: com.google.common.collect.ImmutableList<ActionInput?>
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import java.util.Collection;
-import java.util.Set;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
+    // If null, all outputs are mandatory.
+    private val mandatoryOutputs: MutableSet<out ActionInput?>?
+    private val pathMapper: PathMapper?
+    private val localResourcesSupplier: LocalResourcesSupplier?
+    private var localResourcesCached: ResourceSet? = null
 
-/** Immutable implementation of a Spawn that does not perform any processing on the parameters. */
-@Immutable
-public final class SimpleSpawn implements Spawn {
-  private final ActionExecutionMetadata owner;
-  private final ImmutableList<String> arguments;
-  private final ImmutableMap<String, String> environment;
-  private final ImmutableMap<String, String> executionInfo;
-  private final NestedSet<? extends ActionInput> inputs;
-  private final NestedSet<? extends ActionInput> tools;
-  private final ImmutableList<ActionInput> outputs;
-  // If null, all outputs are mandatory.
-  @Nullable private final Set<? extends ActionInput> mandatoryOutputs;
-  private final PathMapper pathMapper;
-  private final LocalResourcesSupplier localResourcesSupplier;
-  @Nullable private ResourceSet localResourcesCached;
-
-  private SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      NestedSet<? extends ActionInput> tools,
-      Collection<? extends ActionInput> outputs,
-      @Nullable final Set<? extends ActionInput> mandatoryOutputs,
-      @Nullable ResourceSet localResources,
-      @Nullable LocalResourcesSupplier localResourcesSupplier,
-      PathMapper pathMapper) {
-    this.owner = Preconditions.checkNotNull(owner);
-    this.arguments = Preconditions.checkNotNull(arguments);
-    this.environment = Preconditions.checkNotNull(environment);
-    this.executionInfo = Preconditions.checkNotNull(executionInfo);
-    this.inputs = Preconditions.checkNotNull(inputs);
-    this.tools = Preconditions.checkNotNull(tools);
-    this.outputs = ImmutableList.copyOf(outputs);
-    this.mandatoryOutputs = mandatoryOutputs;
-    checkState(
-        (localResourcesSupplier == null) != (localResources == null),
-        "Exactly one must be null: %s %s",
-        localResources,
-        localResourcesSupplier);
-    if (localResources != null) {
-      this.localResourcesSupplier = () -> localResources;
-    } else {
-      this.localResourcesSupplier = localResourcesSupplier;
+    init {
+        this.owner = com.google.common.base.Preconditions.checkNotNull<ActionExecutionMetadata>(owner)
+        this.arguments =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<String?>>(
+                arguments
+            )
+        this.environment =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMap<String?, String?>>(
+                environment
+            )
+        this.executionInfo =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMap<String?, String?>>(
+                executionInfo
+            )
+        this.inputs = com.google.common.base.Preconditions.checkNotNull<NestedSet<out ActionInput?>>(inputs)
+        this.tools = com.google.common.base.Preconditions.checkNotNull<NestedSet<out ActionInput?>>(tools)
+        this.outputs = com.google.common.collect.ImmutableList.copyOf<ActionInput?>(outputs)
+        this.mandatoryOutputs = mandatoryOutputs
+        com.google.common.base.Preconditions.checkState(
+            (localResourcesSupplier == null) != (localResources == null),
+            "Exactly one must be null: %s %s",
+            localResources,
+            localResourcesSupplier
+        )
+        if (localResources != null) {
+            this.localResourcesSupplier = LocalResourcesSupplier? { localResources }
+        } else {
+            this.localResourcesSupplier = localResourcesSupplier
+        }
+        this.localResourcesCached = null
+        this.pathMapper = pathMapper
     }
-    this.localResourcesCached = null;
-    this.pathMapper = pathMapper;
-  }
 
-  public SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      NestedSet<? extends ActionInput> tools,
-      Collection<? extends ActionInput> outputs,
-      @Nullable Set<? extends ActionInput> mandatoryOutputs,
-      ResourceSet localResources) {
-    this(
+    constructor(
+        owner: ActionExecutionMetadata?,
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+        inputs: NestedSet<out ActionInput?>?,
+        tools: NestedSet<out ActionInput?>?,
+        outputs: MutableCollection<out ActionInput?>,
+        mandatoryOutputs: MutableSet<out ActionInput?>?,
+        localResources: ResourceSet?
+    ) : this(
         owner,
         arguments,
         environment,
@@ -97,23 +96,22 @@ public final class SimpleSpawn implements Spawn {
         tools,
         outputs,
         mandatoryOutputs,
-        localResources,
-        /* localResourcesSupplier= */ null,
-        PathMapper.NOOP);
-  }
+        localResources,  /* localResourcesSupplier= */
+        null,
+        PathMapper.Companion.NOOP
+    )
 
-  @SuppressWarnings("TooManyParameters")
-  public SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      NestedSet<? extends ActionInput> tools,
-      Collection<? extends ActionInput> outputs,
-      @Nullable Set<? extends ActionInput> mandatoryOutputs,
-      LocalResourcesSupplier localResourcesSupplier) {
-    this(
+    constructor(
+        owner: ActionExecutionMetadata?,
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+        inputs: NestedSet<out ActionInput?>?,
+        tools: NestedSet<out ActionInput?>?,
+        outputs: MutableCollection<out ActionInput?>,
+        mandatoryOutputs: MutableSet<out ActionInput?>?,
+        localResourcesSupplier: LocalResourcesSupplier?
+    ) : this(
         owner,
         arguments,
         environment,
@@ -121,24 +119,24 @@ public final class SimpleSpawn implements Spawn {
         inputs,
         tools,
         outputs,
-        mandatoryOutputs,
-        /* localResources= */ null,
+        mandatoryOutputs,  /* localResources= */
+        null,
         localResourcesSupplier,
-        PathMapper.NOOP);
-  }
+        PathMapper.Companion.NOOP
+    )
 
-  public SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      NestedSet<? extends ActionInput> tools,
-      Collection<? extends ActionInput> outputs,
-      @Nullable Set<? extends ActionInput> mandatoryOutputs,
-      LocalResourcesSupplier localResourcesSupplier,
-      PathMapper pathMapper) {
-    this(
+    constructor(
+        owner: ActionExecutionMetadata?,
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+        inputs: NestedSet<out ActionInput?>?,
+        tools: NestedSet<out ActionInput?>?,
+        outputs: MutableCollection<out ActionInput?>,
+        mandatoryOutputs: MutableSet<out ActionInput?>?,
+        localResourcesSupplier: LocalResourcesSupplier?,
+        pathMapper: PathMapper?
+    ) : this(
         owner,
         arguments,
         environment,
@@ -149,21 +147,21 @@ public final class SimpleSpawn implements Spawn {
         mandatoryOutputs,
         null,
         localResourcesSupplier,
-        pathMapper);
-  }
+        pathMapper
+    )
 
-  public SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      NestedSet<? extends ActionInput> tools,
-      Collection<? extends ActionInput> outputs,
-      @Nullable Set<? extends ActionInput> mandatoryOutputs,
-      ResourceSet localResources,
-      PathMapper pathMapper) {
-    this(
+    constructor(
+        owner: ActionExecutionMetadata?,
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+        inputs: NestedSet<out ActionInput?>?,
+        tools: NestedSet<out ActionInput?>?,
+        outputs: MutableCollection<out ActionInput?>,
+        mandatoryOutputs: MutableSet<out ActionInput?>?,
+        localResources: ResourceSet?,
+        pathMapper: PathMapper?
+    ) : this(
         owner,
         arguments,
         environment,
@@ -174,128 +172,117 @@ public final class SimpleSpawn implements Spawn {
         mandatoryOutputs,
         localResources,
         null,
-        pathMapper);
-  }
+        pathMapper
+    )
 
-  public SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      Collection<Artifact> outputs,
-      LocalResourcesSupplier localResourcesSupplier) {
-    this(
+    constructor(
+        owner: ActionExecutionMetadata?,
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+        inputs: NestedSet<out ActionInput?>?,
+        outputs: MutableCollection<Artifact?>?,
+        localResourcesSupplier: LocalResourcesSupplier?
+    ) : this(
         owner,
         arguments,
         environment,
         executionInfo,
-        inputs,
-        /* tools= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-        outputs,
-        /* mandatoryOutputs= */ null,
-        localResourcesSupplier);
-  }
+        inputs,  /* tools= */
+        NestedSetBuilder.emptySet(Order.STABLE_ORDER),
+        outputs,  /* mandatoryOutputs= */
+        null,
+        localResourcesSupplier
+    )
 
-  public SimpleSpawn(
-      ActionExecutionMetadata owner,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      ImmutableMap<String, String> executionInfo,
-      NestedSet<? extends ActionInput> inputs,
-      Collection<? extends ActionInput> outputs,
-      ResourceSet resourceSet) {
-    this(
+    constructor(
+        owner: ActionExecutionMetadata?,
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?,
+        inputs: NestedSet<out ActionInput?>?,
+        outputs: MutableCollection<out ActionInput?>?,
+        resourceSet: ResourceSet?
+    ) : this(
         owner,
         arguments,
         environment,
         executionInfo,
         inputs,
         NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-        outputs,
-        /* mandatoryOutputs= */ null,
-        resourceSet);
-  }
+        outputs,  /* mandatoryOutputs= */
+        null,
+        resourceSet
+    )
 
-  @Override
-  public ImmutableMap<String, String> getExecutionInfo() {
-    return executionInfo;
-  }
-
-  @Override
-  public ImmutableList<String> getArguments() {
-    return arguments;
-  }
-
-  @Override
-  public ImmutableMap<String, String> getEnvironment() {
-    return environment;
-  }
-
-  @Override
-  public NestedSet<? extends ActionInput> getInputFiles() {
-    return inputs;
-  }
-
-  @Override
-  public NestedSet<? extends ActionInput> getToolFiles() {
-    return tools;
-  }
-
-  @Override
-  public ImmutableList<ActionInput> getOutputFiles() {
-    return outputs;
-  }
-
-  @Override
-  public boolean isMandatoryOutput(ActionInput output) {
-    return mandatoryOutputs == null || mandatoryOutputs.contains(output);
-  }
-
-  @Override
-  public ActionExecutionMetadata getResourceOwner() {
-    return owner;
-  }
-
-  @Override
-  public ResourceSet getLocalResources() throws ExecException {
-    ResourceSet result = localResourcesCached;
-    if (result == null) {
-      // Not expected to be called concurrently, and an idempotent computation if it is.
-      result =
-          localResourcesSupplier
-              .get()
-              .withResourceOverrides(
-                  ExecutionRequirements.parseResources(getExecutionInfo()),
-                  ExecutionRequirements.parseResources(getCombinedExecProperties()));
-      localResourcesCached = result;
+    override fun getExecutionInfo(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return executionInfo
     }
-    return result;
-  }
 
-  @Override
-  public PathMapper getPathMapper() {
-    return pathMapper;
-  }
+    override fun getArguments(): com.google.common.collect.ImmutableList<String?> {
+        return arguments
+    }
 
-  @Override
-  public String getMnemonic() {
-    return owner.getMnemonic();
-  }
+    override fun getEnvironment(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return environment
+    }
 
-  @Override
-  @Nullable
-  public PlatformInfo getExecutionPlatform() {
-    return owner.getExecutionPlatform();
-  }
+    override fun getInputFiles(): NestedSet<out ActionInput?> {
+        return inputs
+    }
 
-  @Override
-  public String toString() {
-    return Spawns.prettyPrint(this);
-  }
+    override fun getToolFiles(): NestedSet<out ActionInput?> {
+        return tools
+    }
 
-  /** Supplies resources needed for local execution. Result will be cached. */
-  public interface LocalResourcesSupplier {
-    ResourceSet get() throws ExecException;
-  }
+    override fun getOutputFiles(): com.google.common.collect.ImmutableList<ActionInput?> {
+        return outputs
+    }
+
+    override fun isMandatoryOutput(output: ActionInput?): Boolean {
+        return mandatoryOutputs == null || mandatoryOutputs.contains(output)
+    }
+
+    override fun getResourceOwner(): ActionExecutionMetadata {
+        return owner
+    }
+
+    @Throws(ExecException::class)
+    override fun getLocalResources(): ResourceSet? {
+        var result: ResourceSet? = localResourcesCached
+        if (result == null) {
+            // Not expected to be called concurrently, and an idempotent computation if it is.
+            result =
+                localResourcesSupplier!!
+                    .get()
+                    .withResourceOverrides(
+                        ExecutionRequirements.parseResources(getExecutionInfo()),
+                        ExecutionRequirements.parseResources(getCombinedExecProperties())
+                    )
+            localResourcesCached = result
+        }
+        return result
+    }
+
+    override fun getPathMapper(): PathMapper? {
+        return pathMapper
+    }
+
+    override fun getMnemonic(): String? {
+        return owner.getMnemonic()
+    }
+
+    override fun getExecutionPlatform(): PlatformInfo? {
+        return owner.getExecutionPlatform()
+    }
+
+    override fun toString(): String {
+        return Spawns.prettyPrint(this)
+    }
+
+    /** Supplies resources needed for local execution. Result will be cached.  */
+    interface LocalResourcesSupplier {
+        @Throws(ExecException::class)
+        fun get(): ResourceSet?
+    }
 }

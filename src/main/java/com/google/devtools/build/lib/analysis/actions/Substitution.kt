@@ -11,144 +11,121 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.analysis.actions;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import javax.annotation.Nonnull;
-import net.starlark.java.eval.EvalException;
+package com.google.devtools.build.lib.analysis.actions
 
 /**
  * A pair of a string to be substituted and a string to substitute it with. For simplicity, these
  * are called key and value. All implementations must be immutable, and always return the identical
  * key. The returned values must be the same, though they need not be the same object.
- *
- * <p>It should be assumed that the {@link #getKey} invocation is cheap, and that the {@link
- * #getValue} invocation is expensive.
+ * 
+ * 
+ * It should be assumed that the [.getKey] invocation is cheap, and that the [ ][.getValue] invocation is expensive.
  */
-@Immutable // if the keys and values in the passed in lists and maps are all immutable
-public abstract class Substitution {
-  private Substitution() {}
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable // if the keys and values in the passed in lists and maps are all immutable
+abstract class Substitution private constructor() {
+    abstract fun getKey(): String
 
-  public abstract String getKey();
+    @Throws(net.starlark.java.eval.EvalException::class, java.lang.InterruptedException::class)
+    abstract fun getValue(): String?
 
-  public abstract String getValue() throws EvalException, InterruptedException;
-
-  /* Not intended for use in production code */
-  // TODO(hvd): migrate usages and delete
-  @VisibleForTesting
-  public final String getValueUnchecked() {
-    try {
-      return getValue();
-    } catch (EvalException | InterruptedException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  private static final class StringSubstitution extends Substitution {
-    private final String key;
-    private final String value;
-
-    StringSubstitution(String key, String value) {
-      this.key = key;
-      this.value = value;
+    /* Not intended for use in production code */ // TODO(hvd): migrate usages and delete
+    @com.google.common.annotations.VisibleForTesting
+    fun getValueUnchecked(): String? {
+        try {
+            return getValue()
+        } catch (e: net.starlark.java.eval.EvalException) {
+            throw java.lang.IllegalStateException(e)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException(e)
+        }
     }
 
-    @Override
-    public String getKey() {
-      return key;
+    private class StringSubstitution(private val key: String?, private val value: String?) : Substitution() {
+        override fun getKey(): String? {
+            return key
+        }
+
+        override fun getValue(): String? {
+            return value
+        }
     }
 
-    @Override
-    public String getValue() {
-      return value;
-    }
-  }
+    private class ListSubstitution(private val key: String?, value: com.google.common.collect.ImmutableList<*>) :
+        Substitution() {
+        private val value: com.google.common.collect.ImmutableList<*>
 
-  private static final class ListSubstitution extends Substitution {
-    private final String key;
-    private final ImmutableList<?> value;
+        init {
+            this.value = value
+        }
 
-    ListSubstitution(String key, ImmutableList<?> value) {
-      this.key = key;
-      this.value = value;
-    }
+        override fun getKey(): String? {
+            return key
+        }
 
-    @Override
-    public String getKey() {
-      return key;
+        override fun getValue(): String {
+            return com.google.common.base.Joiner.on(" ").join(value)
+        }
     }
 
-    @Override
-    public String getValue() {
-      return Joiner.on(" ").join(value);
-    }
-  }
-
-  /** Returns an immutable Substitution instance for the given key and value. */
-  public static Substitution of(@Nonnull final String key, @Nonnull final String value) {
-    Preconditions.checkNotNull(key);
-    Preconditions.checkNotNull(value);
-    return new StringSubstitution(key, value);
-  }
-
-  /**
-   * Returns an immutable Substitution instance for the key and list of values. The values will be
-   * joined by spaces before substitution.
-   */
-  public static Substitution ofSpaceSeparatedList(
-      @Nonnull final String key, @Nonnull final ImmutableList<?> value) {
-    Preconditions.checkNotNull(key);
-    Preconditions.checkNotNull(value);
-    return new ListSubstitution(key, value);
-  }
-
-  @Override
-  public boolean equals(Object object) {
-    if (this == object) {
-      return true;
-    }
-    if (object instanceof Substitution substitution) {
-      return substitution.getKey().equals(this.getKey())
-          && substitution.getValueUnchecked().equals(this.getValueUnchecked());
-    }
-    return false;
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(getKey(), getValueUnchecked());
-  }
-
-  @Override
-  public String toString() {
-    return "Substitution(" + getKey() + " -> " + getValueUnchecked() + ")";
-  }
-
-  /**
-   * A substitution with a fixed key, and a computed value. The computed value must not change over
-   * the lifetime of an instance, though the {@link #getValue} method may return different String
-   * objects.
-   *
-   * <p>It should be assumed that the {@link #getKey} invocation is cheap, and that the {@link
-   * #getValue} invocation is expensive.
-   */
-  public abstract static class ComputedSubstitution extends Substitution {
-    private final String key;
-
-    public ComputedSubstitution(@Nonnull String key) {
-      Preconditions.checkNotNull(key);
-      this.key = key;
+    override fun equals(`object`: Any?): Boolean {
+        if (this === `object`) {
+            return true
+        }
+        if (`object` is Substitution) {
+            return `object`.getKey() == this.getKey()
+                    && `object`.getValueUnchecked() == this.getValueUnchecked()
+        }
+        return false
     }
 
-    @Override
-    public String getKey() {
-      return key;
+    override fun hashCode(): Int {
+        return com.google.common.base.Objects.hashCode(getKey(), getValueUnchecked())
     }
-  }
+
+    override fun toString(): String {
+        return "Substitution(" + getKey() + " -> " + getValueUnchecked() + ")"
+    }
+
+    /**
+     * A substitution with a fixed key, and a computed value. The computed value must not change over
+     * the lifetime of an instance, though the [.getValue] method may return different String
+     * objects.
+     * 
+     * 
+     * It should be assumed that the [.getKey] invocation is cheap, and that the [ ][.getValue] invocation is expensive.
+     */
+    abstract class ComputedSubstitution(@javax.annotation.Nonnull key: String) : Substitution() {
+        private val key: String
+
+        init {
+            com.google.common.base.Preconditions.checkNotNull<String?>(key)
+            this.key = key
+        }
+
+        override fun getKey(): String {
+            return key
+        }
+    }
+
+    companion object {
+        /** Returns an immutable Substitution instance for the given key and value.  */
+        fun of(@javax.annotation.Nonnull key: String, @javax.annotation.Nonnull value: String): Substitution {
+            com.google.common.base.Preconditions.checkNotNull<String?>(key)
+            com.google.common.base.Preconditions.checkNotNull<String?>(value)
+            return StringSubstitution(key, value)
+        }
+
+        /**
+         * Returns an immutable Substitution instance for the key and list of values. The values will be
+         * joined by spaces before substitution.
+         */
+        fun ofSpaceSeparatedList(
+            @javax.annotation.Nonnull key: String,
+            @javax.annotation.Nonnull value: com.google.common.collect.ImmutableList<*>
+        ): Substitution {
+            com.google.common.base.Preconditions.checkNotNull<String?>(key)
+            com.google.common.base.Preconditions.checkNotNull(value)
+            return ListSubstitution(key, value)
+        }
+    }
 }

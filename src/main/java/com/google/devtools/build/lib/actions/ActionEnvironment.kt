@@ -11,249 +11,236 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.util.Fingerprint;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
 /**
  * Environment variables for build or test actions.
- *
- * <p>The action environment consists of two parts.
- *
- * <ol>
- *   <li>All the environment variables with a fixed value, stored in a map.
- *   <li>All the environment variables inherited from the client environment, stored in a set.
- * </ol>
- *
- * <p>Inherited environment variables must be declared in the Action interface (see {@link
- * Action#getClientEnvironmentVariables}), so that the dependency on the client environment is known
+ * 
+ * 
+ * The action environment consists of two parts.
+ * 
+ * 
+ *  1. All the environment variables with a fixed value, stored in a map.
+ *  1. All the environment variables inherited from the client environment, stored in a set.
+ * 
+ * 
+ * 
+ * Inherited environment variables must be declared in the Action interface (see [ ][Action.getClientEnvironmentVariables]), so that the dependency on the client environment is known
  * to the execution framework for correct incremental builds.
- *
- * <p>By splitting the environment, we can handle environment variable changes more efficiently -
+ * 
+ * 
+ * By splitting the environment, we can handle environment variable changes more efficiently -
  * the dependency of the action on the environment variable are tracked in Skyframe (and in the
  * action cache), such that Bazel knows exactly which actions it needs to rerun, and does not have
  * to reanalyze the entire dependency graph.
  */
-public abstract class ActionEnvironment {
+abstract class ActionEnvironment private constructor() {
+    /**
+     * Returns the 'fixed' part of the environment, i.e., those environment variables that are set to
+     * fixed values and their values. This should only be used for testing and to compute the cache
+     * keys of actions. Use [.resolve] instead to get the complete environment.
+     */
+    abstract fun getFixedEnv(): com.google.common.collect.ImmutableMap<String?, String?>?
 
-  public static final ActionEnvironment EMPTY = new EmptyActionEnvironment();
+    /**
+     * Returns the 'inherited' part of the environment, i.e., those environment variables that are
+     * inherited from the client environment and therefore have no fixed value here. This should only
+     * be used for testing and to compute the cache keys of actions. Use [.resolve] instead to
+     * get the complete environment.
+     */
+    abstract fun getInheritedEnv(): com.google.common.collect.ImmutableSet<String?>?
 
-  private static final Interner<ActionEnvironment> actionEnvironmentInterner =
-      BlazeInterners.newWeakInterner();
+    /**
+     * Returns an upper bound on the combined size of the fixed and inherited environments. A call to
+     * [.resolve] may add fewer entries than this number if environment variables are contained
+     * in both the fixed and the inherited environment.
+     */
+    abstract fun estimatedSize(): Int
 
-  /** Convenience method for creating an {@link ActionEnvironment} with no inherited variables. */
-  public static ActionEnvironment create(ImmutableMap<String, String> fixedEnv) {
-    return create(fixedEnv, /* inheritedEnv= */ ImmutableSet.of());
-  }
-
-  /**
-   * Creates a new {@link ActionEnvironment}.
-   *
-   * <p>If an environment variable is contained both as a key in {@code fixedEnv} and in {@code
-   * inheritedEnv}, the result of {@link #resolve} will contain the value inherited from the client
-   * environment.
-   */
-  public static ActionEnvironment create(
-      ImmutableMap<String, String> fixedEnv, ImmutableSet<String> inheritedEnv) {
-    if (fixedEnv.isEmpty() && inheritedEnv.isEmpty()) {
-      return EMPTY;
-    }
-    return actionEnvironmentInterner.intern(new SimpleActionEnvironment(fixedEnv, inheritedEnv));
-  }
-
-  /**
-   * Splits the given map into a map of variables with a fixed value, and a set of variables that
-   * should be inherited, the latter of which are identified by having a {@code null} value in the
-   * given map. Returns these two parts as a new {@link ActionEnvironment} instance.
-   */
-  public static ActionEnvironment split(Map<String, String> env) {
-    Map<String, String> fixedEnv = new TreeMap<>();
-    Set<String> inheritedEnv = new TreeSet<>();
-    for (Map.Entry<String, String> entry : env.entrySet()) {
-      if (entry.getValue() != null) {
-        fixedEnv.put(entry.getKey(), entry.getValue());
-      } else {
-        inheritedEnv.add(entry.getKey());
-      }
-    }
-    return create(ImmutableMap.copyOf(fixedEnv), ImmutableSet.copyOf(inheritedEnv));
-  }
-
-  private ActionEnvironment() {}
-
-  /**
-   * Returns the 'fixed' part of the environment, i.e., those environment variables that are set to
-   * fixed values and their values. This should only be used for testing and to compute the cache
-   * keys of actions. Use {@link #resolve} instead to get the complete environment.
-   */
-  public abstract ImmutableMap<String, String> getFixedEnv();
-
-  /**
-   * Returns the 'inherited' part of the environment, i.e., those environment variables that are
-   * inherited from the client environment and therefore have no fixed value here. This should only
-   * be used for testing and to compute the cache keys of actions. Use {@link #resolve} instead to
-   * get the complete environment.
-   */
-  public abstract ImmutableSet<String> getInheritedEnv();
-
-  /**
-   * Returns an upper bound on the combined size of the fixed and inherited environments. A call to
-   * {@link #resolve} may add fewer entries than this number if environment variables are contained
-   * in both the fixed and the inherited environment.
-   */
-  public abstract int estimatedSize();
-
-  /**
-   * Resolves the action environment and adds the resulting entries to the given {@code result} map,
-   * by looking up any inherited env variables in the given {@code clientEnv}.
-   *
-   * <p>We pass in a map to mutate to avoid creating and merging intermediate maps.
-   */
-  public final void resolve(Map<String, String> result, Map<String, String> clientEnv) {
-    checkNotNull(clientEnv);
-    result.putAll(getFixedEnv());
-    for (String var : getInheritedEnv()) {
-      String value = clientEnv.get(var);
-      if (value != null) {
-        result.put(var, value);
-      }
-    }
-  }
-
-  public final void addTo(Fingerprint f) {
-    f.addStringMap(getFixedEnv());
-    f.addStrings(getInheritedEnv());
-  }
-
-  /**
-   * Returns a copy of the environment with the given fixed variables added to it, <em>overwriting
-   * any existing occurrences of those variables</em>.
-   */
-  public final ActionEnvironment withAdditionalFixedVariables(Map<String, String> fixedVars) {
-    if (fixedVars.isEmpty()) {
-      return this;
-    }
-    if (this == EMPTY) {
-      return actionEnvironmentInterner.intern(
-          new SimpleActionEnvironment(ImmutableMap.copyOf(fixedVars), ImmutableSet.of()));
-    }
-    return actionEnvironmentInterner.intern(
-        new CompoundActionEnvironment(this, ImmutableMap.copyOf(fixedVars)));
-  }
-
-  private static final class EmptyActionEnvironment extends ActionEnvironment {
-
-    @Override
-    public ImmutableMap<String, String> getFixedEnv() {
-      return ImmutableMap.of();
+    /**
+     * Resolves the action environment and adds the resulting entries to the given `result` map,
+     * by looking up any inherited env variables in the given `clientEnv`.
+     * 
+     * 
+     * We pass in a map to mutate to avoid creating and merging intermediate maps.
+     */
+    fun resolve(result: MutableMap<String?, String?>, clientEnv: MutableMap<String?, String?>?) {
+        com.google.common.base.Preconditions.checkNotNull<MutableMap<String?, String?>?>(clientEnv)
+        result.putAll(getFixedEnv())
+        for (`var` in getInheritedEnv()) {
+            val value = clientEnv!!.get(`var`)
+            if (value != null) {
+                result.put(`var`, value)
+            }
+        }
     }
 
-    @Override
-    public ImmutableSet<String> getInheritedEnv() {
-      return ImmutableSet.of();
+    fun addTo(f: Fingerprint) {
+        f.addStringMap(getFixedEnv())
+        f.addStrings(getInheritedEnv())
     }
 
-    @Override
-    public int estimatedSize() {
-      return 0;
-    }
-  }
-
-  private static final class SimpleActionEnvironment extends ActionEnvironment {
-    private final ImmutableMap<String, String> fixedEnv;
-    private final ImmutableSet<String> inheritedEnv;
-
-    SimpleActionEnvironment(
-        ImmutableMap<String, String> fixedEnv, ImmutableSet<String> inheritedEnv) {
-      this.fixedEnv = fixedEnv;
-      this.inheritedEnv = inheritedEnv;
-    }
-
-    @Override
-    public ImmutableMap<String, String> getFixedEnv() {
-      return fixedEnv;
-    }
-
-    @Override
-    public ImmutableSet<String> getInheritedEnv() {
-      return inheritedEnv;
+    /**
+     * Returns a copy of the environment with the given fixed variables added to it, *overwriting
+     * any existing occurrences of those variables*.
+     */
+    fun withAdditionalFixedVariables(fixedVars: MutableMap<String?, String?>): ActionEnvironment {
+        if (fixedVars.isEmpty()) {
+            return this
+        }
+        if (this === EMPTY) {
+            return actionEnvironmentInterner.intern(
+                SimpleActionEnvironment(
+                    com.google.common.collect.ImmutableMap.copyOf<String?, String?>(fixedVars),
+                    com.google.common.collect.ImmutableSet.of<String?>()
+                )
+            )
+        }
+        return actionEnvironmentInterner.intern(
+            CompoundActionEnvironment(this, com.google.common.collect.ImmutableMap.copyOf<String?, String?>(fixedVars))
+        )
     }
 
-    @Override
-    public int estimatedSize() {
-      return fixedEnv.size() + inheritedEnv.size();
+    private class EmptyActionEnvironment : ActionEnvironment() {
+        override fun getFixedEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+            return com.google.common.collect.ImmutableMap.of<String?, String?>()
+        }
+
+        override fun getInheritedEnv(): com.google.common.collect.ImmutableSet<String?> {
+            return com.google.common.collect.ImmutableSet.of<String?>()
+        }
+
+        override fun estimatedSize(): Int {
+            return 0
+        }
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof SimpleActionEnvironment that)) {
-        return false;
-      }
-      return fixedEnv.equals(that.fixedEnv) && inheritedEnv.equals(that.inheritedEnv);
+    private class SimpleActionEnvironment(
+        fixedEnv: com.google.common.collect.ImmutableMap<String?, String?>,
+        inheritedEnv: com.google.common.collect.ImmutableSet<String?>
+    ) : ActionEnvironment() {
+        private val fixedEnv: com.google.common.collect.ImmutableMap<String?, String?>
+        private val inheritedEnv: com.google.common.collect.ImmutableSet<String?>
+
+        init {
+            this.fixedEnv = fixedEnv
+            this.inheritedEnv = inheritedEnv
+        }
+
+        override fun getFixedEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+            return fixedEnv
+        }
+
+        override fun getInheritedEnv(): com.google.common.collect.ImmutableSet<String?> {
+            return inheritedEnv
+        }
+
+        override fun estimatedSize(): Int {
+            return fixedEnv.size + inheritedEnv.size
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is SimpleActionEnvironment) {
+                return false
+            }
+            return fixedEnv == o.fixedEnv && inheritedEnv == o.inheritedEnv
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(fixedEnv, inheritedEnv)
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(fixedEnv, inheritedEnv);
-    }
-  }
+    private class CompoundActionEnvironment(
+        private val base: ActionEnvironment,
+        fixedVars: com.google.common.collect.ImmutableMap<String?, String?>
+    ) : ActionEnvironment() {
+        private val fixedVars: com.google.common.collect.ImmutableMap<String?, String?>
 
-  private static final class CompoundActionEnvironment extends ActionEnvironment {
-    private final ActionEnvironment base;
-    private final ImmutableMap<String, String> fixedVars;
+        init {
+            this.fixedVars = fixedVars
+        }
 
-    private CompoundActionEnvironment(
-        ActionEnvironment base, ImmutableMap<String, String> fixedVars) {
-      this.base = base;
-      this.fixedVars = fixedVars;
-    }
+        override fun getFixedEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+            return com.google.common.collect.ImmutableMap.builder<String?, String?>()
+                .putAll(base.getFixedEnv())
+                .putAll(fixedVars)
+                .buildKeepingLast()
+        }
 
-    @Override
-    public ImmutableMap<String, String> getFixedEnv() {
-      return ImmutableMap.<String, String>builder()
-          .putAll(base.getFixedEnv())
-          .putAll(fixedVars)
-          .buildKeepingLast();
-    }
+        override fun getInheritedEnv(): com.google.common.collect.ImmutableSet<String?>? {
+            return base.getInheritedEnv()
+        }
 
-    @Override
-    public ImmutableSet<String> getInheritedEnv() {
-      return base.getInheritedEnv();
-    }
+        override fun estimatedSize(): Int {
+            return base.estimatedSize() + fixedVars.size
+        }
 
-    @Override
-    public int estimatedSize() {
-      return base.estimatedSize() + fixedVars.size();
-    }
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is CompoundActionEnvironment) {
+                return false
+            }
+            return base == o.base && fixedVars == o.fixedVars
+        }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof CompoundActionEnvironment that)) {
-        return false;
-      }
-      return base.equals(that.base) && fixedVars.equals(that.fixedVars);
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(base, fixedVars)
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(base, fixedVars);
+    companion object {
+        @kotlin.jvm.JvmField
+        val EMPTY: ActionEnvironment = EmptyActionEnvironment()
+
+        private val actionEnvironmentInterner: com.google.common.collect.Interner<ActionEnvironment> =
+            BlazeInterners.newWeakInterner()
+
+        /**
+         * Creates a new [ActionEnvironment].
+         * 
+         * 
+         * If an environment variable is contained both as a key in `fixedEnv` and in `inheritedEnv`, the result of [.resolve] will contain the value inherited from the client
+         * environment.
+         */
+        /** Convenience method for creating an [ActionEnvironment] with no inherited variables.  */
+        @kotlin.jvm.JvmOverloads
+        fun create(
+            fixedEnv: com.google.common.collect.ImmutableMap<String?, String?>,
+            inheritedEnv: com.google.common.collect.ImmutableSet<String?> = com.google.common.collect.ImmutableSet.of<String?>()
+        ): ActionEnvironment {
+            if (fixedEnv.isEmpty() && inheritedEnv.isEmpty()) {
+                return EMPTY
+            }
+            return actionEnvironmentInterner.intern(SimpleActionEnvironment(fixedEnv, inheritedEnv))
+        }
+
+        /**
+         * Splits the given map into a map of variables with a fixed value, and a set of variables that
+         * should be inherited, the latter of which are identified by having a `null` value in the
+         * given map. Returns these two parts as a new [ActionEnvironment] instance.
+         */
+        fun split(env: MutableMap<String?, String?>): ActionEnvironment {
+            val fixedEnv: MutableMap<String?, String?> = TreeMap<String?, String?>()
+            val inheritedEnv: MutableSet<String?> = TreeSet<String?>()
+            for (entry in env.entries) {
+                if (entry.value != null) {
+                    fixedEnv.put(entry.key, entry.value)
+                } else {
+                    inheritedEnv.add(entry.key)
+                }
+            }
+            return create(
+                com.google.common.collect.ImmutableMap.copyOf<String?, String?>(fixedEnv),
+                com.google.common.collect.ImmutableSet.copyOf<String?>(inheritedEnv)
+            )
+        }
     }
-  }
 }

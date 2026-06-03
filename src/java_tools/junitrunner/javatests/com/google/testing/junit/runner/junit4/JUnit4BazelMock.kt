@@ -11,25 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.junit4
 
-package com.google.testing.junit.runner.junit4;
+import com.google.testing.junit.runner.junit4.JUnit4Bazel
+import com.google.testing.junit.runner.junit4.JUnit4RunnerTest.TestModule
 
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-
-public final class JUnit4BazelMock {
-
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  public static final class Builder extends JUnit4Bazel.Builder<Builder> {
-    @CanIgnoreReturnValue
-    public Builder testModule(JUnit4RunnerTest.TestModule testModule) {
-      if (testModule == null) {
-        throw new NullPointerException();
-      }
-      this.module = testModule;
-      return this;
+object JUnit4BazelMock {
+    fun builder(): Builder {
+        return Builder()
     }
-  }
+
+    class Builder : com.google.testing.junit.runner.junit4.JUnit4Bazel.Builder<Builder?>() {
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun testModule(testModule: TestModule): Builder {
+            if (testModule == null) {
+                throw java.lang.NullPointerException()
+            }
+            this.module = testModule
+            return this
+        }
+    }
 }

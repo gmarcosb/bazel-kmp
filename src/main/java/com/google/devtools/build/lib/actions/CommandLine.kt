@@ -11,155 +11,151 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.util.Fingerprint
 
-import com.google.common.base.Joiner;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.util.Fingerprint;
-import javax.annotation.Nullable;
+/** A representation of a list of arguments.  */
+abstract class CommandLine {
+    /** Implementation of [ArgChunk] that delegates to an [Iterable].  */
+    class SimpleArgChunk(private val args: Iterable<String>) : ArgChunk {
+        override fun arguments(pathMapper: PathMapper?): Iterable<String> {
+            return args
+        }
 
-/** A representation of a list of arguments. */
-public abstract class CommandLine {
+        override fun totalArgLength(pathMapper: PathMapper?): Int {
+            var total = 0
+            for (arg in args) {
+                total += arg.length() + 1
+            }
+            return total
+        }
 
-  public static FlatCommandLine empty() {
-    return FlatCommandLine.EMPTY_INSTANCE;
-  }
-
-  /** Returns a {@link CommandLine} backed by the given list of arguments. */
-  public static FlatCommandLine of(ImmutableList<String> arguments) {
-    return arguments.isEmpty() ? empty() : new FlatCommandLine(arguments);
-  }
-
-  /**
-   * Returns a {@link CommandLine} that is constructed by appending the {@code args} to {@code
-   * commandLine}.
-   */
-  public static CommandLine concat(CommandLine commandLine, ImmutableList<String> args) {
-    if (args.isEmpty()) {
-      return commandLine;
-    }
-    if (commandLine == FlatCommandLine.EMPTY_INSTANCE) {
-      return CommandLine.of(args);
-    }
-    return new SuffixedCommandLine(args, commandLine);
-  }
-
-  /** Implementation of {@link ArgChunk} that delegates to an {@link Iterable}. */
-  public static final class SimpleArgChunk implements ArgChunk {
-    private final Iterable<String> args;
-
-    public SimpleArgChunk(Iterable<String> args) {
-      this.args = args;
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this).add("args", args).toString()
+        }
     }
 
-    @Override
-    public Iterable<String> arguments(PathMapper pathMapper) {
-      return args;
+    /** Returns the expanded command line.  */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    abstract fun expand(): ArgChunk?
+
+    /**
+     * Returns the expanded command line, expanding the referenced artifacts using the provided [ ].
+     */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    abstract fun expand(
+        inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?
+    ): ArgChunk?
+
+    /** Identical to calling `expand().arguments()`.  */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    abstract fun arguments(): Iterable<String?>?
+
+    /** Identical to calling `expand(inputMetadataProvider, pathMapper).arguments()`.  */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    abstract fun arguments(
+        inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?
+    ): Iterable<String?>?
+
+    /** Adds this command line to the provided [Fingerprint].  */
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    abstract fun addToFingerprint(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        effectiveOutputPathsMode: OutputPathsMode?,
+        fingerprint: Fingerprint?
+    )
+
+    /**
+     * A command line backed by a simple `ImmutableList<String>`.
+     * 
+     * 
+     * [.arguments] can be retrieved exception-free.
+     */
+    class FlatCommandLine private constructor(args: com.google.common.collect.ImmutableList<String?>?) :
+        AbstractCommandLine() {
+        private val args: com.google.common.collect.ImmutableList<String?>?
+
+        init {
+            this.args = args
+        }
+
+        override fun arguments(): com.google.common.collect.ImmutableList<String?>? {
+            return args
+        }
+
+        companion object {
+            private val EMPTY_INSTANCE = FlatCommandLine(com.google.common.collect.ImmutableList.of<String?>())
+        }
     }
 
-    @Override
-    public int totalArgLength(PathMapper pathMapper) {
-      int total = 0;
-      for (String arg : args) {
-        total += arg.length() + 1;
-      }
-      return total;
+    private class SuffixedCommandLine(
+        executableArgs: com.google.common.collect.ImmutableList<String?>,
+        commandLine: CommandLine
+    ) : AbstractCommandLine() {
+        private val executableArgs: com.google.common.collect.ImmutableList<String?>
+        private val commandLine: CommandLine
+
+        init {
+            this.executableArgs = executableArgs
+            this.commandLine = commandLine
+        }
+
+        @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+        override fun arguments(): Iterable<String?> {
+            return com.google.common.collect.Iterables.concat<String?>(commandLine.arguments(), executableArgs)
+        }
+
+        @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+        override fun arguments(
+            inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?
+        ): Iterable<String?> {
+            return com.google.common.collect.Iterables.concat<String?>(
+                commandLine.arguments(inputMetadataProvider, pathMapper), executableArgs
+            )
+        }
     }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this).add("args", args).toString();
-    }
-  }
-
-  /** Returns the expanded command line. */
-  public abstract ArgChunk expand() throws CommandLineExpansionException, InterruptedException;
-
-  /**
-   * Returns the expanded command line, expanding the referenced artifacts using the provided {@link
-   * InputMetadataProvider}.
-   */
-  public abstract ArgChunk expand(
-      InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException, InterruptedException;
-
-  /** Identical to calling {@code expand().arguments()}. */
-  public abstract Iterable<String> arguments()
-      throws CommandLineExpansionException, InterruptedException;
-
-  /** Identical to calling {@code expand(inputMetadataProvider, pathMapper).arguments()}. */
-  public abstract Iterable<String> arguments(
-      InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException, InterruptedException;
-
-  /** Adds this command line to the provided {@link Fingerprint}. */
-  public abstract void addToFingerprint(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      CoreOptions.OutputPathsMode effectiveOutputPathsMode,
-      Fingerprint fingerprint)
-      throws CommandLineExpansionException, InterruptedException;
-
-  /**
-   * A command line backed by a simple {@code ImmutableList<String>}.
-   *
-   * <p>{@link #arguments()} can be retrieved exception-free.
-   */
-  public static final class FlatCommandLine extends AbstractCommandLine {
-    private static final FlatCommandLine EMPTY_INSTANCE = new FlatCommandLine(ImmutableList.of());
-
-    private final ImmutableList<String> args;
-
-    private FlatCommandLine(ImmutableList<String> args) {
-      this.args = args;
+    /**
+     * This helps when debugging Blaze code that uses [CommandLine]s, as you can see their
+     * content directly in the variable inspector.
+     */
+    override fun toString(): String {
+        try {
+            return com.google.common.base.Joiner.on(' ').join(arguments())
+        } catch (e: CommandLineExpansionException) {
+            return "Error in expanding command line"
+        } catch (unused: java.lang.InterruptedException) {
+            java.lang.Thread.currentThread().interrupt()
+            return "Interrupted while expanding command line"
+        }
     }
 
-    @Override
-    public ImmutableList<String> arguments() {
-      return args;
-    }
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun empty(): FlatCommandLine {
+            return FlatCommandLine.Companion.EMPTY_INSTANCE
+        }
 
-  private static final class SuffixedCommandLine extends AbstractCommandLine {
-    private final ImmutableList<String> executableArgs;
-    private final CommandLine commandLine;
+        /** Returns a [CommandLine] backed by the given list of arguments.  */
+        fun of(arguments: com.google.common.collect.ImmutableList<String?>): FlatCommandLine? {
+            return if (arguments.isEmpty()) com.google.devtools.build.lib.actions.CommandLine.Companion.empty() else FlatCommandLine(
+                arguments
+            )
+        }
 
-    SuffixedCommandLine(ImmutableList<String> executableArgs, CommandLine commandLine) {
-      this.executableArgs = executableArgs;
-      this.commandLine = commandLine;
+        /**
+         * Returns a [CommandLine] that is constructed by appending the `args` to `commandLine`.
+         */
+        fun concat(commandLine: CommandLine, args: com.google.common.collect.ImmutableList<String?>): CommandLine? {
+            if (args.isEmpty()) {
+                return commandLine
+            }
+            if (commandLine === FlatCommandLine.Companion.EMPTY_INSTANCE) {
+                return com.google.devtools.build.lib.actions.CommandLine.Companion.of(args)
+            }
+            return SuffixedCommandLine(args, commandLine)
+        }
     }
-
-    @Override
-    public Iterable<String> arguments() throws CommandLineExpansionException, InterruptedException {
-      return Iterables.concat(commandLine.arguments(), executableArgs);
-    }
-
-    @Override
-    public Iterable<String> arguments(
-        InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-        throws CommandLineExpansionException, InterruptedException {
-      return Iterables.concat(
-          commandLine.arguments(inputMetadataProvider, pathMapper), executableArgs);
-    }
-  }
-
-  /**
-   * This helps when debugging Blaze code that uses {@link CommandLine}s, as you can see their
-   * content directly in the variable inspector.
-   */
-  @Override
-  public final String toString() {
-    try {
-      return Joiner.on(' ').join(arguments());
-    } catch (CommandLineExpansionException e) {
-      return "Error in expanding command line";
-    } catch (InterruptedException unused) {
-      Thread.currentThread().interrupt();
-      return "Interrupted while expanding command line";
-    }
-  }
 }

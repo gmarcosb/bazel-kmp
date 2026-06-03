@@ -11,136 +11,123 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.base.Objects;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Multimaps;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionKeyContext
 
 /**
- * A helper class for building {@link ConfiguredTarget} instances, in particular for non-rule ones.
- * For {@link com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget}
- * instances, use {@link RuleContext} instead, which is a subclass of this class.
- *
- * <p>The class is intended to be sub-classed by RuleContext, in order to share the code. However,
+ * A helper class for building [ConfiguredTarget] instances, in particular for non-rule ones.
+ * For [com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget]
+ * instances, use [RuleContext] instead, which is a subclass of this class.
+ * 
+ * 
+ * The class is intended to be sub-classed by RuleContext, in order to share the code. However,
  * it's not intended for sub-classing beyond that, and the constructor is intentionally package
  * private to enforce that.
  */
-public class TargetContext {
+open class TargetContext internal constructor(
+    env: AnalysisEnvironment,
+    target: Target,
+    configuration: BuildConfigurationValue?,
+    directPrerequisites: MutableSet<ConfiguredTargetAndData?>?,
+    visibility: NestedSet<PackageGroupContents?>?,
+    transitiveVisibility: PackageSpecificationProvider?
+) {
+    private val env: AnalysisEnvironment
+    private val target: Target
+    private val configuration: BuildConfigurationValue?
 
-  private final AnalysisEnvironment env;
-  private final Target target;
-  private final BuildConfigurationValue configuration;
+    /**
+     * This only contains prerequisites that are not declared in rule attributes, with the exception
+     * of visibility (i.e., visibility is represented here, even though it is a rule attribute in case
+     * of a rule). Rule attributes are handled by the [RuleContext] subclass.
+     */
+    private val directPrerequisites: com.google.common.collect.ListMultimap<Label, ConfiguredTargetAndData>
 
-  /**
-   * This only contains prerequisites that are not declared in rule attributes, with the exception
-   * of visibility (i.e., visibility is represented here, even though it is a rule attribute in case
-   * of a rule). Rule attributes are handled by the {@link RuleContext} subclass.
-   */
-  private final ListMultimap<Label, ConfiguredTargetAndData> directPrerequisites;
+    private val visibility: NestedSet<PackageGroupContents?>?
 
-  private final NestedSet<PackageGroupContents> visibility;
+    private val transitiveVisibilityImposedByThisPackage: PackageSpecificationProvider?
 
-  @Nullable private final PackageSpecificationProvider transitiveVisibilityImposedByThisPackage;
-
-  /**
-   * The constructor is intentionally package private.
-   *
-   * <p>directPrerequisites is expected to be ordered.
-   */
-  TargetContext(
-      AnalysisEnvironment env,
-      Target target,
-      BuildConfigurationValue configuration,
-      Set<ConfiguredTargetAndData> directPrerequisites,
-      NestedSet<PackageGroupContents> visibility,
-      @Nullable PackageSpecificationProvider transitiveVisibility) {
-    this.env = env;
-    this.target = target;
-    this.configuration = configuration;
-    this.directPrerequisites =
-        Multimaps.index(directPrerequisites, ConfiguredTargetAndData::getTargetLabel);
-    this.visibility = visibility;
-    this.transitiveVisibilityImposedByThisPackage = transitiveVisibility;
-  }
-
-  public AnalysisEnvironment getAnalysisEnvironment() {
-    return env;
-  }
-
-  public ActionKeyContext getActionKeyContext() {
-    return env.getActionKeyContext();
-  }
-
-  public Target getTarget() {
-    return target;
-  }
-
-  public Label getLabel() {
-    return target.getLabel();
-  }
-
-  public Label.PackageContext getPackageContext() {
-    return Label.PackageContext.of(
-        getLabel().getPackageIdentifier(), target.getPackageMetadata().repositoryMapping());
-  }
-
-  /**
-   * Returns the configuration for this target. This may return null if the target is supposed to be
-   * configuration-independent (like an input file, or a visibility rule). However, this is
-   * guaranteed to be non-null for rules and for output files.
-   */
-  @Nullable
-  public BuildConfigurationValue getConfiguration() {
-    return configuration;
-  }
-
-  public NestedSet<PackageGroupContents> getVisibility() {
-    return visibility;
-  }
-
-  @Nullable
-  public PackageSpecificationProvider getTransitiveVisibilityImposedByThisPackage() {
-    return transitiveVisibilityImposedByThisPackage;
-  }
-
-  /**
-   * Returns the prerequisite with the given label and configuration, or null if no such
-   * prerequisite exists. If configuration is absent, return the first prerequisite with the given
-   * label.
-   */
-  @Nullable
-  public TransitiveInfoCollection findDirectPrerequisite(
-      Label label, Optional<BuildConfigurationValue> config) {
-    if (directPrerequisites.containsKey(label)) {
-      List<ConfiguredTargetAndData> prerequisites = directPrerequisites.get(label);
-      // If the config is present, find the prereq with that configuration. Otherwise, return the
-      // first.
-      if (!config.isPresent()) {
-        if (prerequisites.isEmpty()) {
-          return null;
-        }
-        return Iterables.getFirst(prerequisites, null).getConfiguredTarget();
-      }
-      for (ConfiguredTargetAndData prerequisite : prerequisites) {
-        if (Objects.equal(prerequisite.getConfiguration(), config.get())) {
-          return prerequisite.getConfiguredTarget();
-        }
-      }
+    /**
+     * The constructor is intentionally package private.
+     * 
+     * 
+     * directPrerequisites is expected to be ordered.
+     */
+    init {
+        this.env = env
+        this.target = target
+        this.configuration = configuration
+        this.directPrerequisites =
+            com.google.common.collect.Multimaps.index(directPrerequisites, ConfiguredTargetAndData::getTargetLabel)
+        this.visibility = visibility
+        this.transitiveVisibilityImposedByThisPackage = transitiveVisibility
     }
-    return null;
-  }
+
+    fun getAnalysisEnvironment(): AnalysisEnvironment {
+        return env
+    }
+
+    fun getActionKeyContext(): ActionKeyContext? {
+        return env.getActionKeyContext()
+    }
+
+    fun getTarget(): Target {
+        return target
+    }
+
+    fun getLabel(): Label {
+        return target.getLabel()
+    }
+
+    fun getPackageContext(): Label.PackageContext {
+        return Label.PackageContext.of(
+            getLabel().getPackageIdentifier(), target.getPackageMetadata().repositoryMapping()
+        )
+    }
+
+    /**
+     * Returns the configuration for this target. This may return null if the target is supposed to be
+     * configuration-independent (like an input file, or a visibility rule). However, this is
+     * guaranteed to be non-null for rules and for output files.
+     */
+    fun getConfiguration(): BuildConfigurationValue? {
+        return configuration
+    }
+
+    fun getVisibility(): NestedSet<PackageGroupContents?>? {
+        return visibility
+    }
+
+    fun getTransitiveVisibilityImposedByThisPackage(): PackageSpecificationProvider? {
+        return transitiveVisibilityImposedByThisPackage
+    }
+
+    /**
+     * Returns the prerequisite with the given label and configuration, or null if no such
+     * prerequisite exists. If configuration is absent, return the first prerequisite with the given
+     * label.
+     */
+    fun findDirectPrerequisite(
+        label: Label?, config: java.util.Optional<BuildConfigurationValue?>
+    ): TransitiveInfoCollection? {
+        if (directPrerequisites.containsKey(label)) {
+            val prerequisites: MutableList<ConfiguredTargetAndData> = directPrerequisites.get(label)
+            // If the config is present, find the prereq with that configuration. Otherwise, return the
+            // first.
+            if (!config.isPresent()) {
+                if (prerequisites.isEmpty()) {
+                    return null
+                }
+                return com.google.common.collect.Iterables.getFirst<ConfiguredTargetAndData?>(prerequisites, null)
+                    .getConfiguredTarget()
+            }
+            for (prerequisite in prerequisites) {
+                if (com.google.common.base.Objects.equal(prerequisite.getConfiguration(), config.get())) {
+                    return prerequisite.getConfiguredTarget()
+                }
+            }
+        }
+        return null
+    }
 }

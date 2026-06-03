@@ -11,100 +11,96 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis;
+package com.google.devtools.build.lib.analysis
 
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Multimap;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.extra.ExtraActionMapProvider;
-import com.google.devtools.build.lib.analysis.extra.ExtraActionSpec;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import java.util.List;
-import java.util.Set;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
  * A collection of static methods related to ExtraActions.
  */
-class ExtraActionUtils {
-  /**
-   * Scans {@code action_listeners} associated with this build to see if any {@code extra_actions}
-   * should be added to this configured target. If any action_listeners are present, a partial visit
-   * of the artifact/action graph is performed (for as long as actions found are owned by this
-   * {@link ConfiguredTarget}). Any actions that match the {@code action_listener} get an {@code
-   * extra_action} associated. The output artifacts of the extra_action are reported to the {@link
-   * AnalysisEnvironment} for bookkeeping.
-   */
-  static ExtraActionArtifactsProvider createExtraActionProvider(
-      Set<ActionAnalysisMetadata> actionsWithoutExtraAction, RuleContext ruleContext)
-      throws InterruptedException {
-    BuildConfigurationValue configuration = ruleContext.getConfiguration();
-    if (configuration.isToolConfiguration()) {
-      return ExtraActionArtifactsProvider.EMPTY;
-    }
-
-    ImmutableList<Artifact.DerivedArtifact> extraActionArtifacts = ImmutableList.of();
-    NestedSetBuilder<Artifact.DerivedArtifact> builder = NestedSetBuilder.stableOrder();
-
-    List<Label> actionListenerLabels = configuration.getActionListeners();
-    if (!actionListenerLabels.isEmpty()
-        && ruleContext.attributes().getAttributeDefinition(":action_listener") != null) {
-      ExtraActionsVisitor visitor =
-          new ExtraActionsVisitor(ruleContext, computeMnemonicsToExtraActionMap(ruleContext));
-
-      // The action list is modified within the body of the loop by the maybeAddExtraAction() call,
-      // thus the copy
-      for (ActionAnalysisMetadata action :
-          ImmutableList.copyOf(ruleContext.getAnalysisEnvironment().getRegisteredActions())) {
-        if (!actionsWithoutExtraAction.contains(action)) {
-          visitor.maybeAddExtraAction(action);
+internal object ExtraActionUtils {
+    /**
+     * Scans `action_listeners` associated with this build to see if any `extra_actions`
+     * should be added to this configured target. If any action_listeners are present, a partial visit
+     * of the artifact/action graph is performed (for as long as actions found are owned by this
+     * [ConfiguredTarget]). Any actions that match the `action_listener` get an `extra_action` associated. The output artifacts of the extra_action are reported to the [ ] for bookkeeping.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun createExtraActionProvider(
+        actionsWithoutExtraAction: MutableSet<ActionAnalysisMetadata?>, ruleContext: RuleContext
+    ): ExtraActionArtifactsProvider {
+        val configuration: BuildConfigurationValue? = ruleContext.getConfiguration()
+        if (configuration.isToolConfiguration()) {
+            return ExtraActionArtifactsProvider.EMPTY
         }
-      }
 
-      extraActionArtifacts = visitor.getAndResetExtraArtifacts();
-      if (!extraActionArtifacts.isEmpty()) {
-        builder.addAll(extraActionArtifacts);
-      }
+        var extraActionArtifacts: com.google.common.collect.ImmutableList<Artifact.DerivedArtifact?> =
+            com.google.common.collect.ImmutableList.of<Artifact.DerivedArtifact?>()
+        val builder: NestedSetBuilder<Artifact.DerivedArtifact?> = NestedSetBuilder.stableOrder()
+
+        val actionListenerLabels: MutableList<Label?> = configuration.getActionListeners()
+        if (!actionListenerLabels.isEmpty()
+            && ruleContext.attributes().getAttributeDefinition(":action_listener") != null
+        ) {
+            val visitor: ExtraActionsVisitor =
+                ExtraActionsVisitor(ruleContext, computeMnemonicsToExtraActionMap(ruleContext))
+
+            // The action list is modified within the body of the loop by the maybeAddExtraAction() call,
+            // thus the copy
+            for (action in com.google.common.collect.ImmutableList.copyOf<ActionAnalysisMetadata?>(
+                ruleContext.getAnalysisEnvironment().getRegisteredActions()
+            )) {
+                if (!actionsWithoutExtraAction.contains(action)) {
+                    visitor.maybeAddExtraAction(action)
+                }
+            }
+
+            extraActionArtifacts = visitor.getAndResetExtraArtifacts()
+            if (!extraActionArtifacts.isEmpty()) {
+                builder.addAll(extraActionArtifacts)
+            }
+        }
+
+        // Add extra action artifacts from dependencies
+        for (provider in getProviders(
+            ruleContext.getAllPrerequisites(), ExtraActionArtifactsProvider::class.java
+        )) {
+            builder.addTransitive(provider.getTransitiveExtraActionArtifacts())
+        }
+
+        return ExtraActionArtifactsProvider.create(
+            NestedSetBuilder.DerivedArtifact > stableOrder<Artifact.DerivedArtifact?>()
+                .addAll(extraActionArtifacts)
+                .build(),
+            builder.build()
+        )
     }
 
-    // Add extra action artifacts from dependencies
-    for (ExtraActionArtifactsProvider provider :
-        AnalysisUtils.getProviders(
-            ruleContext.getAllPrerequisites(), ExtraActionArtifactsProvider.class)) {
-      builder.addTransitive(provider.getTransitiveExtraActionArtifacts());
+    /**
+     * Populates the configuration specific mnemonicToExtraActionMap
+     * based on all action_listers selected by the user (via the blaze option
+     * `--experimental_action_listener=<target>`).
+     */
+    private fun computeMnemonicsToExtraActionMap(
+        ruleContext: RuleContext
+    ): com.google.common.collect.Multimap<String?, ExtraActionSpec?> {
+        // We copy the multimap here every time. This could be expensive.
+        val mnemonicToExtraActionMap: com.google.common.collect.Multimap<String?, ExtraActionSpec?> =
+            com.google.common.collect.HashMultimap.create<String?, ExtraActionSpec?>()
+        for (actionListener in ruleContext.getPrerequisites(":action_listener")) {
+            val provider: ExtraActionMapProvider? = actionListener.getProvider(ExtraActionMapProvider::class.java)
+            if (provider == null) {
+                ruleContext.ruleError(
+                    java.lang.String.format(
+                        "Unable to match experimental_action_listeners to this rule. "
+                                + "Specified target %s is not an action_listener rule",
+                        actionListener.getLabel().toString()
+                    )
+                )
+            } else {
+                mnemonicToExtraActionMap.putAll(provider.getExtraActionMap())
+            }
+        }
+        return mnemonicToExtraActionMap
     }
-
-    return ExtraActionArtifactsProvider.create(
-        NestedSetBuilder.<Artifact.DerivedArtifact>stableOrder()
-            .addAll(extraActionArtifacts)
-            .build(),
-        builder.build());
-  }
-
-  /**
-   * Populates the configuration specific mnemonicToExtraActionMap
-   * based on all action_listers selected by the user (via the blaze option
-   * {@code --experimental_action_listener=<target>}).
-   */
-  private static Multimap<String, ExtraActionSpec> computeMnemonicsToExtraActionMap(
-      RuleContext ruleContext) {
-    // We copy the multimap here every time. This could be expensive.
-    Multimap<String, ExtraActionSpec> mnemonicToExtraActionMap = HashMultimap.create();
-    for (TransitiveInfoCollection actionListener :
-        ruleContext.getPrerequisites(":action_listener")) {
-      ExtraActionMapProvider provider = actionListener.getProvider(ExtraActionMapProvider.class);
-      if (provider == null) {
-        ruleContext.ruleError(String.format(
-            "Unable to match experimental_action_listeners to this rule. "
-            + "Specified target %s is not an action_listener rule",
-            actionListener.getLabel().toString()));
-      } else {
-        mnemonicToExtraActionMap.putAll(provider.getExtraActionMap());
-      }
-    }
-    return mnemonicToExtraActionMap;
-  }
 }

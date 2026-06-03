@@ -11,32 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.google.devtools.build.lib.util.io.FileOutErr
 
 /**
  * A source for generating unique action log paths.
  */
-public final class ActionLogBufferPathGenerator {
+class ActionLogBufferPathGenerator(actionOutputRoot: Path) {
+    private val actionCounter: AtomicInteger = AtomicInteger()
 
-  private final AtomicInteger actionCounter = new AtomicInteger();
+    private val actionOutputRoot: Path
 
-  private final Path actionOutputRoot;
+    init {
+        this.actionOutputRoot = actionOutputRoot
+    }
 
-  public ActionLogBufferPathGenerator(Path actionOutputRoot) {
-    this.actionOutputRoot = actionOutputRoot;
-  }
-
-  /**
-   * Generates a unique filename for an action to store its output.
-   */
-  public FileOutErr generate(ArtifactPathResolver resolver) {
-    int actionId = actionCounter.incrementAndGet();
-    return new FileOutErr(
-        resolver.convertPath(actionOutputRoot.getRelative("stdout-" + actionId)),
-        resolver.convertPath(actionOutputRoot.getRelative("stderr-" + actionId)));
-  }
+    /**
+     * Generates a unique filename for an action to store its output.
+     */
+    fun generate(resolver: ArtifactPathResolver): FileOutErr {
+        val actionId: Int = actionCounter.incrementAndGet()
+        return FileOutErr(
+            resolver.convertPath(actionOutputRoot.getRelative("stdout-" + actionId)),
+            resolver.convertPath(actionOutputRoot.getRelative("stderr-" + actionId))
+        )
+    }
 }

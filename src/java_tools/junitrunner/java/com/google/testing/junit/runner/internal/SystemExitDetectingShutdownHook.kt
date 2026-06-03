@@ -11,57 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.package com.google.testing.junit.runner.internal;
+package com.google.testing.junit.runner.internal
 
-package com.google.testing.junit.runner.internal;
-
-import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.io.PrintStream
 
 /**
- * Shutdown hook to detect when the shutdown is due to someone calling {@code System.exit}. Tests
+ * Shutdown hook to detect when the shutdown is due to someone calling `System.exit`. Tests
  * should never do that. Previously we had a security manager that intercepted such calls. The JDK
  * will remove security managers in a future release, so instead we just detect when it happens and
  * print a stack trace so users can find and fix the call.
  */
-public class SystemExitDetectingShutdownHook {
-  public static Thread newShutdownHook(PrintStream testRunnerOut) {
-    Runnable hook =
-        () -> {
-          boolean foundRuntimeExit = false;
-          for (StackTraceElement[] stack : Thread.getAllStackTraces().values()) {
-            List<String> framesStartingWithRuntimeExit = new ArrayList<>();
-            boolean foundRuntimeExitInThisThread = false;
-            for (StackTraceElement frame : stack) {
-              if (!foundRuntimeExitInThisThread
-                  && frame.getClassName().equals("java.lang.Runtime")
-                  && frame.getMethodName().equals("exit")) {
-                foundRuntimeExitInThisThread = true;
-              }
-              if (foundRuntimeExitInThisThread) {
-                framesStartingWithRuntimeExit.add(frameString(frame));
-              }
+object SystemExitDetectingShutdownHook {
+    fun newShutdownHook(testRunnerOut: PrintStream): java.lang.Thread {
+        val hook: java.lang.Runnable =
+            java.lang.Runnable {
+                var foundRuntimeExit = false
+                for (stack in java.lang.Thread.getAllStackTraces().values) {
+                    val framesStartingWithRuntimeExit: MutableList<String?> = java.util.ArrayList<String?>()
+                    var foundRuntimeExitInThisThread = false
+                    for (frame in stack) {
+                        if (!foundRuntimeExitInThisThread && frame.getClassName() == "java.lang.Runtime"
+                            && frame.getMethodName() == "exit"
+                        ) {
+                            foundRuntimeExitInThisThread = true
+                        }
+                        if (foundRuntimeExitInThisThread) {
+                            framesStartingWithRuntimeExit.add(frameString(frame))
+                        }
+                    }
+                    if (foundRuntimeExitInThisThread) {
+                        foundRuntimeExit = true
+                        testRunnerOut.println("\nSystem.exit or Runtime.exit was called!")
+                        testRunnerOut.println(java.lang.String.join("\n", framesStartingWithRuntimeExit))
+                    }
+                }
+                if (foundRuntimeExit) {
+                    // We must call halt rather than exit, because exit would lead to a deadlock. We use a
+                    // hopefully unique exit code to make it easier to identify this case.
+                    java.lang.Runtime.getRuntime().halt(121)
+                }
             }
-            if (foundRuntimeExitInThisThread) {
-              foundRuntimeExit = true;
-              testRunnerOut.println("\nSystem.exit or Runtime.exit was called!");
-              testRunnerOut.println(String.join("\n", framesStartingWithRuntimeExit));
-            }
-          }
-          if (foundRuntimeExit) {
-            // We must call halt rather than exit, because exit would lead to a deadlock. We use a
-            // hopefully unique exit code to make it easier to identify this case.
-            Runtime.getRuntime().halt(121);
-          }
-        };
-    return new Thread(hook, "SystemExitDetectingShutdownHook");
-  }
+        return java.lang.Thread(hook, "SystemExitDetectingShutdownHook")
+    }
 
-  private static String frameString(StackTraceElement frame) {
-    return String.format(
-        "        at %s.%s(%s:%d)",
-        frame.getClassName(), frame.getMethodName(), frame.getFileName(), frame.getLineNumber());
-  }
-
-  private SystemExitDetectingShutdownHook() {}
+    private fun frameString(frame: java.lang.StackTraceElement): String? {
+        return String.format(
+            "        at %s.%s(%s:%d)",
+            frame.getClassName(), frame.getMethodName(), frame.getFileName(), frame.getLineNumber()
+        )
+    }
 }

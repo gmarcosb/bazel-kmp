@@ -11,22 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions.cache;
+package com.google.devtools.build.lib.actions.cache
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics
 
-import com.google.devtools.build.lib.actions.cache.Protos.ActionCacheStatistics;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+/** [Postable] wrapper around [ActionCacheStatistics].  */
+class PostableActionCacheStats(actionCacheStatistics: ActionCacheStatistics?) : Postable {
+    private val actionCacheStatistics: ActionCacheStatistics
 
-/** {@link Postable} wrapper around {@link ActionCacheStatistics}. */
-public final class PostableActionCacheStats implements Postable {
-  private final ActionCacheStatistics actionCacheStatistics;
+    init {
+        this.actionCacheStatistics =
+            com.google.common.base.Preconditions.checkNotNull<ActionCacheStatistics>(actionCacheStatistics)
+    }
 
-  public PostableActionCacheStats(ActionCacheStatistics actionCacheStatistics) {
-    this.actionCacheStatistics = checkNotNull(actionCacheStatistics);
-  }
-
-  public ActionCacheStatistics asProto() {
-    return actionCacheStatistics;
-  }
+    fun asProto(): ActionCacheStatistics {
+        return actionCacheStatistics
+    }
 }

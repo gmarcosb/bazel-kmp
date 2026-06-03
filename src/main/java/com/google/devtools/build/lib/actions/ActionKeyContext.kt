@@ -11,43 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetFingerprintCache;
-import com.google.devtools.build.lib.util.Fingerprint;
+/** Contains state that aids in action key computation via [AbstractAction.computeKey].  */
+class ActionKeyContext {
+    private val nestedSetFingerprintCache: NestedSetFingerprintCache = NestedSetFingerprintCache()
 
-/** Contains state that aids in action key computation via {@link AbstractAction#computeKey}. */
-public class ActionKeyContext {
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    fun <T> addNestedSetToFingerprint(fingerprint: Fingerprint?, nestedSet: NestedSet<T?>?) {
+        nestedSetFingerprintCache.addNestedSetToFingerprint(fingerprint, nestedSet)
+    }
 
-  private final NestedSetFingerprintCache nestedSetFingerprintCache =
-      new NestedSetFingerprintCache();
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    fun <T> addNestedSetToFingerprint(
+        mapFn: MapFn<in T?>?, fingerprint: Fingerprint?, nestedSet: NestedSet<T?>?
+    ) {
+        nestedSetFingerprintCache.addNestedSetToFingerprint(mapFn, fingerprint, nestedSet)
+    }
 
-  public <T> void addNestedSetToFingerprint(Fingerprint fingerprint, NestedSet<T> nestedSet)
-      throws CommandLineExpansionException, InterruptedException {
-    nestedSetFingerprintCache.addNestedSetToFingerprint(fingerprint, nestedSet);
-  }
+    fun <T> addNestedSetToFingerprint(
+        mapFn: ExceptionlessMapFn<in T?>?,
+        fingerprint: Fingerprint?,
+        nestedSet: NestedSet<T?>?
+    ) {
+        nestedSetFingerprintCache.addNestedSetToFingerprintExceptionless(mapFn, fingerprint, nestedSet)
+    }
 
-  public <T> void addNestedSetToFingerprint(
-      CommandLineItem.MapFn<? super T> mapFn, Fingerprint fingerprint, NestedSet<T> nestedSet)
-      throws CommandLineExpansionException, InterruptedException {
-    nestedSetFingerprintCache.addNestedSetToFingerprint(mapFn, fingerprint, nestedSet);
-  }
+    fun clear() {
+        nestedSetFingerprintCache.clear()
+    }
 
-  public <T> void addNestedSetToFingerprint(
-      CommandLineItem.ExceptionlessMapFn<? super T> mapFn,
-      Fingerprint fingerprint,
-      NestedSet<T> nestedSet) {
-    nestedSetFingerprintCache.addNestedSetToFingerprintExceptionless(mapFn, fingerprint, nestedSet);
-  }
-
-  public static <T> String describeNestedSetFingerprint(
-      CommandLineItem.ExceptionlessMapFn<? super T> mapFn, NestedSet<T> nestedSet) {
-    return NestedSetFingerprintCache.describedNestedSetFingerprint(mapFn, nestedSet);
-  }
-
-  public void clear() {
-    nestedSetFingerprintCache.clear();
-  }
+    companion object {
+        fun <T> describeNestedSetFingerprint(
+            mapFn: ExceptionlessMapFn<in T?>?, nestedSet: NestedSet<T?>?
+        ): String {
+            return NestedSetFingerprintCache.describedNestedSetFingerprint(mapFn, nestedSet)
+        }
+    }
 }

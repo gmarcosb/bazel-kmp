@@ -11,84 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding
 
-package com.google.testing.junit.runner.sharding;
-
-import java.io.File;
-import java.io.IOException;
+import java.io.IOException
 
 /**
  * Utility class that encapsulates dependencies from sharding implementations
  * on the test environment.  See http://bazel.build/docs/test-sharding.html for a
  * list of all environment variables related to test sharding.
  */
-public class ShardingEnvironment {
+open class ShardingEnvironment {
+    open val isShardingEnabled: Boolean
+        /**
+         * Return true iff the current test should be sharded.
+         */
+        get() = java.lang.System.getenv("TEST_TOTAL_SHARDS") != null
 
-  /**
-   * A singleton instance of ShardingEnvironment declared for convenience.
-   */
-  public static final ShardingEnvironment DEFAULT = new ShardingEnvironment();
-
-  /** Usage: -Dtest.sharding.strategy=round_robin */
-  private static final String TEST_SHARDING_STRATEGY = "test.sharding.strategy";
-
-  public ShardingEnvironment() {}
-
-  /**
-   * Return true iff the current test should be sharded.
-   */
-  public boolean isShardingEnabled() {
-    return System.getenv("TEST_TOTAL_SHARDS") != null;
-  }
-
-  /**
-   * Returns the 0-indexed test shard number, where
-   * 0 <= shard index < total shards.
-   * If the environment does not specify a test shard number, returns 0.
-   */
-  public int getShardIndex() {
-    String shardIndex = System.getenv("TEST_SHARD_INDEX");
-    return shardIndex == null ? 0 : Integer.parseInt(shardIndex);
-  }
-
-  /**
-   * Returns the total number of test shards, or 1 if not specified by the
-   * test environment.
-   */
-  public int getTotalShards() {
-    String totalShards = System.getenv("TEST_TOTAL_SHARDS");
-    return totalShards == null ? 1 : Integer.parseInt(totalShards);
-  }
-
-  /**
-   * Creates the shard file that is used to indicate that tests are
-   * being sharded.
-   */
-  public void touchShardFile() {
-    String shardStatusPath = System.getenv("TEST_SHARD_STATUS_FILE");
-    File shardFile = (shardStatusPath == null ? null : new File(shardStatusPath));
-    touchShardFile(shardFile);
-  }
-
-  // VisibleForTesting
-  static void touchShardFile(File shardFile) {
-    if (shardFile != null) {
-      try {
-        if (!shardFile.createNewFile() && !shardFile.setLastModified(System.currentTimeMillis())) {
-          throw new IOException("Unable to update modification time of " + shardFile);
+    open val shardIndex: Int
+        /**
+         * Returns the 0-indexed test shard number, where
+         * 0 <= shard index < total shards.
+         * If the environment does not specify a test shard number, returns 0.
+         */
+        get() {
+            val shardIndex: String? = java.lang.System.getenv("TEST_SHARD_INDEX")
+            return if (shardIndex == null) 0 else shardIndex.toInt()
         }
-      } catch (IOException e) {
-        throw new RuntimeException("Error writing shard file " + shardFile, e);
-      }
-    }
-  }
 
-  /**
-   * Returns the test sharding strategy optionally specified by the JVM flag
-   * {@link #TEST_SHARDING_STRATEGY}, which maps to the enums in
-   * {@link com.google.testing.junit.runner.sharding.ShardingFilters.ShardingStrategy}.
-   */
-  public String getTestShardingStrategy() {
-    return System.getProperty(TEST_SHARDING_STRATEGY);
-  }
+    open val totalShards: Int
+        /**
+         * Returns the total number of test shards, or 1 if not specified by the
+         * test environment.
+         */
+        get() {
+            val totalShards: String? = java.lang.System.getenv("TEST_TOTAL_SHARDS")
+            return if (totalShards == null) 1 else totalShards.toInt()
+        }
+
+    /**
+     * Creates the shard file that is used to indicate that tests are
+     * being sharded.
+     */
+    open fun touchShardFile() {
+        val shardStatusPath: String? = java.lang.System.getenv("TEST_SHARD_STATUS_FILE")
+        val shardFile: java.io.File? = (if (shardStatusPath == null) null else java.io.File(shardStatusPath))
+        touchShardFile(shardFile)
+    }
+
+    open val testShardingStrategy: String?
+        /**
+         * Returns the test sharding strategy optionally specified by the JVM flag
+         * [.TEST_SHARDING_STRATEGY], which maps to the enums in
+         * [com.google.testing.junit.runner.sharding.ShardingFilters.ShardingStrategy].
+         */
+        get() = java.lang.System.getProperty(TEST_SHARDING_STRATEGY)
+
+    companion object {
+        /**
+         * A singleton instance of ShardingEnvironment declared for convenience.
+         */
+        val DEFAULT: ShardingEnvironment = ShardingEnvironment()
+
+        /** Usage: -Dtest.sharding.strategy=round_robin  */
+        private const val TEST_SHARDING_STRATEGY = "test.sharding.strategy"
+
+        // VisibleForTesting
+        fun touchShardFile(shardFile: java.io.File?) {
+            if (shardFile != null) {
+                try {
+                    if (!shardFile.createNewFile() && !shardFile.setLastModified(java.lang.System.currentTimeMillis())) {
+                        throw IOException("Unable to update modification time of " + shardFile)
+                    }
+                } catch (e: IOException) {
+                    throw java.lang.RuntimeException("Error writing shard file " + shardFile, e)
+                }
+            }
+        }
+    }
 }

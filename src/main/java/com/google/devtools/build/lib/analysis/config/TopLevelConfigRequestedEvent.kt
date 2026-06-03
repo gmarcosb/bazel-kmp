@@ -11,25 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
- * A Bazel invocation requested a top-level {@link BuildConfigurationValue}.
- *
+ * A Bazel invocation requested a top-level [BuildConfigurationValue].
+ * 
  * @param topLevelConfig the configuration
- * @param testTrimmedTopLevelConfiguration top level configuration trimmed of its {@link
- *     com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions}
+ * @param testTrimmedTopLevelConfiguration top level configuration trimmed of its [     ]
  */
-public record TopLevelConfigRequestedEvent(
-    BuildConfigurationValue topLevelConfig, BuildOptions testTrimmedTopLevelConfiguration)
-    implements Postable {
+class TopLevelConfigRequestedEvent(
+    topLevelConfig: BuildConfigurationValue?,
+    testTrimmedTopLevelConfiguration: BuildOptions?
+) : Postable {
+    val topLevelConfig: BuildConfigurationValue?
+    val testTrimmedTopLevelConfiguration: BuildOptions?
 
-  public TopLevelConfigRequestedEvent {
-    checkNotNull(topLevelConfig);
-    checkNotNull(testTrimmedTopLevelConfiguration);
-  }
+    init {
+        this.testTrimmedTopLevelConfiguration = testTrimmedTopLevelConfiguration
+        this.topLevelConfig = topLevelConfig
+        com.google.common.base.Preconditions.checkNotNull<BuildConfigurationValue?>(topLevelConfig)
+        com.google.common.base.Preconditions.checkNotNull<BuildOptions?>(testTrimmedTopLevelConfiguration)
+    }
 }

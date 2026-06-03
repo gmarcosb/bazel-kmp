@@ -11,30 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.actions.PathMapper
 
 /**
- * Post-{@linkplain CommandLine#expand() expansion} representation of command line arguments.
- *
- * <p>This differs from {@link CommandLine} in that consuming the arguments is guaranteed to be free
- * of {@link CommandLineExpansionException} and {@link InterruptedException}.
+ * Post-[expansion][CommandLine.expand] representation of command line arguments.
+ * 
+ * 
+ * This differs from [CommandLine] in that consuming the arguments is guaranteed to be free
+ * of [CommandLineExpansionException] and [InterruptedException].
  */
-public interface ArgChunk {
+interface ArgChunk {
+    /**
+     * Returns the arguments.
+     * 
+     * 
+     * The returned [Iterable] may lazily materialize strings during iteration, so consumers
+     * should attempt to avoid iterating more times than necessary.
+     */
+    fun arguments(pathMapper: PathMapper?): Iterable<String?>?
 
-  /**
-   * Returns the arguments.
-   *
-   * <p>The returned {@link Iterable} may lazily materialize strings during iteration, so consumers
-   * should attempt to avoid iterating more times than necessary.
-   */
-  Iterable<String> arguments(PathMapper pathMapper);
-
-  /**
-   * Counts the total length of all arguments in this chunk.
-   *
-   * <p>Implementations that lazily materialize strings may be able to compute the total argument
-   * length without actually materializing the arguments.
-   */
-  int totalArgLength(PathMapper pathMapper);
+    /**
+     * Counts the total length of all arguments in this chunk.
+     * 
+     * 
+     * Implementations that lazily materialize strings may be able to compute the total argument
+     * length without actually materializing the arguments.
+     */
+    fun totalArgLength(pathMapper: PathMapper?): Int
 }

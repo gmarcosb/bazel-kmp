@@ -11,65 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.auto.value.AutoValue;
-import com.google.devtools.build.lib.actions.BuildConfigurationEvent;
-import com.google.devtools.build.lib.actions.CommandLineLimits;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.BuildConfigurationEvent
 
 /**
  * Provides build configuration dependent information.
- *
- * <p>By having this interface, we don't need to create a full {@link BuildConfigurationValue}
+ * 
+ * 
+ * By having this interface, we don't need to create a full [BuildConfigurationValue]
  * instance when only the four fields defined in this interface is provided.
- *
- * <p>This provides some convenience to construct {@link
- * com.google.devtools.build.lib.actions.ActionOwner#SYSTEM_ACTION_OWNER} and other {@link
- * com.google.devtools.build.lib.actions.ActionOwner} instances in tests.
+ * 
+ * 
+ * This provides some convenience to construct [ ][com.google.devtools.build.lib.actions.ActionOwner.SYSTEM_ACTION_OWNER] and other [ ] instances in tests.
  */
-public interface BuildConfigurationInfo {
-  /**
-   * Returns the configuration-dependent string for this configuration.
-   *
-   * <p>This is also the name of the configuration's base output directory. See also {@link
-   * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue#getOutputDirectoryName}.
-   */
-  String getMnemonic();
+interface BuildConfigurationInfo {
+    /**
+     * Returns the configuration-dependent string for this configuration.
+     * 
+     * 
+     * This is also the name of the configuration's base output directory. See also [ ][com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.getOutputDirectoryName].
+     */
+    fun getMnemonic(): String?
 
-  /** Returns the cache key of the build options used to create this configuration. */
-  String checksum();
+    /** Returns the cache key of the build options used to create this configuration.  */
+    fun checksum(): String?
 
-  /**
-   * Returns the {@code BuildEvent} associated with {@link
-   * com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.
-   */
-  @Nullable
-  BuildConfigurationEvent toBuildEvent();
+    /**
+     * Returns the `BuildEvent` associated with [ ].
+     */
+    fun toBuildEvent(): BuildConfigurationEvent?
 
-  /** Returns true if this is a tool-related configuration. */
-  boolean isToolConfiguration();
+    /** Returns true if this is a tool-related configuration.  */
+    fun isToolConfiguration(): Boolean
 
-  CommandLineLimits getCommandLineLimits();
+    fun getCommandLineLimits(): CommandLineLimits?
 
-  /**
-   * An auto value class of {@link BuildConfigurationInfo}. This provides a convenient way for
-   * creating {@link BuildConfigurationInfo} with only the four fields provided.
-   */
-  @AutoValue
-  abstract class AutoBuildConfigurationInfo implements BuildConfigurationInfo {
-    public static AutoBuildConfigurationInfo create(
-        String mnemonic,
-        String checksum,
-        @Nullable BuildConfigurationEvent buildConfigurationEvent,
-        boolean isToolConfiguration) {
-      return new AutoValue_BuildConfigurationInfo_AutoBuildConfigurationInfo(
-          mnemonic, checksum, buildConfigurationEvent, isToolConfiguration);
+    /**
+     * An auto value class of [BuildConfigurationInfo]. This provides a convenient way for
+     * creating [BuildConfigurationInfo] with only the four fields provided.
+     */
+    @AutoValue
+    class AutoBuildConfigurationInfo : BuildConfigurationInfo {
+        override fun getCommandLineLimits(): CommandLineLimits {
+            return CommandLineLimits.UNLIMITED
+        }
+
+        companion object {
+            fun create(
+                mnemonic: String?,
+                checksum: String?,
+                buildConfigurationEvent: BuildConfigurationEvent?,
+                isToolConfiguration: Boolean
+            ): AutoBuildConfigurationInfo {
+                return AutoValue_BuildConfigurationInfo_AutoBuildConfigurationInfo(
+                    mnemonic, checksum, buildConfigurationEvent, isToolConfiguration
+                )
+            }
+        }
     }
-
-    @Override
-    public final CommandLineLimits getCommandLineLimits() {
-      return CommandLineLimits.UNLIMITED;
-    }
-  }
 }

@@ -11,35 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.docgen.starlark
 
-package com.google.devtools.build.docgen.starlark;
+import com.google.devtools.build.docgen.RuleLinkExpander
+import com.google.devtools.build.docgen.starlark.StarlarkDocUtils
+import com.google.devtools.build.docgen.starlark.TypeParser
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** A utility class for replacing variables in documentation strings with their actual values.  */
+class StarlarkDocExpander(ruleExpander: RuleLinkExpander) {
+    val ruleExpander: RuleLinkExpander
 
-import com.google.devtools.build.docgen.RuleLinkExpander;
-import javax.annotation.Nullable;
+    // Set by setTypeParser().
+    private var typeParser: TypeParser? = null
 
-/** A utility class for replacing variables in documentation strings with their actual values. */
-public class StarlarkDocExpander {
+    init {
+        this.ruleExpander = ruleExpander
+    }
 
-  public final RuleLinkExpander ruleExpander;
-  // Set by setTypeParser().
-  @Nullable private TypeParser typeParser;
+    fun setTypeParser(typeParser: TypeParser?) {
+        this.typeParser = typeParser
+    }
 
-  public StarlarkDocExpander(RuleLinkExpander ruleExpander) {
-    this.ruleExpander = ruleExpander;
-  }
+    fun getTypeParser(): TypeParser {
+        return com.google.common.base.Preconditions.checkNotNull<TypeParser>(
+            typeParser,
+            "StarlarkDocExpander.setTypeParser() has not been called"
+        )
+    }
 
-  public void setTypeParser(TypeParser typeParser) {
-    this.typeParser = typeParser;
-  }
-
-  public TypeParser getTypeParser() {
-    return checkNotNull(typeParser, "StarlarkDocExpander.setTypeParser() has not been called");
-  }
-
-  public String expand(String docString) {
-    return ruleExpander.expand(
-        StarlarkDocUtils.substituteVariables(docString, ruleExpander.beRoot()));
-  }
+    fun expand(docString: String): String? {
+        return ruleExpander.expand(
+            StarlarkDocUtils.substituteVariables(docString, ruleExpander.beRoot())
+        )
+    }
 }

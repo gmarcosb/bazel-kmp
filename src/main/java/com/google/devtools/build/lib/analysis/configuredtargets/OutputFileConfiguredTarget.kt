@@ -11,143 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.configuredtargets
 
-package com.google.devtools.build.lib.analysis.configuredtargets;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
-import static com.google.common.base.MoreObjects.firstNonNull;
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
-import com.google.devtools.build.lib.analysis.RequiredConfigFragmentsProvider;
-import com.google.devtools.build.lib.analysis.TargetContext;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.analysis.TransitiveVisibilityProvider;
-import com.google.devtools.build.lib.analysis.test.InstrumentedFilesInfo;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.OutputFile;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
-
-/** A ConfiguredTarget for an OutputFile. */
-@Immutable
+/** A ConfiguredTarget for an OutputFile.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public final class OutputFileConfiguredTarget extends FileConfiguredTarget {
+class OutputFileConfiguredTarget @AutoCodec.Instantiator @VisibleForSerialization internal constructor(
+    lookupKey: ActionLookupKey?,
+    visibility: NestedSet<PackageGroupContents?>?,
+    artifact: Artifact?,
+    generatingRule: RuleConfiguredTarget?
+) : FileConfiguredTarget(lookupKey, visibility, artifact) {
+    private val generatingRule: RuleConfiguredTarget
 
-  private final RuleConfiguredTarget generatingRule;
-
-  public OutputFileConfiguredTarget(
-      TargetContext targetContext, Artifact outputArtifact, RuleConfiguredTarget generatingRule) {
-    this(
+    constructor(targetContext: TargetContext, outputArtifact: Artifact?, generatingRule: RuleConfiguredTarget?) : this(
         targetContext.getAnalysisEnvironment().getOwner(),
         targetContext.getVisibility(),
         outputArtifact,
-        checkNotNull(generatingRule));
-    checkArgument(targetContext.getTarget() instanceof OutputFile, targetContext.getTarget());
-  }
-
-  @AutoCodec.Instantiator
-  @VisibleForSerialization
-  OutputFileConfiguredTarget(
-      ActionLookupKey lookupKey,
-      NestedSet<PackageGroupContents> visibility,
-      Artifact artifact,
-      RuleConfiguredTarget generatingRule) {
-    super(lookupKey, visibility, artifact);
-    this.generatingRule = checkNotNull(generatingRule);
-  }
-
-  public RuleConfiguredTarget getGeneratingRule() {
-    return generatingRule;
-  }
-
-  @Override
-  public boolean isCreatedInSymbolicMacro() {
-    return generatingRule.isCreatedInSymbolicMacro();
-  }
-
-  @Nullable
-  @Override
-  protected TransitiveVisibilityProvider createTransitiveVisibilityProvider() {
-    return generatingRule.getProvider(TransitiveVisibilityProvider.class);
-  }
-
-  @Override
-  @Nullable
-  public <P extends TransitiveInfoProvider> P getProvider(Class<P> providerClass) {
-    P provider = super.getProvider(providerClass);
-    if (provider != null) {
-      return provider;
-    }
-    if (providerClass == RequiredConfigFragmentsProvider.class) {
-      return generatingRule.getProvider(providerClass);
-    }
-    return null;
-  }
-
-  @Nullable
-  @Override
-  protected Info rawGetStarlarkProvider(Provider.Key providerKey) {
-    // The following Starlark providers do not implement TransitiveInfoProvider and thus may only be
-    // requested via this method using a Provider.Key, not via getProvider(Class) above.
-
-    if (providerKey.equals(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR.getKey())) {
-      return firstNonNull(
-          generatingRule.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR),
-          InstrumentedFilesInfo.EMPTY);
+        com.google.common.base.Preconditions.checkNotNull<RuleConfiguredTarget?>(generatingRule)
+    ) {
+        com.google.common.base.Preconditions.checkArgument(
+            targetContext.getTarget() is OutputFile,
+            targetContext.getTarget()
+        )
     }
 
-    if (providerKey.equals(OutputGroupInfo.STARLARK_CONSTRUCTOR.getKey())) {
-      // We have an OutputFileConfiguredTarget, so the generating rule must have OutputGroupInfo.
-      NestedSet<Artifact> validationOutputs =
-          generatingRule
-              .get(OutputGroupInfo.STARLARK_CONSTRUCTOR)
-              .getOutputGroup(OutputGroupInfo.VALIDATION);
-      if (!validationOutputs.isEmpty()) {
-        return OutputGroupInfo.singleGroup(OutputGroupInfo.VALIDATION, validationOutputs);
-      }
+    init {
+        this.generatingRule = com.google.common.base.Preconditions.checkNotNull<RuleConfiguredTarget>(generatingRule)
     }
 
-    return null;
-  }
-
-  @Override
-  public Dict<String, Object> getProvidersDictForQuery() {
-    Dict.Builder<String, Object> dict = Dict.builder();
-    dict.putAll(super.getProvidersDictForQuery());
-    addStarlarkProviderIfPresent(dict, InstrumentedFilesInfo.STARLARK_CONSTRUCTOR);
-    addStarlarkProviderIfPresent(dict, OutputGroupInfo.STARLARK_CONSTRUCTOR);
-    addNativeProviderFromRuleIfPresent(dict, RequiredConfigFragmentsProvider.class);
-    return dict.buildImmutable();
-  }
-
-  private void addStarlarkProviderIfPresent(Dict.Builder<String, Object> dict, Provider provider) {
-    Info info = rawGetStarlarkProvider(provider.getKey());
-    if (info != null) {
-      tryAddProviderForQuery(dict, provider.getKey(), info);
+    fun getGeneratingRule(): RuleConfiguredTarget {
+        return generatingRule
     }
-  }
 
-  private void addNativeProviderFromRuleIfPresent(
-      Dict.Builder<String, Object> dict, Class<? extends TransitiveInfoProvider> providerClass) {
-    TransitiveInfoProvider provider = generatingRule.getProvider(providerClass);
-    if (provider != null) {
-      tryAddProviderForQuery(dict, providerClass, provider);
+    public override fun isCreatedInSymbolicMacro(): Boolean {
+        return generatingRule.isCreatedInSymbolicMacro()
     }
-  }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("<output file target " + getLabel() + ">");
-  }
+    override fun createTransitiveVisibilityProvider(): TransitiveVisibilityProvider? {
+        return generatingRule.getProvider<TransitiveVisibilityProvider?>(TransitiveVisibilityProvider::class.java)
+    }
+
+    override fun <P : TransitiveInfoProvider?> getProvider(providerClass: java.lang.Class<P?>?): P? {
+        val provider: P? = super.getProvider<P?>(providerClass)
+        if (provider != null) {
+            return provider
+        }
+        if (providerClass == RequiredConfigFragmentsProvider::class.java) {
+            return generatingRule.getProvider<P?>(providerClass)
+        }
+        return null
+    }
+
+    override fun rawGetStarlarkProvider(providerKey: Provider.Key): Info? {
+        // The following Starlark providers do not implement TransitiveInfoProvider and thus may only be
+        // requested via this method using a Provider.Key, not via getProvider(Class) above.
+
+        if (providerKey.equals(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR.getKey())) {
+            return com.google.common.base.MoreObjects.firstNonNull<T?>(
+                generatingRule.get(InstrumentedFilesInfo.STARLARK_CONSTRUCTOR),
+                InstrumentedFilesInfo.EMPTY
+            )
+        }
+
+        if (providerKey.equals(OutputGroupInfo.Companion.STARLARK_CONSTRUCTOR.getKey())) {
+            // We have an OutputFileConfiguredTarget, so the generating rule must have OutputGroupInfo.
+            val validationOutputs: NestedSet<Artifact?> =
+                generatingRule
+                    .get(OutputGroupInfo.Companion.STARLARK_CONSTRUCTOR)
+                    .getOutputGroup(OutputGroupInfo.Companion.VALIDATION)
+            if (!validationOutputs.isEmpty()) {
+                return OutputGroupInfo.Companion.singleGroup(OutputGroupInfo.Companion.VALIDATION, validationOutputs)
+            }
+        }
+
+        return null
+    }
+
+    override fun getProvidersDictForQuery(): Dict<String?, Any?>? {
+        val dict: net.starlark.java.eval.Dict.Builder<String?, Any?> = Dict.builder<String?, Any?>()
+        dict.putAll(super.getProvidersDictForQuery())
+        addStarlarkProviderIfPresent(dict, InstrumentedFilesInfo.STARLARK_CONSTRUCTOR)
+        addStarlarkProviderIfPresent(dict, OutputGroupInfo.Companion.STARLARK_CONSTRUCTOR)
+        addNativeProviderFromRuleIfPresent(dict, RequiredConfigFragmentsProvider::class.java)
+        return dict.buildImmutable()
+    }
+
+    private fun addStarlarkProviderIfPresent(
+        dict: net.starlark.java.eval.Dict.Builder<String?, Any?>?,
+        provider: Provider
+    ) {
+        val info: Info? = rawGetStarlarkProvider(provider.getKey())
+        if (info != null) {
+            AbstractConfiguredTarget.Companion.tryAddProviderForQuery(dict, provider.getKey(), info)
+        }
+    }
+
+    private fun addNativeProviderFromRuleIfPresent(
+        dict: net.starlark.java.eval.Dict.Builder<String?, Any?>?,
+        providerClass: java.lang.Class<out TransitiveInfoProvider?>?
+    ) {
+        val provider: TransitiveInfoProvider? = generatingRule.getProvider(providerClass)
+        if (provider != null) {
+            AbstractConfiguredTarget.Companion.tryAddProviderForQuery(dict, providerClass, provider)
+        }
+    }
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: StarlarkSemantics?) {
+        printer.append("<output file target " + getLabel() + ">")
+    }
 }

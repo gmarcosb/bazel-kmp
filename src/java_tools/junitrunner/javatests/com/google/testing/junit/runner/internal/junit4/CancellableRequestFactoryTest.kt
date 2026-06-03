@@ -11,206 +11,194 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.internal.junit4
 
-package com.google.testing.junit.runner.internal.junit4;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import java.util.Arrays;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Test;
-import org.junit.internal.AssumptionViolatedException;
-import org.junit.runner.Description;
-import org.junit.runner.JUnitCore;
-import org.junit.runner.Request;
-import org.junit.runner.Result;
-import org.junit.runner.RunWith;
-import org.junit.runner.Runner;
-import org.junit.runner.notification.Failure;
-import org.junit.runner.notification.RunNotifier;
-import org.junit.runner.notification.StoppedByUserException;
-import org.junit.runners.JUnit4;
-import org.junit.runners.Suite;
-import org.junit.runners.model.InitializationError;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory
+import com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory.cancelRun
+import com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory.createRequest
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.junit4.JUnit4Runner.run
+import com.google.testing.junit.runner.junit4.JUnit4TestModelBuilder.get
+import org.junit.runner.JUnitCore
+import org.junit.runner.RunWith
+import org.junit.runner.notification.RunNotifier
+import org.junit.runner.notification.StoppedByUserException
+import org.junit.runners.JUnit4
+import org.junit.runners.Suite
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Tests for {@link CancellableRequestFactory}.
+ * Tests for [CancellableRequestFactory].
  */
-@RunWith(JUnit4.class)
-public class CancellableRequestFactoryTest {
+@RunWith(JUnit4::class)
+class CancellableRequestFactoryTest {
+    private val cancellableRequestFactory: CancellableRequestFactory = CancellableRequestFactory()
 
-  private final CancellableRequestFactory cancellableRequestFactory =
-      new CancellableRequestFactory();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCancelRunAfterStarting() {
+        val testStartLatch: CountDownLatch = CountDownLatch(1)
+        val testContinueLatch: CountDownLatch = CountDownLatch(1)
+        val secondTestRan: AtomicBoolean = AtomicBoolean(false)
 
-  @Test
-  public void testCancelRunAfterStarting() throws Exception {
-    final CountDownLatch testStartLatch = new CountDownLatch(1);
-    final CountDownLatch testContinueLatch = new CountDownLatch(1);
-    final AtomicBoolean secondTestRan = new AtomicBoolean(false);
+        // Simulates a test that hangs
+        val blockingRunner = FakeRunner("blocks", object : java.lang.Runnable {
+            override fun run() {
+                testStartLatch.countDown()
+                try {
+                    testContinueLatch.await(1, TimeUnit.SECONDS)
+                } catch (e: java.lang.InterruptedException) {
+                    java.lang.Thread.currentThread().interrupt()
+                    throw java.lang.RuntimeException("Timed out waiting for signal to continue test", e)
+                }
+            }
+        })
 
-    // Simulates a test that hangs
-    FakeRunner blockingRunner = new FakeRunner("blocks", new Runnable() {
-      @Override
-      public void run() {
-        testStartLatch.countDown();
-        try {
-          testContinueLatch.await(1, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new RuntimeException("Timed out waiting for signal to continue test", e);
+        // A runner that should never run its test
+        val secondRunner = FakeRunner("shouldNotRun", object : java.lang.Runnable {
+            override fun run() {
+                secondTestRan.set(true)
+            }
+        })
+
+        val fakeSuite = RunnerSuite(blockingRunner, secondRunner)
+        val request: org.junit.runner.Request =
+            cancellableRequestFactory.createRequest(org.junit.runner.Request.runner(fakeSuite))
+
+        val executor: ExecutorService = Executors.newSingleThreadExecutor()
+        val future: java.util.concurrent.Future<org.junit.runner.Result?> =
+            executor.submit<org.junit.runner.Result?>(object : java.util.concurrent.Callable<org.junit.runner.Result?> {
+                @Throws(java.lang.Exception::class)
+                override fun call(): org.junit.runner.Result {
+                    val core: JUnitCore = JUnitCore()
+                    return core.run(request)
+                }
+            })
+
+        // Simulate cancel being called in the middle of the test
+        testStartLatch.await(1, TimeUnit.SECONDS)
+        cancellableRequestFactory.cancelRun()
+        testContinueLatch.countDown()
+
+        val e: ExecutionException =
+            org.junit.Assert.assertThrows<ExecutionException>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { future.get(10, TimeUnit.SECONDS) })
+        val runnerException: Throwable? = e.cause
+        Truth.assertThat(runnerException).isInstanceOf(java.lang.RuntimeException::class.java)
+        Truth.assertThat(runnerException).hasMessageThat().isEqualTo("Test run interrupted")
+        Truth.assertThat(runnerException).hasCauseThat().isInstanceOf(StoppedByUserException::class.java)
+
+        executor.shutdownNow()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCancelRunBeforeStarting() {
+        val testRan: AtomicBoolean = AtomicBoolean(false)
+
+        // A runner that should never run its test
+        val runner = FakeRunner("shouldNotRun", object : java.lang.Runnable {
+            override fun run() {
+                testRan.set(true)
+            }
+        })
+
+        val request: org.junit.runner.Request =
+            cancellableRequestFactory.createRequest(org.junit.runner.Request.runner(runner))
+        cancellableRequestFactory.cancelRun()
+        val core: JUnitCore = JUnitCore()
+
+        val e: java.lang.RuntimeException? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable { core.run(request) })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Test run interrupted")
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(StoppedByUserException::class.java)
+
+        Truth.assertThat(testRan.get()).isFalse()
+    }
+
+    @org.junit.Test
+    fun testNormalRun() {
+        val testRan: AtomicBoolean = AtomicBoolean(false)
+
+        // A runner that should run its test
+        val runner = FakeRunner("shouldRun", object : java.lang.Runnable {
+            override fun run() {
+                testRan.set(true)
+            }
+        })
+
+        val request: org.junit.runner.Request =
+            cancellableRequestFactory.createRequest(org.junit.runner.Request.runner(runner))
+        val core: JUnitCore = JUnitCore()
+        val result: org.junit.runner.Result = core.run(request)
+
+        Truth.assertThat(testRan.get()).isTrue()
+        Truth.assertThat(result.getRunCount()).isEqualTo(1)
+        Truth.assertThat(result.getFailureCount()).isEqualTo(0)
+    }
+
+    @org.junit.Test
+    fun testFailingRun() {
+        val testRan: AtomicBoolean = AtomicBoolean(false)
+        val expectedFailure: java.lang.RuntimeException = java.lang.RuntimeException()
+
+        // A runner that should run its test
+        val runner = FakeRunner("shouldRun", object : java.lang.Runnable {
+            override fun run() {
+                testRan.set(true)
+                throw expectedFailure
+            }
+        })
+
+        val request: org.junit.runner.Request =
+            cancellableRequestFactory.createRequest(org.junit.runner.Request.runner(runner))
+        val core: JUnitCore = JUnitCore()
+        val result: org.junit.runner.Result = core.run(request)
+
+        Truth.assertThat(testRan.get()).isTrue()
+        Truth.assertThat(result.getRunCount()).isEqualTo(1)
+        Truth.assertThat(result.getFailureCount()).isEqualTo(1)
+        Truth.assertThat(result.getFailures().get(0).getException()).isSameInstanceAs(expectedFailure)
+    }
+
+
+    private class FakeRunner(testName: String?, test: java.lang.Runnable) : org.junit.runner.Runner() {
+        private val testDescription: org.junit.runner.Description
+        private val test: java.lang.Runnable
+
+        init {
+            this.test = test
+            testDescription = org.junit.runner.Description.createTestDescription(FakeRunner::class.java, testName)
         }
-      }
-    });
 
-    // A runner that should never run its test
-    FakeRunner secondRunner = new FakeRunner("shouldNotRun", new Runnable() {
-      @Override
-      public void run() {
-        secondTestRan.set(true);
-      }
-    });
+        val description: org.junit.runner.Description
+            get() = testDescription
 
-    RunnerSuite fakeSuite = new RunnerSuite(blockingRunner, secondRunner);
-    final Request request = cancellableRequestFactory.createRequest(Request.runner(fakeSuite));
+        override fun run(notifier: RunNotifier) {
+            notifier.fireTestStarted(testDescription)
 
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    Future<Result> future = executor.submit(new Callable<Result>() {
-      @Override
-      public Result call() throws Exception {
-        JUnitCore core = new JUnitCore();
-        return core.run(request);
-      }
-    });
-
-    // Simulate cancel being called in the middle of the test
-    testStartLatch.await(1, TimeUnit.SECONDS);
-    cancellableRequestFactory.cancelRun();
-    testContinueLatch.countDown();
-
-    ExecutionException e =
-        assertThrows(ExecutionException.class, () -> future.get(10, TimeUnit.SECONDS));
-    Throwable runnerException = e.getCause();
-      assertThat(runnerException).isInstanceOf(RuntimeException.class);
-      assertThat(runnerException).hasMessageThat().isEqualTo("Test run interrupted");
-    assertThat(runnerException).hasCauseThat().isInstanceOf(StoppedByUserException.class);
-
-    executor.shutdownNow();
-  }
-
-  @Test
-  public void testCancelRunBeforeStarting() throws Exception {
-    final AtomicBoolean testRan = new AtomicBoolean(false);
-
-    // A runner that should never run its test
-    FakeRunner runner = new FakeRunner("shouldNotRun", new Runnable() {
-      @Override
-      public void run() {
-        testRan.set(true);
-      }
-    });
-
-    Request request = cancellableRequestFactory.createRequest(Request.runner(runner));
-    cancellableRequestFactory.cancelRun();
-    JUnitCore core = new JUnitCore();
-
-    RuntimeException e = assertThrows(RuntimeException.class, () -> core.run(request));
-    assertThat(e).hasMessageThat().isEqualTo("Test run interrupted");
-    assertThat(e).hasCauseThat().isInstanceOf(StoppedByUserException.class);
-
-    assertThat(testRan.get()).isFalse();
-  }
-
-  @Test
-  public void testNormalRun() {
-    final AtomicBoolean testRan = new AtomicBoolean(false);
-
-    // A runner that should run its test
-    FakeRunner runner = new FakeRunner("shouldRun", new Runnable() {
-      @Override
-      public void run() {
-        testRan.set(true);
-      }
-    });
-
-    Request request = cancellableRequestFactory.createRequest(Request.runner(runner));
-    JUnitCore core = new JUnitCore();
-    Result result = core.run(request);
-
-    assertThat(testRan.get()).isTrue();
-    assertThat(result.getRunCount()).isEqualTo(1);
-    assertThat(result.getFailureCount()).isEqualTo(0);
-  }
-
-  @Test
-  public void testFailingRun() {
-    final AtomicBoolean testRan = new AtomicBoolean(false);
-    final RuntimeException expectedFailure = new RuntimeException();
-
-    // A runner that should run its test
-    FakeRunner runner = new FakeRunner("shouldRun", new Runnable() {
-      @Override
-      public void run() {
-        testRan.set(true);
-        throw expectedFailure;
-      }
-    });
-
-    Request request = cancellableRequestFactory.createRequest(Request.runner(runner));
-    JUnitCore core = new JUnitCore();
-    Result result = core.run(request);
-
-    assertThat(testRan.get()).isTrue();
-    assertThat(result.getRunCount()).isEqualTo(1);
-    assertThat(result.getFailureCount()).isEqualTo(1);
-    assertThat(result.getFailures().get(0).getException()).isSameInstanceAs(expectedFailure);
-  }
-
-
-  private static class FakeRunner extends Runner {
-    private final Description testDescription;
-    private final Runnable test;
-
-    public FakeRunner(String testName, Runnable test) {
-      this.test = test;
-      testDescription = Description.createTestDescription(FakeRunner.class, testName);
+            try {
+                test.run()
+            } catch (e: org.junit.internal.AssumptionViolatedException) {
+                notifier.fireTestAssumptionFailed(org.junit.runner.notification.Failure(testDescription, e))
+            } catch (e: Throwable) {
+                notifier.fireTestFailure(org.junit.runner.notification.Failure(testDescription, e))
+            } finally {
+                notifier.fireTestFinished(testDescription)
+            }
+        }
     }
 
-    @Override
-    public Description getDescription() {
-      return testDescription;
-    }
+    class FakeSuite
 
-    @Override
-    public void run(RunNotifier notifier) {
-      notifier.fireTestStarted(testDescription);
-
-      try {
-        test.run();
-      } catch (AssumptionViolatedException e) {
-        notifier.fireTestAssumptionFailed(new Failure(testDescription, e));
-      } catch (Throwable e) {
-        notifier.fireTestFailure(new Failure(testDescription, e));
-      } finally {
-        notifier.fireTestFinished(testDescription);
-      }
-    }
-  }
-
-  public static class FakeSuite {
-  }
-
-  public static class RunnerSuite extends Suite {
-
-    public RunnerSuite(Runner... runners) throws InitializationError {
-      super(FakeSuite.class, Arrays.asList(runners));
-    }
-  }
+    class RunnerSuite(vararg runners: org.junit.runner.Runner?) :
+        Suite(FakeSuite::class.java, java.util.Arrays.asList<org.junit.runner.Runner?>(*runners))
 }

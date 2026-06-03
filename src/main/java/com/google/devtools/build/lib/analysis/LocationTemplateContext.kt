@@ -11,109 +11,106 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import com.google.common.base.Supplier;
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.LocationExpander.LocationFunction;
-import com.google.devtools.build.lib.analysis.stringtemplate.ExpansionException;
-import com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import java.util.Collection;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Expands $(location) and $(locations) tags inside target attributes. You can specify something
  * like this in the BUILD file:
- *
+ * 
  * <pre>
  * somerule(name='some name',
- *          someopt = [ '$(location //mypackage:myhelper)' ],
- *          ...)
- * </pre>
- *
+ * someopt = [ '$(location //mypackage:myhelper)' ],
+ * ...)
+</pre> * 
+ * 
  * and location will be substituted with //mypackage:myhelper executable output.
- *
- * <p>Note that this expander will always expand labels in srcs, deps, and tools attributes, with
+ * 
+ * 
+ * Note that this expander will always expand labels in srcs, deps, and tools attributes, with
  * data being optional.
- *
- * <p>DO NOT USE DIRECTLY! Use RuleContext.getExpander() instead.
+ * 
+ * 
+ * DO NOT USE DIRECTLY! Use RuleContext.getExpander() instead.
  */
-final class LocationTemplateContext implements TemplateContext {
-  private final TemplateContext delegate;
-  private final ImmutableMap<String, LocationFunction> functions;
-  private final RepositoryMapping repositoryMapping;
-  private final boolean windowsPath;
-  private final String workspaceRunfilesDirectory;
+internal class LocationTemplateContext private constructor(
+    delegate: com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext,
+    root: Label?,
+    locationMap: com.google.common.base.Supplier<MutableMap<Label?, MutableCollection<Artifact?>?>?>?,
+    execPaths: Boolean,
+    repositoryMapping: RepositoryMapping?,
+    windowsPath: Boolean,
+    workspaceRunfilesDirectory: String?
+) : com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext {
+    private val delegate: com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext
+    private val functions: com.google.common.collect.ImmutableMap<String?, LocationFunction?>
+    private val repositoryMapping: RepositoryMapping?
+    private val windowsPath: Boolean
+    private val workspaceRunfilesDirectory: String?
 
-  private LocationTemplateContext(
-      TemplateContext delegate,
-      Label root,
-      Supplier<Map<Label, Collection<Artifact>>> locationMap,
-      boolean execPaths,
-      RepositoryMapping repositoryMapping,
-      boolean windowsPath,
-      String workspaceRunfilesDirectory) {
-    this.delegate = delegate;
-    this.functions = LocationExpander.allLocationFunctions(root, locationMap, execPaths);
-    this.repositoryMapping = repositoryMapping;
-    this.windowsPath = windowsPath;
-    this.workspaceRunfilesDirectory = workspaceRunfilesDirectory;
-  }
+    init {
+        this.delegate = delegate
+        this.functions = LocationExpander.Companion.allLocationFunctions(root, locationMap, execPaths)
+        this.repositoryMapping = repositoryMapping
+        this.windowsPath = windowsPath
+        this.workspaceRunfilesDirectory = workspaceRunfilesDirectory
+    }
 
-  public LocationTemplateContext(
-      TemplateContext delegate,
-      RuleContext ruleContext,
-      @Nullable ImmutableMap<Label, ImmutableCollection<Artifact>> labelMap,
-      boolean execPaths,
-      boolean allowData,
-      boolean collectSrcs,
-      boolean windowsPath) {
-    this(
+    constructor(
+        delegate: com.google.devtools.build.lib.analysis.stringtemplate.TemplateContext?,
+        ruleContext: RuleContext,
+        labelMap: com.google.common.collect.ImmutableMap<Label?, com.google.common.collect.ImmutableCollection<Artifact?>?>?,
+        execPaths: Boolean,
+        allowData: Boolean,
+        collectSrcs: Boolean,
+        windowsPath: Boolean
+    ) : this(
         delegate,
-        ruleContext.getLabel(),
-        // Use a memoizing supplier to avoid eagerly building the location map.
-        Suppliers.memoize(
-            () -> LocationExpander.buildLocationMap(ruleContext, labelMap, allowData, collectSrcs)),
+        ruleContext.getLabel(),  // Use a memoizing supplier to avoid eagerly building the location map.
+        com.google.common.base.Suppliers.memoize<T?>(
+            com.google.common.base.Supplier {
+                LocationExpander.Companion.buildLocationMap(
+                    ruleContext,
+                    labelMap,
+                    allowData,
+                    collectSrcs
+                )
+            }),
         execPaths,
         ruleContext.getRule().getPackageMetadata().repositoryMapping(),
         windowsPath,
-        ruleContext.getWorkspaceName());
-  }
+        ruleContext.getWorkspaceName()
+    )
 
-  @Override
-  public String lookupVariable(String name) throws ExpansionException {
-    String val = delegate.lookupVariable(name);
-    if (windowsPath) {
-      val = val.replace('/', '\\');
+    @Throws(ExpansionException::class)
+    override fun lookupVariable(name: String?): String? {
+        var `val`: String? = delegate.lookupVariable(name)
+        if (windowsPath) {
+            `val` = `val`.replace('/', '\\')
+        }
+        return `val`
     }
-    return val;
-  }
 
-  @Override
-  public String lookupFunction(String name, String param) throws ExpansionException {
-    String val = lookupFunctionImpl(name, param);
-    if (windowsPath) {
-      val = val.replace('/', '\\');
+    @Throws(ExpansionException::class)
+    override fun lookupFunction(name: String?, param: String?): String {
+        var `val` = lookupFunctionImpl(name, param)
+        if (windowsPath) {
+            `val` = `val`.replace('/', '\\')
+        }
+        return `val`
     }
-    return val;
-  }
 
-  private String lookupFunctionImpl(String name, String param) throws ExpansionException {
-    try {
-      LocationFunction f = functions.get(name);
-      if (f != null) {
-        return f.apply(param, repositoryMapping, workspaceRunfilesDirectory);
-      }
-    } catch (IllegalStateException e) {
-      throw new ExpansionException(e.getMessage(), e);
+    @Throws(ExpansionException::class)
+    private fun lookupFunctionImpl(name: String?, param: String?): String {
+        try {
+            val f: LocationFunction? = functions.get(name)
+            if (f != null) {
+                return f.apply(param, repositoryMapping, workspaceRunfilesDirectory)
+            }
+        } catch (e: java.lang.IllegalStateException) {
+            throw ExpansionException(e.getMessage(), e)
+        }
+        return delegate.lookupFunction(name, param)
     }
-    return delegate.lookupFunction(name, param);
-  }
 }

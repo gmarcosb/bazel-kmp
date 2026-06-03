@@ -11,195 +11,196 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.causes.ActionFailed;
-import com.google.devtools.build.lib.causes.Cause;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
 /**
- * This exception gets thrown if {@link Action#execute(ActionExecutionContext)} is unsuccessful.
+ * This exception gets thrown if [Action.execute] is unsuccessful.
  * Typically these are re-raised ExecException throwables.
  */
 @ThreadSafe
-public class ActionExecutionException extends Exception implements DetailedException {
+open class ActionExecutionException : java.lang.Exception, DetailedException {
+    private val action: ActionAnalysisMetadata
+    private val rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>?
+    private val catastrophe: Boolean
+    private val detailedExitCode: DetailedExitCode
 
-  private final ActionAnalysisMetadata action;
-  private final NestedSet<Cause> rootCauses;
-  private final boolean catastrophe;
-  private final DetailedExitCode detailedExitCode;
-
-  public ActionExecutionException(
-      Throwable cause,
-      ActionAnalysisMetadata action,
-      boolean catastrophe,
-      DetailedExitCode detailedExitCode) {
-    super(cause.getMessage(), cause);
-    this.action = action;
-    this.detailedExitCode = detailedExitCode;
-    this.rootCauses = rootCausesFromAction(action, detailedExitCode);
-    this.catastrophe = catastrophe;
-  }
-
-  public ActionExecutionException(
-      String message,
-      Throwable cause,
-      ActionAnalysisMetadata action,
-      boolean catastrophe,
-      DetailedExitCode detailedExitCode) {
-    super(message, cause);
-    this.action = action;
-    this.catastrophe = catastrophe;
-    this.detailedExitCode = checkNotNull(detailedExitCode);
-    this.rootCauses = rootCausesFromAction(action, detailedExitCode);
-  }
-
-  public ActionExecutionException(
-      String message,
-      ActionAnalysisMetadata action,
-      boolean catastrophe,
-      DetailedExitCode detailedExitCode) {
-    super(message);
-    this.action = action;
-    this.catastrophe = catastrophe;
-    this.detailedExitCode = detailedExitCode;
-    this.rootCauses = rootCausesFromAction(action, this.detailedExitCode);
-  }
-
-  public ActionExecutionException(
-      String message,
-      ActionAnalysisMetadata action,
-      NestedSet<Cause> rootCauses,
-      boolean catastrophe,
-      DetailedExitCode detailedExitCode) {
-    super(message);
-    this.action = action;
-    this.rootCauses = rootCauses;
-    this.catastrophe = catastrophe;
-    this.detailedExitCode = detailedExitCode;
-  }
-
-  public ActionExecutionException(
-      String message,
-      Throwable cause,
-      ActionAnalysisMetadata action,
-      NestedSet<Cause> rootCauses,
-      boolean catastrophe,
-      DetailedExitCode detailedExitCode) {
-    super(message, cause);
-    this.action = action;
-    this.rootCauses = rootCauses;
-    this.catastrophe = catastrophe;
-    this.detailedExitCode = checkNotNull(detailedExitCode);
-  }
-
-  private static NestedSet<Cause> rootCausesFromAction(
-      ActionAnalysisMetadata action, DetailedExitCode detailedExitCode) {
-    return action == null || action.getOwner() == null || action.getOwner().getLabel() == null
-        ? NestedSetBuilder.emptySet(Order.STABLE_ORDER)
-        : NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            new ActionFailed(
-                action.getPrimaryOutput().getExecPath(),
-                action.getOwner().getLabel(),
-                action.getOwner().getConfigurationChecksum(),
-                detailedExitCode));
-  }
-
-  public static ActionExecutionException fromExecException(ExecException exception, Action action) {
-    return fromExecException(exception, null, action);
-  }
-
-  /**
-   * Returns a new ActionExecutionException given an optional action subtask describing which part
-   * of the action failed (should be null for standard action failures). When appropriate (we use
-   * some heuristics to decide), produces an abbreviated message incorporating just the termination
-   * status if available.
-   *
-   * @param exception initial ExecException
-   * @param actionSubtask additional information about the action
-   * @param action failed action
-   * @return ActionExecutionException object describing the action failure
-   */
-  public static ActionExecutionException fromExecException(
-      ExecException exception, @Nullable String actionSubtask, Action action) {
-    // Message from ActionExecutionException will be prepended with action.describe() where
-    // necessary: because not all ActionExecutionExceptions come from this codepath, it is safer
-    // for consumers to manually prepend. We still put action.describe() in the failure detail
-    // message argument.
-    String message =
-        (actionSubtask == null ? "" : actionSubtask + ": ")
-            + exception.getMessageForActionExecutionException();
-
-    DetailedExitCode code =
-        DetailedExitCode.of(exception.getFailureDetail(action.describe() + " failed: " + message));
-    if (exception instanceof LostInputsExecException lostInputsExecException) {
-      return lostInputsExecException.fromExecException(message, action, code);
+    constructor(
+        cause: Throwable,
+        action: ActionAnalysisMetadata,
+        catastrophe: Boolean,
+        detailedExitCode: DetailedExitCode
+    ) : super(cause.message, cause) {
+        this.action = action
+        this.detailedExitCode = detailedExitCode
+        this.rootCauses = rootCausesFromAction(action, detailedExitCode)
+        this.catastrophe = catastrophe
     }
 
-    return fromExecException(exception, message, action, code);
-  }
+    constructor(
+        message: String?,
+        cause: Throwable?,
+        action: ActionAnalysisMetadata,
+        catastrophe: Boolean,
+        detailedExitCode: DetailedExitCode?
+    ) : super(message, cause) {
+        this.action = action
+        this.catastrophe = catastrophe
+        this.detailedExitCode = com.google.common.base.Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
+        this.rootCauses = rootCausesFromAction(action, detailedExitCode)
+    }
 
-  public static ActionExecutionException fromExecException(
-      ExecException exception, String message, Action action, DetailedExitCode code) {
-    return new ActionExecutionException(
-        message, exception, action, exception.isCatastrophic(), code);
-  }
+    constructor(
+        message: String?,
+        action: ActionAnalysisMetadata,
+        catastrophe: Boolean,
+        detailedExitCode: DetailedExitCode
+    ) : super(message) {
+        this.action = action
+        this.catastrophe = catastrophe
+        this.detailedExitCode = detailedExitCode
+        this.rootCauses = rootCausesFromAction(action, this.detailedExitCode)
+    }
 
-  /** Returns the action that failed. */
-  public ActionAnalysisMetadata getAction() {
-    return action;
-  }
+    constructor(
+        message: String?,
+        action: ActionAnalysisMetadata,
+        rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>?,
+        catastrophe: Boolean,
+        detailedExitCode: DetailedExitCode
+    ) : super(message) {
+        this.action = action
+        this.rootCauses = rootCauses
+        this.catastrophe = catastrophe
+        this.detailedExitCode = detailedExitCode
+    }
 
-  /**
-   * Return the root causes that should be reported. Usually the owner of the action, but it can be
-   * the label of a missing artifact.
-   */
-  public NestedSet<Cause> getRootCauses() {
-    return rootCauses;
-  }
+    constructor(
+        message: String?,
+        cause: Throwable?,
+        action: ActionAnalysisMetadata,
+        rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>?,
+        catastrophe: Boolean,
+        detailedExitCode: DetailedExitCode?
+    ) : super(message, cause) {
+        this.action = action
+        this.rootCauses = rootCauses
+        this.catastrophe = catastrophe
+        this.detailedExitCode = com.google.common.base.Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
+    }
 
-  /**
-   * Returns the location of the owner of this action.  May be null.
-   */
-  public Location getLocation() {
-    return action.getOwner().getLocation();
-  }
+    /** Returns the action that failed.  */
+    fun getAction(): ActionAnalysisMetadata {
+        return action
+    }
 
-  /**
-   * Catastrophic exceptions should stop builds, even if --keep_going.
-   */
-  public boolean isCatastrophe() {
-    return catastrophe;
-  }
+    /**
+     * Return the root causes that should be reported. Usually the owner of the action, but it can be
+     * the label of a missing artifact.
+     */
+    fun getRootCauses(): NestedSet<com.google.devtools.build.lib.causes.Cause?>? {
+        return rootCauses
+    }
 
-  /**
-   * Returns the exit code to return from this Bazel invocation because of this action execution
-   * failure.
-   */
-  public ExitCode getExitCode() {
-    return detailedExitCode.getExitCode();
-  }
+    /**
+     * Returns the location of the owner of this action.  May be null.
+     */
+    fun getLocation(): net.starlark.java.syntax.Location? {
+        return action.getOwner().getLocation()
+    }
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    /**
+     * Catastrophic exceptions should stop builds, even if --keep_going.
+     */
+    fun isCatastrophe(): Boolean {
+        return catastrophe
+    }
 
-  /**
-   * Returns true if the error should be shown.
-   */
-  public boolean showError() {
-    return getMessage() != null;
-  }
+    /**
+     * Returns the exit code to return from this Bazel invocation because of this action execution
+     * failure.
+     */
+    fun getExitCode(): ExitCode {
+        return detailedExitCode.getExitCode()
+    }
+
+    public override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
+
+    /**
+     * Returns true if the error should be shown.
+     */
+    open fun showError(): Boolean {
+        return message != null
+    }
+
+    companion object {
+        private fun rootCausesFromAction(
+            action: ActionAnalysisMetadata?, detailedExitCode: DetailedExitCode
+        ): NestedSet<com.google.devtools.build.lib.causes.Cause?> {
+            return if (action == null || action.getOwner() == null || action.getOwner().getLabel() == null)
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            else
+                NestedSetBuilder.create(
+                    Order.STABLE_ORDER,
+                    ActionFailed(
+                        action.getPrimaryOutput().getExecPath(),
+                        action.getOwner().getLabel(),
+                        action.getOwner().getConfigurationChecksum(),
+                        detailedExitCode
+                    )
+                )
+        }
+
+        fun fromExecException(
+            exception: ExecException,
+            action: com.google.devtools.build.lib.actions.Action
+        ): ActionExecutionException {
+            return fromExecException(exception, null, action)
+        }
+
+        /**
+         * Returns a new ActionExecutionException given an optional action subtask describing which part
+         * of the action failed (should be null for standard action failures). When appropriate (we use
+         * some heuristics to decide), produces an abbreviated message incorporating just the termination
+         * status if available.
+         * 
+         * @param exception initial ExecException
+         * @param actionSubtask additional information about the action
+         * @param action failed action
+         * @return ActionExecutionException object describing the action failure
+         */
+        fun fromExecException(
+            exception: ExecException, actionSubtask: String?, action: com.google.devtools.build.lib.actions.Action
+        ): ActionExecutionException {
+            // Message from ActionExecutionException will be prepended with action.describe() where
+            // necessary: because not all ActionExecutionExceptions come from this codepath, it is safer
+            // for consumers to manually prepend. We still put action.describe() in the failure detail
+            // message argument.
+            val message =
+                ((if (actionSubtask == null) "" else actionSubtask + ": ")
+                        + exception.getMessageForActionExecutionException())
+
+            val code: DetailedExitCode? =
+                DetailedExitCode.of(exception.getFailureDetail(action.describe() + " failed: " + message))
+            if (exception is LostInputsExecException) {
+                return exception.fromExecException(message, action, code)
+            }
+
+            return fromExecException(exception, message, action, code)
+        }
+
+        fun fromExecException(
+            exception: ExecException,
+            message: String?,
+            action: com.google.devtools.build.lib.actions.Action,
+            code: DetailedExitCode?
+        ): ActionExecutionException {
+            return ActionExecutionException(
+                message, exception, action, exception.isCatastrophic(), code
+            )
+        }
+    }
 }

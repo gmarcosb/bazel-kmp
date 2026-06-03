@@ -11,155 +11,188 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.model
 
-package com.google.testing.junit.runner.model;
-
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.testing.junit.runner.model.TestInstantUtil.advance;
-import static com.google.testing.junit.runner.model.TestInstantUtil.testInstant;
-
-import com.google.testing.junit.runner.util.TestClock.TestInstant;
-import java.time.Duration;
-import java.time.Instant;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.Description;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.junit4.JUnit4Runner.model
+import com.google.testing.junit.runner.model.TestCaseNode
+import com.google.testing.junit.runner.model.TestCaseNode.finished
+import com.google.testing.junit.runner.model.TestCaseNode.isTestCase
+import com.google.testing.junit.runner.model.TestCaseNode.pending
+import com.google.testing.junit.runner.model.TestCaseNode.started
+import com.google.testing.junit.runner.model.TestCaseNodeTest
+import com.google.testing.junit.runner.model.TestInstantUtil
+import com.google.testing.junit.runner.model.TestInterval.startMillis
+import com.google.testing.junit.runner.model.TestInterval.toDurationMillis
+import com.google.testing.junit.runner.model.TestNode.result
+import com.google.testing.junit.runner.model.TestNode.testFailure
+import com.google.testing.junit.runner.model.TestNode.testInterrupted
+import com.google.testing.junit.runner.model.TestNode.testSkipped
+import com.google.testing.junit.runner.model.TestNode.testSuppressed
+import com.google.testing.junit.runner.model.TestResult.getRunTimeInterval
+import com.google.testing.junit.runner.model.TestResult.getStatus
+import com.google.testing.junit.runner.model.TestSuiteModel.testFailure
+import com.google.testing.junit.runner.model.TestSuiteModel.testSkipped
+import com.google.testing.junit.runner.model.TestSuiteModel.testSuppressed
+import com.google.testing.junit.runner.model.TestSuiteNode
+import com.google.testing.junit.runner.model.TestSuiteNode.isTestCase
+import com.google.testing.junit.runner.model.TestSuiteNode.testFailure
+import com.google.testing.junit.runner.model.TestSuiteNode.testInterrupted
+import com.google.testing.junit.runner.model.TestSuiteNode.testSkipped
+import com.google.testing.junit.runner.model.TestSuiteNode.testSuppressed
+import com.google.testing.junit.runner.util.TestClock.TestInstant
+import org.junit.BeforeClass
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.time.Instant
 
 /**
- * Unit test for {@link TestCaseNode}.
+ * Unit test for [TestCaseNode].
  */
-@RunWith(JUnit4.class)
-public class TestCaseNodeTest {
+@RunWith(JUnit4::class)
+class TestCaseNodeTest {
+    @org.junit.Test
+    fun assertIsTestCase() {
+        Truth.assertThat(TestCaseNode(testCase, TestSuiteNode(suite)).isTestCase()).isTrue()
+    }
 
-  private static final TestInstant NOW = testInstant(Instant.ofEpochMilli(1));
-  private static Description suite;
-  private static Description testCase;
+    @org.junit.Test
+    fun assertIsFilteredIfNeverPending() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        assertStatusWithoutTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.FILTERED)
+    }
 
-  @BeforeClass
-  public static void createDescriptions() {
-    suite = Description.createSuiteDescription(TestSuiteNode.class);
-    testCase = Description.createTestDescription(TestSuite.class, "testCase");
-    suite.addChild(testCase);
-  }
+    @org.junit.Test
+    fun assertIsCancelledIfNotStarted() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        assertStatusWithoutTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.CANCELLED)
+    }
 
-  @Test
-  public void assertIsTestCase() {
-    assertThat(new TestCaseNode(testCase, new TestSuiteNode(suite)).isTestCase()).isTrue();
-  }
+    @org.junit.Test
+    fun assertIsCancelledIfInterruptedBeforeStart() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.testInterrupted(NOW)
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.CANCELLED, NOW, 0)
+    }
 
-  @Test
-  public void assertIsFilteredIfNeverPending() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    assertStatusWithoutTiming(testCaseNode, TestResult.Status.FILTERED);
-  }
+    @org.junit.Test
+    fun assertIsCompletedIfFailedBeforeStart() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.testFailure(java.lang.Exception(), NOW)
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.COMPLETED, NOW, 0)
+    }
 
-  @Test
-  public void assertIsCancelledIfNotStarted() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    assertStatusWithoutTiming(testCaseNode, TestResult.Status.CANCELLED);
-  }
+    @org.junit.Test
+    fun assertInterruptedIfStartedAndNotFinished() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.started(NOW)
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.INTERRUPTED, NOW, 0)
+        // Notice: This is an unexpected ending state, as even interrupted test executions should go
+        // through the testCaseNode.interrupted() code path.
+    }
 
-  @Test
-  public void assertIsCancelledIfInterruptedBeforeStart() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.testInterrupted(NOW);
-    assertStatusAndTiming(testCaseNode, TestResult.Status.CANCELLED, NOW, 0);
-  }
+    @org.junit.Test
+    fun assertInterruptedIfStartedAndInterrupted() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.started(NOW)
+        testCaseNode.testInterrupted(TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(1)))
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.INTERRUPTED, NOW, 1)
+    }
 
-  @Test
-  public void assertIsCompletedIfFailedBeforeStart() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.testFailure(new Exception(), NOW);
-    assertStatusAndTiming(testCaseNode, TestResult.Status.COMPLETED, NOW, 0);
-  }
+    @org.junit.Test
+    fun assertSkippedIfStartedAndSkipped() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.started(NOW)
+        testCaseNode.testSkipped(TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(1)))
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.SKIPPED, NOW, 1)
+    }
 
-  @Test
-  public void assertInterruptedIfStartedAndNotFinished() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.started(NOW);
-    assertStatusAndTiming(testCaseNode, TestResult.Status.INTERRUPTED, NOW, 0);
-    // Notice: This is an unexpected ending state, as even interrupted test executions should go
-    // through the testCaseNode.interrupted() code path.
-  }
+    @org.junit.Test
+    fun assertCompletedIfStartedAndFinished() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.started(NOW)
+        testCaseNode.finished(TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(1)))
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.COMPLETED, NOW, 1)
+    }
 
-  @Test
-  public void assertInterruptedIfStartedAndInterrupted() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.started(NOW);
-    testCaseNode.testInterrupted(advance(NOW, Duration.ofMillis(1)));
-    assertStatusAndTiming(testCaseNode, TestResult.Status.INTERRUPTED, NOW, 1);
-  }
+    @org.junit.Test
+    fun assertCompletedIfStartedAndFailedAndFinished() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.started(NOW)
+        testCaseNode.testFailure(java.lang.Exception(), TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(1)))
+        testCaseNode.finished(TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(2)))
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.COMPLETED, NOW, 2)
+    }
 
-  @Test
-  public void assertSkippedIfStartedAndSkipped() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.started(NOW);
-    testCaseNode.testSkipped(advance(NOW, Duration.ofMillis(1)));
-    assertStatusAndTiming(testCaseNode, TestResult.Status.SKIPPED, NOW, 1);
-  }
+    @org.junit.Test
+    fun assertInterruptedIfStartedAndFailedAndInterrupted() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.started(NOW)
+        testCaseNode.testFailure(java.lang.Exception(), TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(1)))
+        testCaseNode.testInterrupted(TestInstantUtil.advance(NOW, java.time.Duration.ofMillis(2)))
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.INTERRUPTED, NOW, 2)
+    }
 
-  @Test
-  public void assertCompletedIfStartedAndFinished() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.started(NOW);
-    testCaseNode.finished(advance(NOW, Duration.ofMillis(1)));
-    assertStatusAndTiming(testCaseNode, TestResult.Status.COMPLETED, NOW, 1);
-  }
+    @org.junit.Test
+    fun assertTestSuppressedIfNotStartedAndSuppressed() {
+        val testCaseNode: TestCaseNode = TestCaseNode(testCase, TestSuiteNode(suite))
+        testCaseNode.pending()
+        testCaseNode.testSuppressed(NOW)
+        assertStatusAndTiming(testCaseNode, com.google.testing.junit.runner.model.TestResult.Status.SUPPRESSED, NOW, 0)
+    }
 
-  @Test
-  public void assertCompletedIfStartedAndFailedAndFinished() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.started(NOW);
-    testCaseNode.testFailure(new Exception(), advance(NOW, Duration.ofMillis(1)));
-    testCaseNode.finished(advance(NOW, Duration.ofMillis(2)));
-    assertStatusAndTiming(testCaseNode, TestResult.Status.COMPLETED, NOW, 2);
-  }
+    private fun assertStatusAndTiming(
+        testCase: TestCaseNode,
+        status: com.google.testing.junit.runner.model.TestResult.Status?,
+        start: TestInstant,
+        duration: Long
+    ) {
+        val result: com.google.testing.junit.runner.model.TestResult? = testCase.result
+        Truth.assertThat<com.google.testing.junit.runner.model.TestResult.Status?>(result.getStatus()).isEqualTo(status)
+        Truth.assertThat(result.getRunTimeInterval()).isNotNull()
+        Truth.assertThat(result.getRunTimeInterval().startMillis)
+            .isEqualTo(start.wallTime().toEpochMilli())
+        Truth.assertThat(result.getRunTimeInterval().toDurationMillis()).isEqualTo(duration)
+    }
 
-  @Test
-  public void assertInterruptedIfStartedAndFailedAndInterrupted() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.started(NOW);
-    testCaseNode.testFailure(new Exception(), advance(NOW, Duration.ofMillis(1)));
-    testCaseNode.testInterrupted(advance(NOW, Duration.ofMillis(2)));
-    assertStatusAndTiming(testCaseNode, TestResult.Status.INTERRUPTED, NOW, 2);
-  }
+    private fun assertStatusWithoutTiming(
+        testCase: TestCaseNode,
+        status: com.google.testing.junit.runner.model.TestResult.Status?
+    ) {
+        val result: com.google.testing.junit.runner.model.TestResult? = testCase.result
+        Truth.assertThat<com.google.testing.junit.runner.model.TestResult.Status?>(result.getStatus()).isEqualTo(status)
+        Truth.assertThat(result.getRunTimeInterval()).isNull()
+    }
 
-  @Test
-  public void assertTestSuppressedIfNotStartedAndSuppressed() {
-    TestCaseNode testCaseNode = new TestCaseNode(testCase, new TestSuiteNode(suite));
-    testCaseNode.pending();
-    testCaseNode.testSuppressed(NOW);
-    assertStatusAndTiming(testCaseNode, TestResult.Status.SUPPRESSED, NOW, 0);
-  }
+    internal class TestSuite {
+        @org.junit.Test
+        fun testCase() {
+        }
+    }
 
-  private void assertStatusAndTiming(
-      TestCaseNode testCase, TestResult.Status status, TestInstant start, long duration) {
-    TestResult result = testCase.getResult();
-    assertThat(result.getStatus()).isEqualTo(status);
-    assertThat(result.getRunTimeInterval()).isNotNull();
-    assertThat(result.getRunTimeInterval().getStartMillis())
-        .isEqualTo(start.wallTime().toEpochMilli());
-    assertThat(result.getRunTimeInterval().toDurationMillis()).isEqualTo(duration);
-  }
+    companion object {
+        private val NOW: TestInstant = TestInstantUtil.testInstant(Instant.ofEpochMilli(1))
+        private var suite: org.junit.runner.Description? = null
+        private var testCase: org.junit.runner.Description? = null
 
-  private void assertStatusWithoutTiming(TestCaseNode testCase, TestResult.Status status) {
-    TestResult result = testCase.getResult();
-    assertThat(result.getStatus()).isEqualTo(status);
-    assertThat(result.getRunTimeInterval()).isNull();
-  }
-
-  static class TestSuite {
-    @Test public void testCase() {}
-  }
+        @BeforeClass
+        fun createDescriptions() {
+            suite = org.junit.runner.Description.createSuiteDescription(TestSuiteNode::class.java)
+            testCase = org.junit.runner.Description.createTestDescription(
+                com.google.testing.junit.runner.model.TestCaseNodeTest.TestSuite::class.java,
+                "testCase"
+            )
+            suite.addChild(testCase)
+        }
+    }
 }

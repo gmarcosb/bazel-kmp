@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner
 
-package com.google.testing.junit.runner;
-
-import com.google.testing.junit.runner.internal.SystemExitDetectingShutdownHook;
+import com.google.testing.junit.runner.internal.SystemExitDetectingShutdownHook
 
 /**
- * A simple program that installs a shutdown hook using {@link SystemExitDetectingShutdownHook} and
- * then calls {@code System.exit}. This is used to test that the shutdown hook detects the {@code
- * System.exit} call and prints a stack trace.
+ * A simple program that installs a shutdown hook using [SystemExitDetectingShutdownHook] and
+ * then calls `System.exit`. This is used to test that the shutdown hook detects the `System.exit` call and prints a stack trace.
  */
-public final class ProgramThatCallsSystemExit {
-  public static void main(String[] args) {
-    Thread shutdownHook = SystemExitDetectingShutdownHook.newShutdownHook(System.err);
-    Runtime.getRuntime().addShutdownHook(shutdownHook);
-    System.exit(0);
-  }
-
-  private ProgramThatCallsSystemExit() {}
+object ProgramThatCallsSystemExit {
+    @kotlin.jvm.JvmStatic
+    fun main(args: Array<String>) {
+        val shutdownHook: java.lang.Thread = SystemExitDetectingShutdownHook.newShutdownHook(java.lang.System.err)
+        java.lang.Runtime.getRuntime().addShutdownHook(shutdownHook)
+        java.lang.System.exit(0)
+    }
 }

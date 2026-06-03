@@ -11,38 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis
 
-package com.google.devtools.build.lib.analysis;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableSet;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.PackageSpecificationProvider
+import com.google.devtools.build.lib.analysis.TransitiveInfoProvider
 
 /**
  * Provides the transitive visibility groups that a target belongs to. If a target belongs to a
  * transitive visibility group, it may only be depended on by other targets that also belong to the
  * same group.
  */
-public class TransitiveVisibilityProvider implements TransitiveInfoProvider {
-  @Nullable private final ImmutableSet<PackageSpecificationProvider> transitiveVisibility;
+class TransitiveVisibilityProvider(transitiveVisibility: com.google.common.collect.ImmutableSet<PackageSpecificationProvider?>?) :
+    TransitiveInfoProvider {
+    private val transitiveVisibility: com.google.common.collect.ImmutableSet<PackageSpecificationProvider?>?
 
-  /**
-   * Creates a new {@link TransitiveVisibilityProvider} from a set of transitive visibility labels.
-   */
-  public TransitiveVisibilityProvider(
-      ImmutableSet<PackageSpecificationProvider> transitiveVisibility) {
-    // We should only try to create a provider if there is a non-empty transitive visibility.
-    checkNotNull(transitiveVisibility);
-    checkArgument(!transitiveVisibility.isEmpty());
+    /**
+     * Creates a new [TransitiveVisibilityProvider] from a set of transitive visibility labels.
+     */
+    init {
+        // We should only try to create a provider if there is a non-empty transitive visibility.
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSet<PackageSpecificationProvider?>?>(
+            transitiveVisibility
+        )
+        com.google.common.base.Preconditions.checkArgument(!transitiveVisibility.isEmpty())
 
-    this.transitiveVisibility = transitiveVisibility;
-  }
+        this.transitiveVisibility = transitiveVisibility
+    }
 
-  /** Returns the set of transitive visibility groups for the target. */
-  @Nullable
-  ImmutableSet<PackageSpecificationProvider> getTransitiveVisibility() {
-    return transitiveVisibility;
-  }
+    /** Returns the set of transitive visibility groups for the target.  */
+    fun getTransitiveVisibility(): com.google.common.collect.ImmutableSet<PackageSpecificationProvider?>? {
+        return transitiveVisibility
+    }
 }

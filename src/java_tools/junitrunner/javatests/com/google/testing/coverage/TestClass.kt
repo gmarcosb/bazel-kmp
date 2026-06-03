@@ -11,12 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.coverage
 
-package com.google.testing.coverage;
-
-public class TestClass {
-
-  public static void main(String[] args) {
-    System.out.println("Coverage run success!");
-  }
+object TestClass {
+    @kotlin.jvm.JvmStatic
+    fun main(args: Array<String>) {
+        println("Coverage run success!")
+    }
 }

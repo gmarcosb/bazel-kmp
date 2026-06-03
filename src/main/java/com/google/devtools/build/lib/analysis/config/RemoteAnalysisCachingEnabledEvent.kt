@@ -11,9 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-/** An event posted when remote analysis caching (Skycache) is confirmed to be enabled. */
-public record RemoteAnalysisCachingEnabledEvent() implements Postable {}
+/** An event posted when remote analysis caching (Skycache) is confirmed to be enabled.  */
+class RemoteAnalysisCachingEnabledEvent : Postable

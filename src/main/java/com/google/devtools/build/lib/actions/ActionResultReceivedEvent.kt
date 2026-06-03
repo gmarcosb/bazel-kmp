@@ -11,31 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
- * An event that is fired when a non-empty {@link ActionResult} is returned by the execution of an
- * {@link Action}.
+ * An event that is fired when a non-empty [ActionResult] is returned by the execution of an
+ * [Action].
  */
-public final class ActionResultReceivedEvent implements Postable {
-  private final Action action;
-  private final ActionResult actionResult;
+class ActionResultReceivedEvent(action: com.google.devtools.build.lib.actions.Action?, actionResult: ActionResult?) :
+    Postable {
+    private val action: com.google.devtools.build.lib.actions.Action?
+    private val actionResult: ActionResult?
 
-  public ActionResultReceivedEvent(Action action, ActionResult actionResult) {
-    this.action = action;
-    this.actionResult = actionResult;
-  }
+    init {
+        this.action = action
+        this.actionResult = actionResult
+    }
 
-  /** Returns the {@link Action} that created the {@link ActionResult}. */
-  public Action getAction() {
-    return action;
-  }
+    /** Returns the [Action] that created the [ActionResult].  */
+    fun getAction(): com.google.devtools.build.lib.actions.Action? {
+        return action
+    }
 
-  /** Returns the {@link ActionResult} returned by the execution of the {@link Action}. */
-  public ActionResult getActionResult() {
-    return actionResult;
-  }
+    /** Returns the [ActionResult] returned by the execution of the [Action].  */
+    fun getActionResult(): ActionResult? {
+        return actionResult
+    }
 }

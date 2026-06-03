@@ -11,212 +11,199 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionResult;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.analysis.WorkspaceStatusAction;
-import com.google.devtools.build.lib.cmdline.BazelModuleContext;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.WorkspaceStatusValue.BuildInfoKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Fingerprint;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkFunction;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.SymbolGenerator;
+import com.google.devtools.build.lib.actions.AbstractAction
 
 /**
- * Translates workspace status text files(<a
- * href="https://bazel.build/rules/lib/ctx#info_file">ctx.info_file</a> and <a
- * href="https://bazel.build/rules/lib/ctx#version_file">ctx.version_file</a>) to a language
+ * Translates workspace status text files([ctx.info_file](https://bazel.build/rules/lib/ctx#info_file) and [ctx.version_file](https://bazel.build/rules/lib/ctx#version_file)) to a language
  * consumable file and writes its contents to output. Keys and values are translated by the callback
  * translation_func Starlark method, and the output file format is generated according to the
  * template.
- *
- * <p>Action takes text file as an input and transforms it with a user provided Starlark callback
+ * 
+ * 
+ * Action takes text file as an input and transforms it with a user provided Starlark callback
  * function to a dictionary of strings to strings. This dictionary is then used as substitutions to
  * expand the user provided template file.
  */
-public final class BuildInfoFileWriteAction extends AbstractAction {
+class BuildInfoFileWriteAction(
+    owner: ActionOwner?,
+    input: Artifact,
+    output: Artifact,
+    translationCallback: StarlarkFunction,
+    template: Artifact,
+    isVolatile: Boolean,
+    semantics: StarlarkSemantics?
+) : AbstractAction(
+    owner,
+    NestedSetBuilder.create(Order.STABLE_ORDER, input, template),
+    com.google.common.collect.ImmutableList.of<E?>(output)
+) {
+    private val translationCallback: StarlarkFunction
+    private val template: Artifact
+    private val isVolatile: Boolean
+    private val semantics: StarlarkSemantics?
 
-  private static final String GUID = "7e4657a6-dd09-435e-9423-51d4846aad4a";
-
-  private final StarlarkFunction translationCallback;
-  private final Artifact template;
-  private final boolean isVolatile;
-  private final StarlarkSemantics semantics;
-
-  public BuildInfoFileWriteAction(
-      ActionOwner owner,
-      Artifact input,
-      Artifact output,
-      StarlarkFunction translationCallback,
-      Artifact template,
-      boolean isVolatile,
-      StarlarkSemantics semantics) {
-    super(
-        owner,
-        NestedSetBuilder.create(Order.STABLE_ORDER, input, template),
-        ImmutableList.of(output));
-    Preconditions.checkNotNull(translationCallback);
-    Preconditions.checkNotNull(template);
-    Preconditions.checkArgument(
-        input.getArtifactOwner() instanceof BuildInfoKey,
-        "input artifact of BuildInfoFileWriteAction must be one of workspace status artifacts:"
-            + " ctx.info_file or ctx.version_file");
-    this.translationCallback = translationCallback;
-    this.template = template;
-    this.isVolatile = isVolatile;
-    this.semantics = semantics;
-  }
-
-  @Override
-  public ActionResult execute(ActionExecutionContext ctx)
-      throws ActionExecutionException, InterruptedException {
-    Map<String, String> values = new HashMap<>();
-    // Parse values from text file.
-    try {
-      Artifact valueFile = getPrimaryInput();
-      values.putAll(WorkspaceStatusAction.parseValues(ctx.getInputPath(valueFile)));
-    } catch (IOException e) {
-      String message = "Failed to parse workspace status: " + e.getMessage();
-      throw new ActionExecutionException(
-          message,
-          /* cause= */ e,
-          /* action= */ this,
-          /* catastrophe= */ false,
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(message)
-                  .setExecution(
-                      Execution.newBuilder().setCode(Execution.Code.SOURCE_INPUT_IO_EXCEPTION))
-                  .build()));
+    init {
+        com.google.common.base.Preconditions.checkNotNull<StarlarkFunction?>(translationCallback)
+        com.google.common.base.Preconditions.checkNotNull<Any?>(template)
+        com.google.common.base.Preconditions.checkArgument(
+            input.getArtifactOwner() is BuildInfoKey,
+            "input artifact of BuildInfoFileWriteAction must be one of workspace status artifacts:"
+                    + " ctx.info_file or ctx.version_file"
+        )
+        this.translationCallback = translationCallback
+        this.template = template
+        this.isVolatile = isVolatile
+        this.semantics = semantics
     }
-    // Call Starlark callback function which takes workspace status file's
-    // content as an input and produces a dict which is written to the output.
-    Object substitutionDictObject = null;
-    try (Mutability mutability = Mutability.create("translate_build_info_file")) {
-      try {
-        StarlarkThread thread =
-            StarlarkThread.create(
-                mutability,
-                semantics,
-                isVolatile() ? "transform_version_file callback" : "transform_info_file callback",
-                // Since the result of this thread is a String to String Dict, it should not result
-                // in any reference-equals objects.
-                SymbolGenerator.createTransient());
-        substitutionDictObject =
-            Starlark.positionalOnlyCall(thread, translationCallback, Dict.immutableCopyOf(values));
-      } catch (EvalException e) {
-        String message =
-            String.format(
-                "Error during translating %s status file : %s",
-                isVolatile ? "volatile" : "stable", e);
-        throw new ActionExecutionException(
-            message,
-            /* cause= */ e,
-            /* action= */ this,
-            /* catastrophe= */ false,
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage(message)
-                    .setExecution(
-                        Execution.newBuilder().setCode(Execution.Code.NON_ACTION_EXECUTION_FAILURE))
-                    .build()));
-      }
-      Dict<String, String> substitutionDict = null;
-      try {
-        substitutionDict =
-            Dict.cast(substitutionDictObject, String.class, String.class, "substitution_dict");
-      } catch (EvalException e) {
-        String message =
-            "BuildInfo translation callback function is expected to return dict of strings to"
-                + " strings, could not convert return value to Java type: "
-                + e;
-        throw new ActionExecutionException(
-            message,
-            /* cause= */ e,
-            /* action= */ this,
-            /* catastrophe= */ false,
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage(message)
-                    .setExecution(
-                        Execution.newBuilder().setCode(Execution.Code.NON_ACTION_EXECUTION_FAILURE))
-                    .build()));
-      }
-      ImmutableList<Substitution> substitutionList =
-          substitutionDict.entrySet().stream()
-              .map(s -> Substitution.of(s.getKey(), s.getValue()))
-              .collect(toImmutableList());
 
-      return TemplateExpansionAction.execute(
-          /* actionExecutionContext= */ ctx,
-          /* action= */ this,
-          TemplateExpansionContext.TemplateMetadata.builder()
-              .setTemplate(Template.forArtifact(template))
-              .setPrimaryOutput(getPrimaryOutput())
-              .setSubstitutions(substitutionList)
-              .setMakeExecutable(false)
-              .build());
+    @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+    public override fun execute(ctx: ActionExecutionContext): ActionResult? {
+        val values: MutableMap<String?, String?> = HashMap<String?, String?>()
+        // Parse values from text file.
+        try {
+            val valueFile: Artifact? = getPrimaryInput()
+            values.putAll(WorkspaceStatusAction.parseValues(ctx.getInputPath(valueFile)))
+        } catch (e: IOException) {
+            val message = "Failed to parse workspace status: " + e.message
+            throw ActionExecutionException(
+                message,  /* cause= */
+                e,  /* action= */
+                this,  /* catastrophe= */
+                false,
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(message)
+                        .setExecution(
+                            Execution.newBuilder().setCode(Execution.Code.SOURCE_INPUT_IO_EXCEPTION)
+                        )
+                        .build()
+                )
+            )
+        }
+        // Call Starlark callback function which takes workspace status file's
+        // content as an input and produces a dict which is written to the output.
+        var substitutionDictObject: Any? = null
+        Mutability.create("translate_build_info_file").use { mutability ->
+            try {
+                val thread: StarlarkThread? =
+                    StarlarkThread.create(
+                        mutability,
+                        semantics,
+                        if (isVolatile()) "transform_version_file callback" else "transform_info_file callback",  // Since the result of this thread is a String to String Dict, it should not result
+                        // in any reference-equals objects.
+                        SymbolGenerator.createTransient()
+                    )
+                substitutionDictObject =
+                    Starlark.positionalOnlyCall(
+                        thread,
+                        translationCallback,
+                        Dict.immutableCopyOf<String?, String?>(values)
+                    )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                val message: String? = String.format(
+                    "Error during translating %s status file : %s",
+                    if (isVolatile) "volatile" else "stable", e
+                )
+                throw ActionExecutionException(
+                    message,  /* cause= */
+                    e,  /* action= */
+                    this,  /* catastrophe= */
+                    false,
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(message)
+                            .setExecution(
+                                Execution.newBuilder().setCode(Execution.Code.NON_ACTION_EXECUTION_FAILURE)
+                            )
+                            .build()
+                    )
+                )
+            }
+            var substitutionDict: Dict<String?, String?>? = null
+            try {
+                substitutionDict =
+                    Dict.cast<String?, String?>(
+                        substitutionDictObject,
+                        String::class.java,
+                        String::class.java,
+                        "substitution_dict"
+                    )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                val message =
+                    ("BuildInfo translation callback function is expected to return dict of strings to"
+                            + " strings, could not convert return value to Java type: "
+                            + e)
+                throw ActionExecutionException(
+                    message,  /* cause= */
+                    e,  /* action= */
+                    this,  /* catastrophe= */
+                    false,
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(message)
+                            .setExecution(
+                                Execution.newBuilder().setCode(Execution.Code.NON_ACTION_EXECUTION_FAILURE)
+                            )
+                            .build()
+                    )
+                )
+            }
+            val substitutionList: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.analysis.actions.Substitution?> =
+                substitutionDict.entries.stream()
+                    .map<com.google.devtools.build.lib.analysis.actions.Substitution?> { s: MutableMap.MutableEntry<String?, String?>? ->
+                        com.google.devtools.build.lib.analysis.actions.Substitution.Companion.of(
+                            s!!.key,
+                            s.value
+                        )
+                    }
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<com.google.devtools.build.lib.analysis.actions.Substitution?>())
+            return TemplateExpansionAction.Companion.execute( /* actionExecutionContext= */
+                ctx,  /* action= */
+                this,
+                TemplateMetadata.Companion.builder()
+                    .setTemplate(com.google.devtools.build.lib.analysis.actions.Template.Companion.forArtifact(template))
+                    .setPrimaryOutput(getPrimaryOutput())
+                    .setSubstitutions(substitutionList)
+                    .setMakeExecutable(false)
+                    .build()
+            )
+        }
     }
-  }
 
-  @Override
-  protected void computeKey(
-      ActionKeyContext actionKeyContext,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      Fingerprint fp) {
-    fp.addString(GUID);
-    fp.addBoolean(isVolatile);
-    // Add Starlark function to the fingerprint.
-    fp.addBytes(BazelModuleContext.of(translationCallback.getModule()).bzlTransitiveDigest());
-  }
-
-  @Override
-  public String getMnemonic() {
-    return "TranslateBuildInfo";
-  }
-
-  @Override
-  protected String getRawProgressMessage() {
-    if (isVolatile) {
-      return "Translating volatile BuildInfo file";
-    } else {
-      return "Translating stable BuildInfo file";
+    protected override fun computeKey(
+        actionKeyContext: ActionKeyContext?,
+        inputMetadataProvider: InputMetadataProvider?,
+        fp: Fingerprint
+    ) {
+        fp.addString(GUID)
+        fp.addBoolean(isVolatile)
+        // Add Starlark function to the fingerprint.
+        fp.addBytes(BazelModuleContext.of(translationCallback.getModule()).bzlTransitiveDigest())
     }
-  }
 
-  @Override
-  public boolean executeUnconditionally() {
-    return isVolatile;
-  }
+    public override fun getMnemonic(): String {
+        return "TranslateBuildInfo"
+    }
 
-  @Override
-  public boolean isVolatile() {
-    return isVolatile;
-  }
+    protected override fun getRawProgressMessage(): String {
+        if (isVolatile) {
+            return "Translating volatile BuildInfo file"
+        } else {
+            return "Translating stable BuildInfo file"
+        }
+    }
+
+    public override fun executeUnconditionally(): Boolean {
+        return isVolatile
+    }
+
+    public override fun isVolatile(): Boolean {
+        return isVolatile
+    }
+
+    companion object {
+        private const val GUID = "7e4657a6-dd09-435e-9423-51d4846aad4a"
+    }
 }

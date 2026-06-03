@@ -11,455 +11,455 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.test
 
-package com.google.devtools.build.lib.analysis.test;
+import com.google.devtools.build.lib.analysis.constraints.ConstraintConstants.getOsFromConstraintsOrHost
 
-import static com.google.devtools.build.lib.analysis.constraints.ConstraintConstants.getOsFromConstraintsOrHost;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.RuleClass.DEFAULT_TEST_RUNNER_EXEC_GROUP_NAME;
+/** Helper class to create test actions.  */
+class TestActionBuilder(ruleContext: RuleContext) {
+    private val ruleContext: RuleContext
+    private val additionalTools: com.google.common.collect.ImmutableList.Builder<Artifact?>
+    private var runfilesSupport: RunfilesSupport? = null
+    private var executable: Artifact? = null
+    private var executionRequirements: ExecutionInfo? = null
+    private var instrumentedFiles: InstrumentedFilesInfo? = null
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.analysis.AnalysisEnvironment;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.PrerequisiteArtifacts;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.RunfilesSupport;
-import com.google.devtools.build.lib.analysis.ShToolchain;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.analysis.actions.LazyWriteNestedSetOfTupleAction;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions.CancelConcurrentTests;
-import com.google.devtools.build.lib.analysis.test.TestProvider.TestParams;
-import com.google.devtools.build.lib.analysis.test.TestProvider.TestParams.CoverageParams;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.packages.TestTimeout;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import java.util.TreeMap;
-import javax.annotation.Nullable;
-
-/** Helper class to create test actions. */
-public final class TestActionBuilder {
-
-  // Whether the test.xml is a declared output of this action rather than just an output of the test
-  // spawn. True for Bazel so that it behaves properly with Build without the Bytes (i.e.,
-  // --remote_download_regex), but false for Blaze because not all test rules generate a test.xml.
-  // DO NOT inline this constant, as it's rewritten by Copybara on import/export.
-  private static final boolean TEST_XML_IS_ACTION_OUTPUT = true;
-
-  private static final String CC_CODE_COVERAGE_SCRIPT = "CC_CODE_COVERAGE_SCRIPT";
-  private static final String LCOV_MERGER = "LCOV_MERGER";
-  // The coverage tool Bazel uses to generate a code coverage report for C++.
-  private static final String BAZEL_CC_COVERAGE_TOOL = "BAZEL_CC_COVERAGE_TOOL";
-  private static final String GCOV_TOOL = "GCOV";
-  // A file that contains a mapping between the reported source file path and the actual source
-  // file path, relative to the workspace directory, if the two values are different. If the
-  // reported source file is the same as the actual source path it will not be included in the file.
-  private static final String COVERAGE_REPORTED_TO_ACTUAL_SOURCES_FILE =
-      "COVERAGE_REPORTED_TO_ACTUAL_SOURCES_FILE";
-
-  private final RuleContext ruleContext;
-  private final ImmutableList.Builder<Artifact> additionalTools;
-  private RunfilesSupport runfilesSupport;
-  private Artifact executable;
-  private ExecutionInfo executionRequirements;
-  private InstrumentedFilesInfo instrumentedFiles;
-
-  public TestActionBuilder(RuleContext ruleContext) {
-    this.ruleContext = ruleContext;
-    this.additionalTools = new ImmutableList.Builder<>();
-  }
-
-  /**
-   * Creates test actions for a test that will never be executed.
-   *
-   * <p>This is only really useful for things like creating incompatible test actions.
-   */
-  public static TestParams createEmptyTestParams() {
-    return new TestProvider.TestParams(
-        0,
-        0,
-        false,
-        TestTimeout.ETERNAL,
-        "invalid",
-        ImmutableList.of(),
-        ImmutableList.of(),
-        /* coverageParams= */ null);
-  }
-
-  /**
-   * Creates the test actions and artifacts using the previously set parameters.
-   *
-   * @return ordered list of test status artifacts
-   */
-  public TestParams build() throws InterruptedException { // due to TestTargetExecutionSettings
-    Preconditions.checkNotNull(runfilesSupport);
-    return createTestAction();
-  }
-
-  /** Set the runfiles and executable to be run as a test. */
-  @CanIgnoreReturnValue
-  public TestActionBuilder setFilesToRunProvider(FilesToRunProvider provider) {
-    Preconditions.checkNotNull(provider.getRunfilesSupport());
-    Preconditions.checkNotNull(provider.getExecutable());
-    this.runfilesSupport = provider.getRunfilesSupport();
-    this.executable = provider.getExecutable();
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public TestActionBuilder addTools(List<Artifact> tools) {
-    this.additionalTools.addAll(tools);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public TestActionBuilder setInstrumentedFiles(@Nullable InstrumentedFilesInfo instrumentedFiles) {
-    this.instrumentedFiles = instrumentedFiles;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public TestActionBuilder setExecutionRequirements(@Nullable ExecutionInfo executionRequirements) {
-    this.executionRequirements = executionRequirements;
-    return this;
-  }
-
-  private ActionOwner getTestActionOwner(boolean useTargetPlatformForTests) {
-    if (useTargetPlatformForTests && this.executionRequirements == null) {
-      return ruleContext.getTestActionOwner();
-    }
-    var execGroup =
-        this.executionRequirements != null
-            ? this.executionRequirements.getExecGroup()
-            : DEFAULT_TEST_RUNNER_EXEC_GROUP_NAME;
-    var owner = ruleContext.getActionOwner(execGroup);
-    if (owner != null) {
-      return owner;
-    }
-    return useTargetPlatformForTests
-        ? ruleContext.getTestActionOwner()
-        : ruleContext.getActionOwner();
-  }
-
-  public static int getShardCount(RuleContext ruleContext) {
-    int explicitShardCount =
-        ruleContext.attributes().get("shard_count", Type.INTEGER).toIntUnchecked();
-    TestConfiguration testConfiguration =
-        ruleContext.getConfiguration().getFragment(TestConfiguration.class);
-    if (testConfiguration == null) {
-      return explicitShardCount;
+    init {
+        this.ruleContext = ruleContext
+        this.additionalTools = com.google.common.collect.ImmutableList.Builder<Artifact?>()
     }
 
-    TestShardingStrategy strategy = testConfiguration.testShardingStrategy();
-    int result = strategy.getNumberOfShards(explicitShardCount);
-    Preconditions.checkState(result >= 0, "%s returned negative shard count %s", strategy, result);
-    return result;
-  }
-
-  public static int getRunsPerTest(RuleContext ruleContext) {
-    TestConfiguration testConfiguration =
-        ruleContext.getConfiguration().getFragment(TestConfiguration.class);
-    if (testConfiguration == null) {
-      return 1;
+    /**
+     * Creates the test actions and artifacts using the previously set parameters.
+     * 
+     * @return ordered list of test status artifacts
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun build(): TestParams { // due to TestTargetExecutionSettings
+        com.google.common.base.Preconditions.checkNotNull<RunfilesSupport?>(runfilesSupport)
+        return createTestAction()
     }
 
-    return testConfiguration.getRunsPerTestForLabel(ruleContext.getLabel());
-  }
-
-  /**
-   * Creates a test action and artifacts for the given rule. The test action will use the specified
-   * executable and runfiles.
-   *
-   * @return ordered list of test artifacts, one per action. These are used to drive execution in
-   *     Skyframe, and by AggregatingTestListener and TestResultAnalyzer to keep track of completed
-   *     and pending test runs.
-   */
-  private TestParams createTestAction() {
-    PathFragment targetName = PathFragment.create(ruleContext.getLabel().getName());
-    BuildConfigurationValue config = ruleContext.getConfiguration();
-    TestConfiguration testConfiguration = config.getFragment(TestConfiguration.class);
-    AnalysisEnvironment env = ruleContext.getAnalysisEnvironment();
-    ArtifactRoot root = ruleContext.getTestLogsDirectory();
-    ActionOwner actionOwner =
-        getTestActionOwner(
-            config.getOptions().get(CoreOptions.class).getUseTargetPlatformForTests());
-    boolean isExecutedOnWindows =
-        getOsFromConstraintsOrHost(actionOwner.getExecutionPlatform()) == OS.WINDOWS;
-
-    NestedSetBuilder<Artifact> inputsBuilder = NestedSetBuilder.stableOrder();
-    inputsBuilder.addTransitive(
-        NestedSetBuilder.create(Order.STABLE_ORDER, runfilesSupport.getRunfilesTreeArtifact()));
-
-    if (!isExecutedOnWindows) {
-      NestedSet<Artifact> testRuntime =
-          PrerequisiteArtifacts.nestedSet(
-              ruleContext.getRulePrerequisitesCollection(), "$test_runtime");
-      inputsBuilder.addTransitive(testRuntime);
+    /** Set the runfiles and executable to be run as a test.  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setFilesToRunProvider(provider: FilesToRunProvider): TestActionBuilder {
+        com.google.common.base.Preconditions.checkNotNull<RunfilesSupport?>(provider.getRunfilesSupport())
+        com.google.common.base.Preconditions.checkNotNull<Any?>(provider.getExecutable())
+        this.runfilesSupport = provider.getRunfilesSupport()
+        this.executable = provider.getExecutable()
+        return this
     }
 
-    TestTargetProperties testProperties =
-        new TestTargetProperties(
-            ruleContext, executionRequirements, actionOwner.getExecProperties());
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addTools(tools: MutableList<Artifact?>): TestActionBuilder {
+        this.additionalTools.addAll(tools)
+        return this
+    }
 
-    // If the test rule does not provide InstrumentedFilesProvider, there's not much that we can do.
-    final boolean collectCodeCoverage = config.isCodeCoverageEnabled() && instrumentedFiles != null;
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setInstrumentedFiles(instrumentedFiles: InstrumentedFilesInfo?): TestActionBuilder {
+        this.instrumentedFiles = instrumentedFiles
+        return this
+    }
 
-    Artifact testActionExecutable =
-        isExecutedOnWindows
-            ? ruleContext.getPrerequisiteArtifact("$test_wrapper")
-            : ruleContext.getPrerequisiteArtifact("$test_setup_script");
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setExecutionRequirements(executionRequirements: ExecutionInfo?): TestActionBuilder {
+        this.executionRequirements = executionRequirements
+        return this
+    }
 
-    inputsBuilder.add(testActionExecutable);
-    Artifact testXmlGeneratorExecutable =
-        isExecutedOnWindows
-            ? ruleContext.getPrerequisiteArtifact("$xml_writer")
-            : ruleContext.getPrerequisiteArtifact("$xml_generator_script");
-    inputsBuilder.add(testXmlGeneratorExecutable);
-
-    FilesToRunProvider collectCoverageScript = null;
-    TreeMap<String, String> coverageTestEnv = new TreeMap<>();
-
-    int runsPerTest = getRunsPerTest(ruleContext);
-    int shardCount = getShardCount(ruleContext);
-
-    NestedSet<Artifact> lcovMergerFilesToRun = NestedSetBuilder.emptySet(Order.STABLE_ORDER);
-
-    TestTargetExecutionSettings executionSettings;
-    if (collectCodeCoverage) {
-      collectCoverageScript =
-          ruleContext
-              .getPrerequisite("$collect_coverage_script")
-              .getProvider(FilesToRunProvider.class);
-      inputsBuilder.addTransitive(collectCoverageScript.getFilesToRun());
-      inputsBuilder.addTransitive(instrumentedFiles.getCoverageSupportFiles());
-      // Add instrumented file manifest artifact to the list of inputs. This file will contain
-      // exec paths of all source files that should be included into the code coverage output.
-      NestedSet<Artifact> metadataFiles = instrumentedFiles.getInstrumentationMetadataFiles();
-      inputsBuilder.addTransitive(metadataFiles);
-      inputsBuilder.addTransitive(
-          PrerequisiteArtifacts.nestedSet(
-              ruleContext.getRulePrerequisitesCollection(), ":coverage_support"));
-      inputsBuilder.addTransitive(
-          ruleContext
-              .getPrerequisite(":coverage_support", RunfilesProvider.class)
-              .getDataRunfiles()
-              .getAllArtifacts());
-
-      if (ruleContext.isAttrDefined("$collect_cc_coverage", LABEL)) {
-        Artifact collectCcCoverage = ruleContext.getPrerequisiteArtifact("$collect_cc_coverage");
-        inputsBuilder.add(collectCcCoverage);
-        coverageTestEnv.put(CC_CODE_COVERAGE_SCRIPT, collectCcCoverage.getExecPathString());
-      }
-
-      if (!instrumentedFiles.getReportedToActualSources().isEmpty()) {
-        Artifact reportedToActualSourcesArtifact =
-            ruleContext.getUniqueDirectoryArtifact(
-                "_coverage_helpers", "reported_to_actual_sources.txt");
-        ruleContext.registerAction(
-            new LazyWriteNestedSetOfTupleAction(
-                ruleContext.getActionOwner(),
-                reportedToActualSourcesArtifact,
-                instrumentedFiles.getReportedToActualSources(),
-                ":"));
-        inputsBuilder.add(reportedToActualSourcesArtifact);
-        coverageTestEnv.put(
-            COVERAGE_REPORTED_TO_ACTUAL_SOURCES_FILE,
-            reportedToActualSourcesArtifact.getExecPathString());
-      }
-
-      // lcov is the default CC coverage tool unless otherwise specified on the command line.
-      coverageTestEnv.put(BAZEL_CC_COVERAGE_TOOL, GCOV_TOOL);
-
-      // We don't add this attribute to non-supported test target
-      String lcovMergerAttr = null;
-      if (ruleContext.isAttrDefined(":lcov_merger", LABEL)) {
-        lcovMergerAttr = ":lcov_merger";
-      } else if (ruleContext.isAttrDefined("$lcov_merger", LABEL)) {
-        lcovMergerAttr = "$lcov_merger";
-      }
-      if (lcovMergerAttr != null) {
-        TransitiveInfoCollection lcovMerger = ruleContext.getPrerequisite(lcovMergerAttr);
-        FilesToRunProvider lcovFilesToRun = lcovMerger.getProvider(FilesToRunProvider.class);
-        // Both executable targets and single artifacts have a FilesToRunProvider.
-        if (lcovFilesToRun == null) {
-          ruleContext.attributeError(
-              lcovMergerAttr,
-              "the LCOV merger should be either an executable or a single artifact");
+    private fun getTestActionOwner(useTargetPlatformForTests: Boolean): ActionOwner {
+        if (useTargetPlatformForTests && this.executionRequirements == null) {
+            return ruleContext.getTestActionOwner()
         }
-        coverageTestEnv.put(LCOV_MERGER, lcovFilesToRun.getExecutable().getExecPathString());
-        inputsBuilder.addTransitive(lcovFilesToRun.getFilesToRun());
-        lcovMergerFilesToRun = lcovFilesToRun.getFilesToRun();
-      }
-
-      Artifact instrumentedFileManifest =
-          InstrumentedFileManifestAction.getInstrumentedFileManifest(
-              ruleContext, instrumentedFiles.getInstrumentedFiles(), metadataFiles);
-      executionSettings =
-          new TestTargetExecutionSettings(
-              ruleContext,
-              runfilesSupport,
-              executable,
-              instrumentedFileManifest,
-              shardCount,
-              runsPerTest,
-              actionOwner.getExecutionPlatform());
-      inputsBuilder.add(instrumentedFileManifest);
-      // TODO(ulfjack): Is this even ever set? If yes, does this cost us a lot of memory?
-      coverageTestEnv.putAll(instrumentedFiles.getCoverageEnvironment());
-    } else {
-      executionSettings =
-          new TestTargetExecutionSettings(
-              ruleContext,
-              runfilesSupport,
-              executable,
-              null,
-              shardCount,
-              runsPerTest,
-              actionOwner.getExecutionPlatform());
+        val execGroup: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            if (this.executionRequirements != null)
+                this.executionRequirements.getExecGroup()
+            else
+                DEFAULT_TEST_RUNNER_EXEC_GROUP_NAME
+        val owner: ActionOwner? = ruleContext.getActionOwner(execGroup)
+        if (owner != null) {
+            return owner
+        }
+        return if (useTargetPlatformForTests)
+            ruleContext.getTestActionOwner()
+        else
+            ruleContext.getActionOwner()
     }
 
-    if (config.getRunUnder() != null) {
-      Artifact runUnderExecutable = executionSettings.getRunUnderExecutable();
-      if (runUnderExecutable != null) {
-        inputsBuilder.add(runUnderExecutable);
-      }
-    }
+    /**
+     * Creates a test action and artifacts for the given rule. The test action will use the specified
+     * executable and runfiles.
+     * 
+     * @return ordered list of test artifacts, one per action. These are used to drive execution in
+     * Skyframe, and by AggregatingTestListener and TestResultAnalyzer to keep track of completed
+     * and pending test runs.
+     */
+    private fun createTestAction(): TestParams {
+        val targetName: PathFragment = PathFragment.create(ruleContext.getLabel().getName())
+        val config: BuildConfigurationValue? = ruleContext.getConfiguration()
+        val testConfiguration: TestConfiguration = config.getFragment<T>(TestConfiguration::class.java)
+        val env: AnalysisEnvironment = ruleContext.getAnalysisEnvironment()
+        val root: ArtifactRoot? = ruleContext.getTestLogsDirectory()
+        val actionOwner: ActionOwner =
+            getTestActionOwner(
+                config.getOptions().get<T?>(CoreOptions::class.java).getUseTargetPlatformForTests()
+            )
+        val isExecutedOnWindows =
+            getOsFromConstraintsOrHost(actionOwner.getExecutionPlatform()) === OS.WINDOWS
 
-    NestedSet<Artifact> inputs = inputsBuilder.build();
-    int shardRuns = (shardCount > 0 ? shardCount : 1);
-    List<Artifact.DerivedArtifact> results =
-        Lists.newArrayListWithCapacity(runsPerTest * shardRuns);
-    ImmutableList.Builder<Artifact> coverageArtifacts = ImmutableList.builder();
-    ImmutableList.Builder<ActionInput> testOutputs = ImmutableList.builder();
+        val inputsBuilder: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+        inputsBuilder.addTransitive(
+            NestedSetBuilder.create(Order.STABLE_ORDER, runfilesSupport.getRunfilesTreeArtifact())
+        )
 
-    // Use 1-based indices for user friendliness.
-    for (int shard = 0; shard < shardRuns; shard++) {
-      String shardDir =
-          shardRuns > 1 ? String.format("shard_%d_of_%d", shard + 1, shardCount) : null;
-      for (int run = 0; run < runsPerTest; run++) {
-        PathFragment dir;
-        if (runsPerTest > 1) {
-          String runDir = String.format("run_%d_of_%d", run + 1, runsPerTest);
-          if (shardDir == null) {
-            dir = targetName.getRelative(runDir);
-          } else {
-            dir = targetName.getRelative(shardDir + "_" + runDir);
-          }
-        } else if (shardDir == null) {
-          dir = targetName;
-        } else {
-          dir = targetName.getRelative(shardDir);
+        if (!isExecutedOnWindows) {
+            val testRuntime: NestedSet<Artifact?>? =
+                PrerequisiteArtifacts.Companion.nestedSet(
+                    ruleContext.getRulePrerequisitesCollection(), "\$test_runtime"
+                )
+            inputsBuilder.addTransitive(testRuntime)
         }
 
-        Artifact.DerivedArtifact testLog =
-            ruleContext.getPackageRelativeArtifact(dir.getRelative("test.log"), root);
-        ActionInput testXml =
-            TEST_XML_IS_ACTION_OUTPUT
-                ? ruleContext.getPackageRelativeArtifact(dir.getRelative("test.xml"), root)
-                : ActionInputHelper.fromPath(
-                    testLog.getExecPath().getParentDirectory().getRelative("test.xml"));
-        Artifact.DerivedArtifact cacheStatus =
-            ruleContext.getPackageRelativeArtifact(dir.getRelative("test.cache_status"), root);
+        val testProperties: TestTargetProperties =
+            TestTargetProperties(
+                ruleContext, executionRequirements, actionOwner.getExecProperties()
+            )
 
-        Artifact.DerivedArtifact coverageArtifact = null;
-        Artifact coverageDirectory = null;
+        // If the test rule does not provide InstrumentedFilesProvider, there's not much that we can do.
+        val collectCodeCoverage = config.isCodeCoverageEnabled() && instrumentedFiles != null
+
+        val testActionExecutable: Artifact =
+            if (isExecutedOnWindows)
+                ruleContext.getPrerequisiteArtifact("\$test_wrapper")
+            else
+                ruleContext.getPrerequisiteArtifact("\$test_setup_script")
+
+        inputsBuilder.add(testActionExecutable)
+        val testXmlGeneratorExecutable: Artifact =
+            if (isExecutedOnWindows)
+                ruleContext.getPrerequisiteArtifact("\$xml_writer")
+            else
+                ruleContext.getPrerequisiteArtifact("\$xml_generator_script")
+        inputsBuilder.add(testXmlGeneratorExecutable)
+
+        var collectCoverageScript: FilesToRunProvider? = null
+        val coverageTestEnv: TreeMap<String?, String?> = TreeMap<String?, String?>()
+
+        val runsPerTest = getRunsPerTest(ruleContext)
+        val shardCount = getShardCount(ruleContext)
+
+        var lcovMergerFilesToRun: NestedSet<Artifact?>? = NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+
+        val executionSettings: TestTargetExecutionSettings?
         if (collectCodeCoverage) {
-          coverageArtifact =
-              ruleContext.getPackageRelativeArtifact(dir.getRelative("coverage.dat"), root);
-          coverageArtifacts.add(coverageArtifact);
-          if (testConfiguration.fetchAllCoverageOutputs()) {
-            coverageDirectory =
-                ruleContext.getPackageRelativeTreeArtifact(dir.getRelative("_coverage"), root);
-          }
+            collectCoverageScript =
+                ruleContext
+                    .getPrerequisite("\$collect_coverage_script")
+                    .getProvider(FilesToRunProvider::class.java)
+            inputsBuilder.addTransitive(collectCoverageScript.getFilesToRun())
+            inputsBuilder.addTransitive(instrumentedFiles.getCoverageSupportFiles())
+            // Add instrumented file manifest artifact to the list of inputs. This file will contain
+            // exec paths of all source files that should be included into the code coverage output.
+            val metadataFiles: NestedSet<Artifact?>? = instrumentedFiles.getInstrumentationMetadataFiles()
+            inputsBuilder.addTransitive(metadataFiles)
+            inputsBuilder.addTransitive(
+                PrerequisiteArtifacts.Companion.nestedSet(
+                    ruleContext.getRulePrerequisitesCollection(), ":coverage_support"
+                )
+            )
+            inputsBuilder.addTransitive(
+                ruleContext
+                    .getPrerequisite<RunfilesProvider?>(":coverage_support", RunfilesProvider::class.java)
+                    .getDataRunfiles()
+                    .getAllArtifacts()
+            )
+
+            if (ruleContext.isAttrDefined("\$collect_cc_coverage", LABEL)) {
+                val collectCcCoverage: Artifact = ruleContext.getPrerequisiteArtifact("\$collect_cc_coverage")
+                inputsBuilder.add(collectCcCoverage)
+                coverageTestEnv.put(CC_CODE_COVERAGE_SCRIPT, collectCcCoverage.getExecPathString())
+            }
+
+            if (!instrumentedFiles.getReportedToActualSources().isEmpty()) {
+                val reportedToActualSourcesArtifact: Artifact =
+                    ruleContext.getUniqueDirectoryArtifact(
+                        "_coverage_helpers", "reported_to_actual_sources.txt"
+                    )
+                ruleContext.registerAction(
+                    LazyWriteNestedSetOfTupleAction(
+                        ruleContext.getActionOwner(),
+                        reportedToActualSourcesArtifact,
+                        instrumentedFiles.getReportedToActualSources(),
+                        ":"
+                    )
+                )
+                inputsBuilder.add(reportedToActualSourcesArtifact)
+                coverageTestEnv.put(
+                    COVERAGE_REPORTED_TO_ACTUAL_SOURCES_FILE,
+                    reportedToActualSourcesArtifact.getExecPathString()
+                )
+            }
+
+            // lcov is the default CC coverage tool unless otherwise specified on the command line.
+            coverageTestEnv.put(BAZEL_CC_COVERAGE_TOOL, GCOV_TOOL)
+
+            // We don't add this attribute to non-supported test target
+            var lcovMergerAttr: String? = null
+            if (ruleContext.isAttrDefined(":lcov_merger", LABEL)) {
+                lcovMergerAttr = ":lcov_merger"
+            } else if (ruleContext.isAttrDefined("\$lcov_merger", LABEL)) {
+                lcovMergerAttr = "\$lcov_merger"
+            }
+            if (lcovMergerAttr != null) {
+                val lcovMerger: TransitiveInfoCollection? = ruleContext.getPrerequisite(lcovMergerAttr)
+                val lcovFilesToRun: FilesToRunProvider? = lcovMerger.getProvider(FilesToRunProvider::class.java)
+                // Both executable targets and single artifacts have a FilesToRunProvider.
+                if (lcovFilesToRun == null) {
+                    ruleContext.attributeError(
+                        lcovMergerAttr,
+                        "the LCOV merger should be either an executable or a single artifact"
+                    )
+                }
+                coverageTestEnv.put(LCOV_MERGER, lcovFilesToRun.getExecutable().getExecPathString())
+                inputsBuilder.addTransitive(lcovFilesToRun.getFilesToRun())
+                lcovMergerFilesToRun = lcovFilesToRun.getFilesToRun()
+            }
+
+            val instrumentedFileManifest: Artifact? =
+                InstrumentedFileManifestAction.Companion.getInstrumentedFileManifest(
+                    ruleContext, instrumentedFiles.getInstrumentedFiles(), metadataFiles
+                )
+            executionSettings =
+                TestTargetExecutionSettings(
+                    ruleContext,
+                    runfilesSupport,
+                    executable,
+                    instrumentedFileManifest,
+                    shardCount,
+                    runsPerTest,
+                    actionOwner.getExecutionPlatform()
+                )
+            inputsBuilder.add(instrumentedFileManifest)
+            // TODO(ulfjack): Is this even ever set? If yes, does this cost us a lot of memory?
+            coverageTestEnv.putAll(instrumentedFiles.getCoverageEnvironment())
+        } else {
+            executionSettings =
+                TestTargetExecutionSettings(
+                    ruleContext,
+                    runfilesSupport,
+                    executable,
+                    null,
+                    shardCount,
+                    runsPerTest,
+                    actionOwner.getExecutionPlatform()
+                )
         }
 
-        Artifact undeclaredOutputsDir =
-            ruleContext.getPackageRelativeTreeArtifact(dir.getRelative("test.outputs"), root);
+        if (config.getRunUnder() != null) {
+            val runUnderExecutable: Artifact? = executionSettings.getRunUnderExecutable()
+            if (runUnderExecutable != null) {
+                inputsBuilder.add(runUnderExecutable)
+            }
+        }
 
-        CancelConcurrentTests cancelConcurrentTests =
-            testConfiguration.runsPerTestDetectsFlakes()
-                ? testConfiguration.cancelConcurrentTests()
-                : CancelConcurrentTests.NEVER;
+        val inputs: NestedSet<Artifact?>? = inputsBuilder.build()
+        val shardRuns = (if (shardCount > 0) shardCount else 1)
+        val results: MutableList<Artifact.DerivedArtifact?> =
+            com.google.common.collect.Lists.newArrayListWithCapacity<Artifact.DerivedArtifact?>(runsPerTest * shardRuns)
+        val coverageArtifacts: com.google.common.collect.ImmutableList.Builder<Artifact?> =
+            com.google.common.collect.ImmutableList.builder<Artifact?>()
+        val testOutputs: com.google.common.collect.ImmutableList.Builder<ActionInput?> =
+            com.google.common.collect.ImmutableList.builder<ActionInput?>()
 
-        boolean splitCoveragePostProcessing = testConfiguration.splitCoveragePostProcessing();
-        TestRunnerAction testRunnerAction =
-            new TestRunnerAction(
-                actionOwner,
-                inputs,
-                runfilesSupport.getRunfilesTreeArtifact(),
-                testActionExecutable,
-                testXmlGeneratorExecutable,
-                collectCoverageScript,
-                testLog,
-                testXml,
-                cacheStatus,
-                coverageArtifact,
-                coverageDirectory,
-                undeclaredOutputsDir,
-                testProperties,
-                ImmutableMap.copyOf(coverageTestEnv),
-                runfilesSupport.getActionEnvironment(),
-                executionSettings,
-                shard,
-                run,
-                config,
-                ruleContext.getWorkspaceName(),
-                (!isExecutedOnWindows || executionSettings.needsShell())
-                    ? ShToolchain.getPathForPlatform(
-                        ruleContext.getConfiguration(), actionOwner.getExecutionPlatform())
-                    : null,
-                cancelConcurrentTests,
-                splitCoveragePostProcessing,
-                lcovMergerFilesToRun);
+        // Use 1-based indices for user friendliness.
+        for (shard in 0..<shardRuns) {
+            val shardDir: String? =
+                if (shardRuns > 1) java.lang.String.format("shard_%d_of_%d", shard + 1, shardCount) else null
+            for (run in 0..<runsPerTest) {
+                val dir: PathFragment
+                if (runsPerTest > 1) {
+                    val runDir: String? = java.lang.String.format("run_%d_of_%d", run + 1, runsPerTest)
+                    if (shardDir == null) {
+                        dir = targetName.getRelative(runDir)
+                    } else {
+                        dir = targetName.getRelative(shardDir + "_" + runDir)
+                    }
+                } else if (shardDir == null) {
+                    dir = targetName
+                } else {
+                    dir = targetName.getRelative(shardDir)
+                }
 
-        testOutputs.addAll(testRunnerAction.getSpawnOutputs());
-        testOutputs.addAll(testRunnerAction.getOutputs());
+                val testLog: Artifact.DerivedArtifact =
+                    ruleContext.getPackageRelativeArtifact(dir.getRelative("test.log"), root)
+                val testXml: ActionInput? =
+                    if (TEST_XML_IS_ACTION_OUTPUT)
+                        ruleContext.getPackageRelativeArtifact(dir.getRelative("test.xml"), root)
+                    else
+                        ActionInputHelper.fromPath(
+                            testLog.getExecPath().getParentDirectory().getRelative("test.xml")
+                        )
+                val cacheStatus: Artifact.DerivedArtifact? =
+                    ruleContext.getPackageRelativeArtifact(dir.getRelative("test.cache_status"), root)
 
-        env.registerAction(testRunnerAction);
+                var coverageArtifact: Artifact.DerivedArtifact? = null
+                var coverageDirectory: Artifact? = null
+                if (collectCodeCoverage) {
+                    coverageArtifact =
+                        ruleContext.getPackageRelativeArtifact(dir.getRelative("coverage.dat"), root)
+                    coverageArtifacts.add(coverageArtifact)
+                    if (testConfiguration.fetchAllCoverageOutputs()) {
+                        coverageDirectory =
+                            ruleContext.getPackageRelativeTreeArtifact(dir.getRelative("_coverage"), root)
+                    }
+                }
 
-        results.add(cacheStatus);
-      }
+                val undeclaredOutputsDir: Artifact? =
+                    ruleContext.getPackageRelativeTreeArtifact(dir.getRelative("test.outputs"), root)
+
+                val cancelConcurrentTests: CancelConcurrentTests? =
+                    if (testConfiguration.runsPerTestDetectsFlakes())
+                        testConfiguration.cancelConcurrentTests()
+                    else
+                        CancelConcurrentTests.NEVER
+
+                val splitCoveragePostProcessing: Boolean = testConfiguration.splitCoveragePostProcessing()
+                val testRunnerAction: TestRunnerAction =
+                    TestRunnerAction(
+                        actionOwner,
+                        inputs,
+                        runfilesSupport.getRunfilesTreeArtifact(),
+                        testActionExecutable,
+                        testXmlGeneratorExecutable,
+                        collectCoverageScript,
+                        testLog,
+                        testXml,
+                        cacheStatus,
+                        coverageArtifact,
+                        coverageDirectory,
+                        undeclaredOutputsDir,
+                        testProperties,
+                        com.google.common.collect.ImmutableMap.copyOf<String?, String?>(coverageTestEnv),
+                        runfilesSupport.getActionEnvironment(),
+                        executionSettings,
+                        shard,
+                        run,
+                        config,
+                        ruleContext.getWorkspaceName(),
+                        if (!isExecutedOnWindows || executionSettings.needsShell())
+                            ShToolchain.getPathForPlatform(
+                                ruleContext.getConfiguration(), actionOwner.getExecutionPlatform()
+                            )
+                        else
+                            null,
+                        cancelConcurrentTests,
+                        splitCoveragePostProcessing,
+                        lcovMergerFilesToRun
+                    )
+
+                testOutputs.addAll(testRunnerAction.getSpawnOutputs())
+                testOutputs.addAll(testRunnerAction.getOutputs())
+
+                env.registerAction(testRunnerAction)
+
+                results.add(cacheStatus)
+            }
+        }
+        var coverageParams: CoverageParams? = null
+        if (config.isCodeCoverageEnabled()) {
+            // TODO(bazel-team): Passing the reportGenerator to every TestParams is a bit strange.
+            // It's not enough to add this if the rule has coverage enabled because the command line may
+            // contain rules with baseline coverage but no test rules that have coverage enabled, and in
+            // that case, we still need the report generator.
+            val reportGeneratorTarget: TransitiveInfoCollection? =
+                ruleContext.getPrerequisite(":coverage_report_generator")
+            val reportGenerator: FilesToRunProvider =
+                reportGeneratorTarget.getProvider(FilesToRunProvider::class.java)
+            if (reportGenerator.getExecutable() == null) {
+                ruleContext.ruleError("--coverage_report_generator does not refer to an executable target")
+            }
+            coverageParams = CoverageParams(coverageArtifacts.build(), reportGenerator, actionOwner)
+        }
+
+        return TestParams(
+            runsPerTest,
+            shardCount,
+            testConfiguration.runsPerTestDetectsFlakes(),
+            TestTimeout.getTestTimeout(ruleContext.getRule()),
+            ruleContext.getRule().getRuleClass(),
+            com.google.common.collect.ImmutableList.copyOf<Artifact.DerivedArtifact?>(results),
+            testOutputs.build(),
+            coverageParams
+        )
     }
-    CoverageParams coverageParams = null;
-    if (config.isCodeCoverageEnabled()) {
-      // TODO(bazel-team): Passing the reportGenerator to every TestParams is a bit strange.
-      // It's not enough to add this if the rule has coverage enabled because the command line may
-      // contain rules with baseline coverage but no test rules that have coverage enabled, and in
-      // that case, we still need the report generator.
-      TransitiveInfoCollection reportGeneratorTarget =
-          ruleContext.getPrerequisite(":coverage_report_generator");
-      FilesToRunProvider reportGenerator =
-          reportGeneratorTarget.getProvider(FilesToRunProvider.class);
-      if (reportGenerator.getExecutable() == null) {
-        ruleContext.ruleError("--coverage_report_generator does not refer to an executable target");
-      }
-      coverageParams = new CoverageParams(coverageArtifacts.build(), reportGenerator, actionOwner);
-    }
 
-    return new TestParams(
-        runsPerTest,
-        shardCount,
-        testConfiguration.runsPerTestDetectsFlakes(),
-        TestTimeout.getTestTimeout(ruleContext.getRule()),
-        ruleContext.getRule().getRuleClass(),
-        ImmutableList.copyOf(results),
-        testOutputs.build(),
-        coverageParams);
-  }
+    companion object {
+        // Whether the test.xml is a declared output of this action rather than just an output of the test
+        // spawn. True for Bazel so that it behaves properly with Build without the Bytes (i.e.,
+        // --remote_download_regex), but false for Blaze because not all test rules generate a test.xml.
+        // DO NOT inline this constant, as it's rewritten by Copybara on import/export.
+        private const val TEST_XML_IS_ACTION_OUTPUT = true
+
+        private const val CC_CODE_COVERAGE_SCRIPT = "CC_CODE_COVERAGE_SCRIPT"
+        private const val LCOV_MERGER = "LCOV_MERGER"
+
+        // The coverage tool Bazel uses to generate a code coverage report for C++.
+        private const val BAZEL_CC_COVERAGE_TOOL = "BAZEL_CC_COVERAGE_TOOL"
+        private const val GCOV_TOOL = "GCOV"
+
+        // A file that contains a mapping between the reported source file path and the actual source
+        // file path, relative to the workspace directory, if the two values are different. If the
+        // reported source file is the same as the actual source path it will not be included in the file.
+        private const val COVERAGE_REPORTED_TO_ACTUAL_SOURCES_FILE = "COVERAGE_REPORTED_TO_ACTUAL_SOURCES_FILE"
+
+        /**
+         * Creates test actions for a test that will never be executed.
+         * 
+         * 
+         * This is only really useful for things like creating incompatible test actions.
+         */
+        fun createEmptyTestParams(): TestParams {
+            return TestParams(
+                0,
+                0,
+                false,
+                TestTimeout.ETERNAL,
+                "invalid",
+                com.google.common.collect.ImmutableList.of<Artifact.DerivedArtifact?>(),
+                com.google.common.collect.ImmutableList.of<ActionInput?>(),  /* coverageParams= */
+                null
+            )
+        }
+
+        fun getShardCount(ruleContext: RuleContext): Int {
+            val explicitShardCount: Int =
+                ruleContext.attributes().get("shard_count", Type.INTEGER).toIntUnchecked()
+            val testConfiguration: TestConfiguration? =
+                ruleContext.getConfiguration().getFragment<T?>(TestConfiguration::class.java)
+            if (testConfiguration == null) {
+                return explicitShardCount
+            }
+
+            val strategy: TestShardingStrategy = testConfiguration.testShardingStrategy()
+            val result: Int = strategy.getNumberOfShards(explicitShardCount)
+            com.google.common.base.Preconditions.checkState(
+                result >= 0,
+                "%s returned negative shard count %s",
+                strategy,
+                result
+            )
+            return result
+        }
+
+        fun getRunsPerTest(ruleContext: RuleContext): Int {
+            val testConfiguration: TestConfiguration? =
+                ruleContext.getConfiguration().getFragment<T?>(TestConfiguration::class.java)
+            if (testConfiguration == null) {
+                return 1
+            }
+
+            return testConfiguration.getRunsPerTestForLabel(ruleContext.getLabel())
+        }
+    }
 }

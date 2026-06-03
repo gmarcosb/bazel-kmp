@@ -11,23 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
-
-import com.google.devtools.build.lib.actions.FileArtifactValue.ProxyFileArtifactValue;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Artifact
+import com.google.devtools.build.lib.actions.FileArtifactValue.ProxyFileArtifactValue
+import java.io.IOException
 
 /**
- * Factory for {@link ProxyFileArtifactValue}.
- *
- * <p>Used by {@link ActionCacheChecker} to re-create proxy metadata for cached actions.
+ * Factory for [ProxyFileArtifactValue].
+ * 
+ * 
+ * Used by [ActionCacheChecker] to re-create proxy metadata for cached actions.
  */
-public interface ProxyMetadataFactory {
+interface ProxyMetadataFactory {
+    @Throws(IOException::class)
+    fun createProxyMetadata(artifact: Artifact?): ProxyFileArtifactValue?
 
-  @Nullable
-  ProxyFileArtifactValue createProxyMetadata(Artifact artifact) throws IOException;
-
-  /** Factory suitable for builds that never expect to use {@link ProxyFileArtifactValue}. */
-  ProxyMetadataFactory NO_PROXIES = artifact -> null;
+    companion object {
+        /** Factory suitable for builds that never expect to use [ProxyFileArtifactValue].  */
+        val NO_PROXIES: ProxyMetadataFactory = ProxyMetadataFactory { artifact: Artifact? -> null }
+    }
 }

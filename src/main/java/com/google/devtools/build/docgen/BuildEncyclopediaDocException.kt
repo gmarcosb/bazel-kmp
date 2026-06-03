@@ -11,40 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
-/** An exception in Build Encyclopedia generation. */
-public class BuildEncyclopediaDocException extends Exception {
+/** An exception in Build Encyclopedia generation.  */
+class BuildEncyclopediaDocException : java.lang.Exception {
+    /** Returns the location (filename or label, possibly with a line number) of the error.  */
+    val location: String?
 
-  private final String location;
-  private final String errorMsg;
+    /** Returns the error message text.  */
+    val errorMsg: String?
 
-  BuildEncyclopediaDocException(String location, String errorMsg) {
-    this.location = location;
-    this.errorMsg = errorMsg;
-  }
+    internal constructor(location: String?, errorMsg: String?) {
+        this.location = location
+        this.errorMsg = errorMsg
+    }
 
-  BuildEncyclopediaDocException(String file, int lineNumber, String errorMsg) {
-    this.location = formatLocation(file, lineNumber);
-    this.errorMsg = errorMsg;
-  }
+    internal constructor(file: String?, lineNumber: Int, errorMsg: String?) {
+        this.location = formatLocation(file, lineNumber)
+        this.errorMsg = errorMsg
+    }
 
-  static String formatLocation(String file, int lineNumber) {
-    return String.format("%s:%d", file, lineNumber);
-  }
+    val message: String?
+        get() = String.format("Error in %s: %s", location, errorMsg)
 
-  /** Returns the location (filename or label, possibly with a line number) of the error. */
-  public String getLocation() {
-    return location;
-  }
-
-  /** Returns the error message text. */
-  public String getErrorMsg() {
-    return errorMsg;
-  }
-
-  @Override
-  public String getMessage() {
-    return String.format("Error in %s: %s", location, errorMsg);
-  }
+    companion object {
+        fun formatLocation(file: String?, lineNumber: Int): String? {
+            return String.format("%s:%d", file, lineNumber)
+        }
+    }
 }

@@ -11,100 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding
 
-package com.google.testing.junit.runner.sharding;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+import java.util.Collections
+import java.util.HashMap
 
 /**
  * Implements the round-robin sharding strategy.
- *
- * <p>This is done by equally dividing up the tests across all the shards
+ * 
+ * 
+ * This is done by equally dividing up the tests across all the shards
  * Each test is numbered and the test number is modded with the number of
  * shards and checked against the shard number to see whether it should run
  * on a particular shard.
- *
- * <p>Equals and hashCode implementations are not necessary for correct
+ * 
+ * 
+ * Equals and hashCode implementations are not necessary for correct
  * sharding, but are done so that this filter can be compared in tests.
  */
-public final class RoundRobinShardingFilter extends Filter {
-  // VisibleForTesting
-  final Map<Description, Integer> testToShardMap;
-  // VisibleForTesting
-  final int shardIndex;
-  // VisibleForTesting
-  final int totalShards;
+class RoundRobinShardingFilter(
+    testDescriptions: MutableCollection<org.junit.runner.Description?>,
+    shardIndex: Int, totalShards: Int
+) : org.junit.runner.manipulation.Filter() {
+    // VisibleForTesting
+    val testToShardMap: MutableMap<org.junit.runner.Description?, Int>
 
-  public RoundRobinShardingFilter(Collection<Description> testDescriptions,
-      int shardIndex, int totalShards) {
-    if (shardIndex < 0 || totalShards <= shardIndex) {
-      throw new IllegalArgumentException();
+    // VisibleForTesting
+    val shardIndex: Int
+
+    // VisibleForTesting
+    val totalShards: Int
+
+    init {
+        require(!(shardIndex < 0 || totalShards <= shardIndex))
+        this.testToShardMap = buildTestToShardMap(testDescriptions)
+        this.shardIndex = shardIndex
+        this.totalShards = totalShards
     }
-    this.testToShardMap = buildTestToShardMap(testDescriptions);
-    this.shardIndex = shardIndex;
-    this.totalShards = totalShards;
-  }
 
-  /**
-   * Given a list of test case descriptions, returns a mapping from each
-   * to its index in the list.
-   */
-  private static Map<Description, Integer> buildTestToShardMap(
-      Collection<Description> testDescriptions) {
-    Map<Description, Integer> map = new HashMap<>();
-
-    // Sorting this list is incredibly important to correctness. Otherwise,
-    // "shuffled" suites would break the sharding protocol.
-    List<Description> sortedDescriptions = new ArrayList<>(testDescriptions);
-    Collections.sort(sortedDescriptions, new DescriptionComparator());
-
-    // If we get two descriptions that are equal, the shard number for the second
-    // one will overwrite the shard number for the first.  Thus they'll run on the
-    // same shard.
-    int index = 0;
-    for (Description description : sortedDescriptions) {
-      if (!description.isTest()) {
-        throw new IllegalArgumentException("Test suite should not be included in the set of tests "
-            + "to shard: " + description.getDisplayName());
-      }
-      map.put(description, index);
-      index++;
+    override fun shouldRun(description: org.junit.runner.Description): Boolean {
+        if (description.isSuite()) {
+            return true
+        }
+        val testNumber: Int = testToShardMap.get(description)!!
+        requireNotNull(testNumber) {
+            ("This filter keeps a mapping from each test "
+                    + "description to a shard, and the given description was not passed in when "
+                    + "filter was constructed: " + description)
+        }
+        return (testNumber % totalShards) == shardIndex
     }
-    return Collections.unmodifiableMap(map);
-  }
 
-  @Override
-  public boolean shouldRun(Description description) {
-    if (description.isSuite()) {
-      return true;
+    override fun describe(): String {
+        return "round robin sharding filter"
     }
-    Integer testNumber = testToShardMap.get(description);
-    if (testNumber == null) {
-      throw new IllegalArgumentException("This filter keeps a mapping from each test "
-          + "description to a shard, and the given description was not passed in when "
-          + "filter was constructed: " + description);
-    }
-    return (testNumber % totalShards) == shardIndex;
-  }
 
-  @Override
-  public String describe() {
-    return "round robin sharding filter";
-  }
-
-  // VisibleForTesting
-  static class DescriptionComparator implements Comparator<Description> {
-    @Override
-    public int compare(Description d1, Description d2) {
-      return d1.getDisplayName().compareTo(d2.getDisplayName());
+    // VisibleForTesting
+    internal class DescriptionComparator : java.util.Comparator<org.junit.runner.Description?> {
+        override fun compare(d1: org.junit.runner.Description, d2: org.junit.runner.Description): Int {
+            return d1.getDisplayName().compareTo(d2.getDisplayName())
+        }
     }
-  }
+
+    companion object {
+        /**
+         * Given a list of test case descriptions, returns a mapping from each
+         * to its index in the list.
+         */
+        private fun buildTestToShardMap(
+            testDescriptions: MutableCollection<org.junit.runner.Description?>
+        ): MutableMap<org.junit.runner.Description?, Int> {
+            val map: MutableMap<org.junit.runner.Description?, Int?> = HashMap<org.junit.runner.Description?, Int?>()
+
+            // Sorting this list is incredibly important to correctness. Otherwise,
+            // "shuffled" suites would break the sharding protocol.
+            val sortedDescriptions: MutableList<org.junit.runner.Description> =
+                java.util.ArrayList<org.junit.runner.Description>(testDescriptions)
+            Collections.sort<org.junit.runner.Description?>(sortedDescriptions, DescriptionComparator())
+
+            // If we get two descriptions that are equal, the shard number for the second
+            // one will overwrite the shard number for the first.  Thus they'll run on the
+            // same shard.
+            var index = 0
+            for (description in sortedDescriptions) {
+                require(description.isTest()) {
+                    ("Test suite should not be included in the set of tests "
+                            + "to shard: " + description.getDisplayName())
+                }
+                map.put(description, index)
+                index++
+            }
+            return Collections.unmodifiableMap<org.junit.runner.Description?, Int?>(map)
+        }
+    }
 }

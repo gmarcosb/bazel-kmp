@@ -11,42 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.protobuf.ByteString;
-import java.io.Serializable;
+import com.google.protobuf.ByteString
 
-/** A marker interface for objects which can return a byte[] digest. */
-@FunctionalInterface
-public interface HasDigest extends Serializable {
-  byte[] getDigest();
+/** A marker interface for objects which can return a byte[] digest.  */
+@java.lang.FunctionalInterface
+interface HasDigest : java.io.Serializable {
+    fun getDigest(): ByteArray?
 
-  HasDigest EMPTY = new ByteStringDigest(new byte[] {});
+    /** An immutable wrapper around a `byte[]` digest.  */
+    class ByteStringDigest(bytes: ByteArray) : HasDigest {
+        private val bytes: ByteString
 
-  /** An immutable wrapper around a {@code byte[]} digest. */
-  final class ByteStringDigest implements HasDigest {
-    private final ByteString bytes;
+        init {
+            this.bytes = ByteString.copyFrom(bytes)
+        }
 
-    public ByteStringDigest(byte[] bytes) {
-      this.bytes = ByteString.copyFrom(bytes);
+        override fun getDigest(): ByteArray? {
+            return bytes.toByteArray()
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other is ByteStringDigest) {
+                return bytes == other.bytes
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return bytes.hashCode()
+        }
     }
 
-    @Override
-    public byte[] getDigest() {
-      return bytes.toByteArray();
+    companion object {
+        val EMPTY: HasDigest = ByteStringDigest(byteArrayOf())
     }
-
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof ByteStringDigest byteStringDigest) {
-        return bytes.equals(byteStringDigest.bytes);
-      }
-      return false;
-    }
-
-    @Override
-    public int hashCode() {
-      return bytes.hashCode();
-    }
-  }
 }

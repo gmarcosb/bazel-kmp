@@ -11,81 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.analysis.config;
+package com.google.devtools.build.lib.analysis.config
 
-import com.google.devtools.build.lib.analysis.InconsistentAspectOrderException;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.analysis.InconsistentAspectOrderException
 
 /**
  * Exception that signals an error during the evaluation of a configured target dependency.
- *
- * <p>If {@link DependencyEvaluationException#depReportedOwnError()}} is true, dependencies are
+ * 
+ * 
+ * If [DependencyEvaluationException.depReportedOwnError]} is true, dependencies are
  * assumed to have reported their own errors. So if configured target P depends on configured target
- * D, and P fails because of a {@code DependencyEvaluationException} on D, P is responsible for
+ * D, and P fails because of a `DependencyEvaluationException` on D, P is responsible for
  * reporting its error details. P should only report what contextualizes P's relationship to D.
- *
- * <p>If {@link DependencyEvaluationException#depReportedOwnError()}} is false, P reports both
+ * 
+ * 
+ * If [DependencyEvaluationException.depReportedOwnError]} is false, P reports both
  * errors in consolidated form as it sees fit. For conceptual simplicity's sake, use this variation
  * sparingly.
- *
- * <p>The result is essentially an error reporting stack trace, but presented with user readability
+ * 
+ * 
+ * The result is essentially an error reporting stack trace, but presented with user readability
  * in mind.
  */
-public class DependencyEvaluationException extends Exception {
-  /* Null denotes whatever default exit code callers choose. */
-  @Nullable private final DetailedExitCode detailedExitCode;
-  @Nullable private final Location location;
-  private final boolean depReportedOwnError;
+class DependencyEvaluationException private constructor(
+    cause: java.lang.Exception,
+    detailedExitCode: DetailedExitCode?,
+    location: net.starlark.java.syntax.Location?,
+    depReportedOwnError: Boolean
+) : java.lang.Exception(cause.getMessage(), cause) {
+    /* Null denotes whatever default exit code callers choose. */
+    private val detailedExitCode: DetailedExitCode?
+    private val location: net.starlark.java.syntax.Location?
+    private val depReportedOwnError: Boolean
 
-  private DependencyEvaluationException(
-      Exception cause,
-      @Nullable DetailedExitCode detailedExitCode,
-      @Nullable Location location,
-      boolean depReportedOwnError) {
-    super(cause.getMessage(), cause);
-    this.detailedExitCode = detailedExitCode;
-    this.location = location;
-    this.depReportedOwnError = depReportedOwnError;
-  }
+    init {
+        this.detailedExitCode = detailedExitCode
+        this.location = location
+        this.depReportedOwnError = depReportedOwnError
+    }
 
-  public DependencyEvaluationException(
-      ConfiguredValueCreationException cause, boolean depReportedOwnError) {
-    this(cause, cause.getDetailedExitCode(), cause.getLocation(), depReportedOwnError);
-  }
+    constructor(cause: ConfiguredValueCreationException, depReportedOwnError: Boolean) : this(
+        cause,
+        cause.getDetailedExitCode(),
+        cause.getLocation(),
+        depReportedOwnError
+    )
 
-  public DependencyEvaluationException(InconsistentAspectOrderException cause) {
-    // Calling logic doesn't provide an opportunity for this dependency to report its own error.
-    // TODO(bazel-team): clean up the calling logic to eliminate this distinction.
-    this(cause, /*detailedExitCode=*/ null, cause.getLocation(), /*depReportedOwnError=*/ false);
-  }
+    constructor(cause: InconsistentAspectOrderException) : this(
+        cause,  /*detailedExitCode=*/
+        null,
+        cause.getLocation(),  /*depReportedOwnError=*/
+        false
+    )
 
-  public DependencyEvaluationException(EvalException cause, Location location) {
-    // Calling logic doesn't provide an opportunity for this dependency to report its own error.
-    // TODO(bazel-team): clean up the calling logic to eliminate this distinction.
-    this(cause, /* detailedExitCode= */ null, location, /* depReportedOwnError= */ false);
-  }
+    constructor(
+        cause: EvalException,
+        location: net.starlark.java.syntax.Location?
+    ) : this(cause,  /* detailedExitCode= */null, location,  /* depReportedOwnError= */false)
 
-  /** Returns the cause's {@link DetailedExitCode}. If null, the caller should choose a default. */
-  @Nullable
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    /** Returns the cause's [DetailedExitCode]. If null, the caller should choose a default.  */
+    fun getDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
 
-  @Nullable
-  public Location getLocation() {
-    return location;
-  }
+    fun getLocation(): net.starlark.java.syntax.Location? {
+        return location
+    }
 
-  public boolean depReportedOwnError() {
-    return depReportedOwnError;
-  }
+    fun depReportedOwnError(): Boolean {
+        return depReportedOwnError
+    }
 
-  @Override
-  public synchronized Exception getCause() {
-    return (Exception) super.getCause();
-  }
+    @kotlin.jvm.Synchronized
+    override fun getCause(): java.lang.Exception? {
+        return super.getCause() as java.lang.Exception?
+    }
 }

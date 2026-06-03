@@ -11,273 +11,252 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.util.TestIntegration
+import java.util.Locale
 
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.EnumMap;
-import java.util.Map;
+/** TestIntegration represents an external link that is integrated with the test results.  */
+class TestIntegration(
+    private val contactEmail: String?,
+    private val componentId: String?,
+    private val name: String?,
+    private val url: String?,
+    private val iconUrl: String?,
+    private val iconName: String?,
+    private val description: String?,
+    private val foregroundColor: String?,
+    private val backgroundColor: String?
+) {
+    /** Represents each available field for TestIntegration.  */
+    enum class ExternalLinkAttribute {
+        NAME,
+        URL,
+        CONTACT_EMAIL,
+        COMPONENT_ID,
+        DESCRIPTION,
+        ICON_NAME,
+        ICON_URL,
+        BACKGROUND_COLOR,
+        FOREGROUND_COLOR;
 
-/** TestIntegration represents an external link that is integrated with the test results. */
-public class TestIntegration {
-
-  private final String contactEmail;
-  private final String componentId;
-  private final String name;
-  private final String url;
-  private final String iconUrl;
-  private final String iconName;
-  private final String description;
-  private final String foregroundColor;
-  private final String backgroundColor;
-
-  public TestIntegration(
-      String contactEmail,
-      String componentId,
-      String name,
-      String url,
-      String iconUrl,
-      String iconName,
-      String description,
-      String foregroundColor,
-      String backgroundColor) {
-    this.contactEmail = contactEmail;
-    this.componentId = componentId;
-    this.name = name;
-    this.url = url;
-    this.iconUrl = iconUrl;
-    this.iconName = iconName;
-    this.description = description;
-    this.foregroundColor = foregroundColor;
-    this.backgroundColor = backgroundColor;
-  }
-
-  /** Represents each available field for TestIntegration. */
-  public enum ExternalLinkAttribute {
-    NAME,
-    URL,
-    CONTACT_EMAIL,
-    COMPONENT_ID,
-    DESCRIPTION,
-    ICON_NAME,
-    ICON_URL,
-    BACKGROUND_COLOR,
-    FOREGROUND_COLOR;
-
-    /** Gets the string representation of the current enum. */
-    public String getXmlAttributeName() {
-      return name().toLowerCase();
-    }
-  }
-
-  // Group or user name responsible for this external integration.
-  String contactEmail() {
-    return contactEmail;
-  }
-
-  // Component id (numeric) for this external integration.
-  String componentId() {
-    return componentId;
-  }
-
-  // Display name of this external integration.
-  String name() {
-    return name;
-  }
-
-  // URL that will display more data about this test result or integration.
-  String url() {
-    return url;
-  }
-
-  // Optional: URL or name of the icon to be displayed.
-  String iconUrl() {
-    return iconUrl;
-  }
-
-  String iconName() {
-    return iconName;
-  }
-
-  // Optional: Textual description that shows up as tooltip.
-  String description() {
-    return description;
-  }
-
-  // Optional: Foreground color.
-  String foregroundColor() {
-    return foregroundColor;
-  }
-
-  // Optional: Background color.
-  String backgroundColor() {
-    return backgroundColor;
-  }
-
-  public static Builder builder() {
-    return new Builder()
-        .setIconName("")
-        .setIconUrl("")
-        .setDescription("")
-        .setForegroundColor("")
-        .setBackgroundColor("");
-  }
-
-  /** Builder is the builder class for TestIntegration */
-  public static class Builder {
-    private String contactEmail;
-    private String componentId;
-    private String name;
-    private String url;
-    private String iconUrl;
-    private String iconName;
-    private String description;
-    private String foregroundColor;
-    private String backgroundColor;
-
-    private Builder() {
+        val xmlAttributeName: String?
+            /** Gets the string representation of the current enum.  */
+            get() = name.lowercase(Locale.getDefault())
     }
 
-    /**
-     * Sets the Contact Email value. The contact email is used for users to identify how to contact
-     * the TestIntegration owner. This is optional.
-     *
-     * @param email Email of the team responsible for this TestIntegration.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setContactEmail(String email) {
-      this.contactEmail = email;
-      return this;
+    // Group or user name responsible for this external integration.
+    fun contactEmail(): String? {
+        return contactEmail
     }
 
-    /**
-     * Sets the component ID value, used to identify the tool that this TestIntegration belongs to.
-     * This is optional.
-     *
-     * @param id ID of the component.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setComponentId(String id) {
-      this.componentId = id;
-      return this;
+    // Component id (numeric) for this external integration.
+    fun componentId(): String? {
+        return componentId
     }
 
-    /**
-     * Sets the name for the tool for this TestIntegration.
-     *
-     * @param name Name of this TestIntegration.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setName(String name) {
-      this.name = name;
-      return this;
+    // Display name of this external integration.
+    fun name(): String? {
+        return name
     }
 
-    /**
-     * Sets the URL of this TestIntegration. It should be a FQDN, with optional url encoded
-     * parameters.
-     *
-     * @param url The location of the TestIntegration.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setUrl(String url) {
-      this.url = url;
-      return this;
+    // URL that will display more data about this test result or integration.
+    fun url(): String? {
+        return url
     }
 
-    /**
-     * Sets the url of the icon. The icon should look good even if scaled down to 16x16. This is
-     * optional; if not set, it will instead use the value passed to {@link #setIconName(String)}.
-     *
-     * @param iconUrl Location of the icon.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setIconUrl(String iconUrl) {
-      this.iconUrl = iconUrl;
-      return this;
+    // Optional: URL or name of the icon to be displayed.
+    fun iconUrl(): String? {
+        return iconUrl
     }
 
-    /**
-     * Sets the name of the icon. This is optional; if not set it will instead use the value passed
-     * to {@link #setIconUrl(String)}.
-     *
-     * @param iconName name of the icon.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setIconName(String iconName) {
-      this.iconName = iconName;
-      return this;
+    fun iconName(): String? {
+        return iconName
     }
 
-    /**
-     * Sets the description. The description is used to describe the TestIntegration object's
-     * purpose. This is optional; if it isn't set, it will have a default value of {@code ""}.
-     *
-     * @param description The description for this TestIntegration.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setDescription(String description) {
-      this.description = description;
-      return this;
+    // Optional: Textual description that shows up as tooltip.
+    fun description(): String? {
+        return description
     }
 
-    /**
-     * Sets the foreground color of the TestIntegration link. This is optional; if it isn't set, the
-     * link created will use the default foreground color per the tool's CSS.
-     *
-     * @param foregroundColor The foreground color of the link, e.g. {@code "#000000"}.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setForegroundColor(String foregroundColor) {
-      this.foregroundColor = foregroundColor;
-      return this;
+    // Optional: Foreground color.
+    fun foregroundColor(): String? {
+        return foregroundColor
     }
 
-    /**
-     * Sets the background color of the TestIntegration link. This is optional; if it isn't set, the
-     * link created will use the default background color per the tool's CSS.
-     *
-     * @param backgroundColor The background color of the link, e.g. {@code "#ffffff"}.
-     * @return Builder
-     */
-    @CanIgnoreReturnValue
-    public Builder setBackgroundColor(String backgroundColor) {
-      this.backgroundColor = backgroundColor;
-      return this;
+    // Optional: Background color.
+    fun backgroundColor(): String? {
+        return backgroundColor
     }
 
-    /**
-     * Builds a TestIntegration object.
-     * @return Builder
-     */
-    public TestIntegration build() {
-      return new TestIntegration(contactEmail, componentId, name, url, iconUrl, iconName,
-          description, foregroundColor, backgroundColor);
-    }
-  }
+    /** Builder is the builder class for TestIntegration  */
+    class Builder private constructor() {
+        private var contactEmail: String? = null
+        private var componentId: String? = null
+        private var name: String? = null
+        private var url: String? = null
+        private var iconUrl: String? = null
+        private var iconName: String? = null
+        private var description: String? = null
+        private var foregroundColor: String? = null
+        private var backgroundColor: String? = null
 
-  /*
-   * getAttributeValueMap returns all of this TestIntegration's values in a Map.
-   */
-  public Map<ExternalLinkAttribute, String> getAttributeValueMap() {
-    Map<ExternalLinkAttribute, String> map = new EnumMap<>(ExternalLinkAttribute.class);
-    map.put(ExternalLinkAttribute.NAME, name());
-    map.put(ExternalLinkAttribute.URL, url());
-    map.put(ExternalLinkAttribute.CONTACT_EMAIL, contactEmail());
-    map.put(ExternalLinkAttribute.COMPONENT_ID, componentId());
-    map.put(ExternalLinkAttribute.DESCRIPTION, description());
-    map.put(ExternalLinkAttribute.ICON_NAME, iconName());
-    map.put(ExternalLinkAttribute.ICON_URL, iconUrl());
-    map.put(ExternalLinkAttribute.BACKGROUND_COLOR, backgroundColor());
-    map.put(ExternalLinkAttribute.FOREGROUND_COLOR, foregroundColor());
-    return map;
-  }
+        /**
+         * Sets the Contact Email value. The contact email is used for users to identify how to contact
+         * the TestIntegration owner. This is optional.
+         * 
+         * @param email Email of the team responsible for this TestIntegration.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setContactEmail(email: String?): Builder {
+            this.contactEmail = email
+            return this
+        }
+
+        /**
+         * Sets the component ID value, used to identify the tool that this TestIntegration belongs to.
+         * This is optional.
+         * 
+         * @param id ID of the component.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setComponentId(id: String?): Builder {
+            this.componentId = id
+            return this
+        }
+
+        /**
+         * Sets the name for the tool for this TestIntegration.
+         * 
+         * @param name Name of this TestIntegration.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setName(name: String?): Builder {
+            this.name = name
+            return this
+        }
+
+        /**
+         * Sets the URL of this TestIntegration. It should be a FQDN, with optional url encoded
+         * parameters.
+         * 
+         * @param url The location of the TestIntegration.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setUrl(url: String?): Builder {
+            this.url = url
+            return this
+        }
+
+        /**
+         * Sets the url of the icon. The icon should look good even if scaled down to 16x16. This is
+         * optional; if not set, it will instead use the value passed to [.setIconName].
+         * 
+         * @param iconUrl Location of the icon.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setIconUrl(iconUrl: String?): Builder {
+            this.iconUrl = iconUrl
+            return this
+        }
+
+        /**
+         * Sets the name of the icon. This is optional; if not set it will instead use the value passed
+         * to [.setIconUrl].
+         * 
+         * @param iconName name of the icon.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setIconName(iconName: String?): Builder {
+            this.iconName = iconName
+            return this
+        }
+
+        /**
+         * Sets the description. The description is used to describe the TestIntegration object's
+         * purpose. This is optional; if it isn't set, it will have a default value of `""`.
+         * 
+         * @param description The description for this TestIntegration.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setDescription(description: String?): Builder {
+            this.description = description
+            return this
+        }
+
+        /**
+         * Sets the foreground color of the TestIntegration link. This is optional; if it isn't set, the
+         * link created will use the default foreground color per the tool's CSS.
+         * 
+         * @param foregroundColor The foreground color of the link, e.g. `"#000000"`.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setForegroundColor(foregroundColor: String?): Builder {
+            this.foregroundColor = foregroundColor
+            return this
+        }
+
+        /**
+         * Sets the background color of the TestIntegration link. This is optional; if it isn't set, the
+         * link created will use the default background color per the tool's CSS.
+         * 
+         * @param backgroundColor The background color of the link, e.g. `"#ffffff"`.
+         * @return Builder
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setBackgroundColor(backgroundColor: String?): Builder {
+            this.backgroundColor = backgroundColor
+            return this
+        }
+
+        /**
+         * Builds a TestIntegration object.
+         * @return Builder
+         */
+        fun build(): TestIntegration {
+            return TestIntegration(
+                contactEmail, componentId, name, url, iconUrl, iconName,
+                description, foregroundColor, backgroundColor
+            )
+        }
+    }
+
+    val attributeValueMap: MutableMap<ExternalLinkAttribute?, String?>
+        /*
+            * getAttributeValueMap returns all of this TestIntegration's values in a Map.
+            */
+        get() {
+            val map: MutableMap<ExternalLinkAttribute?, String?> =
+                java.util.EnumMap<ExternalLinkAttribute?, String?>(ExternalLinkAttribute::class.java)
+            map.put(ExternalLinkAttribute.NAME, name())
+            map.put(ExternalLinkAttribute.URL, url())
+            map.put(ExternalLinkAttribute.CONTACT_EMAIL, contactEmail())
+            map.put(ExternalLinkAttribute.COMPONENT_ID, componentId())
+            map.put(ExternalLinkAttribute.DESCRIPTION, description())
+            map.put(ExternalLinkAttribute.ICON_NAME, iconName())
+            map.put(ExternalLinkAttribute.ICON_URL, iconUrl())
+            map.put(ExternalLinkAttribute.BACKGROUND_COLOR, backgroundColor())
+            map.put(ExternalLinkAttribute.FOREGROUND_COLOR, foregroundColor())
+            return map
+        }
+
+    companion object {
+        fun builder(): Builder {
+            return com.google.testing.junit.runner.util.TestIntegration.Builder()
+                .setIconName("")
+                .setIconUrl("")
+                .setDescription("")
+                .setForegroundColor("")
+                .setBackgroundColor("")
+        }
+    }
 }

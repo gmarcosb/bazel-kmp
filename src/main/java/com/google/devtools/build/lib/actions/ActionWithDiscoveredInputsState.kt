@@ -11,31 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.actions;
+package com.google.devtools.build.lib.actions
 
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
 /**
  * Interface for actions that need to retain discovered inputs state across Skyframe restarts.
- *
- * <p>While most {@link Action} implementations are immutable after analysis, actions that {@link
- * #discoversInputs()} frequently need to store the results of that discovery to avoid redundant
+ * 
+ * 
+ * While most [Action] implementations are immutable after analysis, actions that [ ][.discoversInputs] frequently need to store the results of that discovery to avoid redundant
  * work upon Skyframe restarts (e.g., when a discovered input is missing from the graph).
- *
- * <p>This interface is preferred over relying solely on {@code discoversInputs()} for several
+ * 
+ * 
+ * This interface is preferred over relying solely on `discoversInputs()` for several
  * reasons:
- *
- * <ul>
- *   <li><b>Immutability Policy:</b> It allows immutable actions to remain immutable by default,
- *       while providing a type-safe way for specific actions to opt-in to state restoration.
- *   <li><b>State Restoration:</b> When {@code ActionExecutionFunction} restarts, it loses its local
- *       state. Discovered inputs preserved in {@code SkyKeyComputeState} must be re-injected into
- *       the action instance via {@link #setAdditionalInputs} before execution.
- *   <li><b>Decoupling:</b> It enables the Skyframe execution engine to interact with many different
- *       action types without needing to cast to concrete implementation classes.
- * </ul>
+ * 
+ * 
+ *  * **Immutability Policy:** It allows immutable actions to remain immutable by default,
+ * while providing a type-safe way for specific actions to opt-in to state restoration.
+ *  * **State Restoration:** When `ActionExecutionFunction` restarts, it loses its local
+ * state. Discovered inputs preserved in `SkyKeyComputeState` must be re-injected into
+ * the action instance via [.setAdditionalInputs] before execution.
+ *  * **Decoupling:** It enables the Skyframe execution engine to interact with many different
+ * action types without needing to cast to concrete implementation classes.
+ * 
  */
-public interface ActionWithDiscoveredInputsState extends Action {
-  /** Sets the discovered inputs on the action instance. */
-  void setAdditionalInputs(NestedSet<Artifact> inputs);
+interface ActionWithDiscoveredInputsState : com.google.devtools.build.lib.actions.Action {
+    /** Sets the discovered inputs on the action instance.  */
+    fun setAdditionalInputs(inputs: NestedSet<Artifact?>?)
 }

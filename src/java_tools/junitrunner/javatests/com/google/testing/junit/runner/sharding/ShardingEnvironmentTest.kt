@@ -11,33 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding
 
-package com.google.testing.junit.runner.sharding;
+import com.google.devtools.build.lib.testutil.TestUtils
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.testutil.TestUtils;
-import java.io.File;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests interactions with the test environment related to sharding. */
-@RunWith(JUnit4.class)
-public class ShardingEnvironmentTest {
-
-  @SuppressWarnings({"ResultOfMethodCallIgnored"})
-  @Test
-  public void testTouchShardingFile() throws IOException {
-    File shardFile = TestUtils.createUniqueTmpDir(null).getChild("shard_file_123").getPathFile();
-    assertThat(shardFile.exists()).isFalse();
-    try {
-      ShardingEnvironment.touchShardFile(shardFile);
-      assertThat(shardFile.exists()).isTrue();
-    } finally {
-      shardFile.delete();
+/** Tests interactions with the test environment related to sharding.  */
+@RunWith(JUnit4::class)
+class ShardingEnvironmentTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testTouchShardingFile() {
+        val shardFile: java.io.File = TestUtils.createUniqueTmpDir(null).getChild("shard_file_123").getPathFile()
+        Truth.assertThat(shardFile.exists()).isFalse()
+        try {
+            ShardingEnvironment.Companion.touchShardFile(shardFile)
+            Truth.assertThat(shardFile.exists()).isTrue()
+        } finally {
+            shardFile.delete()
+        }
     }
-  }
-
 }

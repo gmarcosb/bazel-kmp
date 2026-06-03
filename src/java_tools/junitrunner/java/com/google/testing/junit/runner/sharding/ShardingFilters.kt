@@ -11,100 +11,113 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.sharding
 
-package com.google.testing.junit.runner.sharding;
-
-import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory;
-import java.util.Collection;
-import java.util.Locale;
-import org.junit.runner.Description;
-import org.junit.runner.manipulation.Filter;
+import com.google.testing.junit.runner.junit4.JUnit4Bazel.runner
+import com.google.testing.junit.runner.sharding.HashBackedShardingFilter
+import com.google.testing.junit.runner.sharding.RoundRobinShardingFilter
+import com.google.testing.junit.runner.sharding.ShardingEnvironment
+import com.google.testing.junit.runner.sharding.ShardingFilters
+import com.google.testing.junit.runner.sharding.ShardingFilters.ShardingStrategy
+import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory
+import com.google.testing.junit.runner.sharding.api.ShardingFilterFactory.createFilter
+import net.starlark.java.syntax.TypeApplication.getConstructor
 
 /**
  * A factory for test sharding filters.
  */
-public class ShardingFilters {
+open class ShardingFilters @kotlin.jvm.JvmOverloads constructor(
+    shardingEnvironment: ShardingEnvironment,
+    defaultShardingStrategy: ShardingFilterFactory = DEFAULT_SHARDING_STRATEGY
+) {
+    /**
+     * An enum of strategies for generating test sharding filters.
+     */
+    enum class ShardingStrategy : ShardingFilterFactory {
+        /**
+         * [com.google.testing.junit.runner.sharding.HashBackedShardingFilter]
+         */
+        HASH {
+            override fun createFilter(
+                testDescriptions: MutableCollection<org.junit.runner.Description?>?,
+                shardIndex: Int, totalShards: Int
+            ): org.junit.runner.manipulation.Filter? {
+                return HashBackedShardingFilter(shardIndex, totalShards)
+            }
+        },
 
-  /**
-   * An enum of strategies for generating test sharding filters.
-   */
-  public static enum ShardingStrategy implements ShardingFilterFactory {
+        /**
+         * [com.google.testing.junit.runner.sharding.RoundRobinShardingFilter]
+         */
+        ROUND_ROBIN {
+            override fun createFilter(
+                testDescriptions: MutableCollection<org.junit.runner.Description?>?,
+                shardIndex: Int, totalShards: Int
+            ): org.junit.runner.manipulation.Filter? {
+                return RoundRobinShardingFilter(testDescriptions, shardIndex, totalShards)
+            }
+        }
+    }
+
+    private val shardingEnvironment: ShardingEnvironment
+    private val defaultShardingStrategy: ShardingFilterFactory
 
     /**
-     * {@link com.google.testing.junit.runner.sharding.HashBackedShardingFilter}
+     * Creates a factory with the given sharding environment and sharding
+     * strategy.
      */
-    HASH {
-      @Override
-      public Filter createFilter(Collection<Description> testDescriptions,
-          int shardIndex, int totalShards) {
-        return new HashBackedShardingFilter(shardIndex, totalShards);
-      }
-    },
+    /**
+     * Creates a factory with the given sharding environment and the
+     * default sharding strategy.
+     */
+    init {
+        this.shardingEnvironment = shardingEnvironment
+        this.defaultShardingStrategy = defaultShardingStrategy
+    }
 
     /**
-     * {@link com.google.testing.junit.runner.sharding.RoundRobinShardingFilter}
+     * Creates a sharding filter according to strategy specified by the
+     * sharding environment.
      */
-    ROUND_ROBIN {
-      @Override
-      public Filter createFilter(Collection<Description> testDescriptions,
-          int shardIndex, int totalShards) {
-        return new RoundRobinShardingFilter(testDescriptions, shardIndex, totalShards);
-      }
+    open fun createShardingFilter(descriptions: MutableCollection<org.junit.runner.Description?>?): org.junit.runner.manipulation.Filter? {
+        val factory: ShardingFilterFactory = this.shardingFilterFactory
+        return factory.createFilter(
+            descriptions, shardingEnvironment.getShardIndex(),
+            shardingEnvironment.getTotalShards()
+        )
     }
-  }
 
-  public static final ShardingFilterFactory DEFAULT_SHARDING_STRATEGY =
-      ShardingStrategy.ROUND_ROBIN;
-  private final ShardingEnvironment shardingEnvironment;
-  private final ShardingFilterFactory defaultShardingStrategy;
+    private val shardingFilterFactory: ShardingFilterFactory
+        get() {
+            val strategy: String? = shardingEnvironment.getTestShardingStrategy()
+            if (strategy == null) {
+                return defaultShardingStrategy
+            }
+            var shardingFilterFactory: ShardingFilterFactory
+            try {
+                shardingFilterFactory =
+                    com.google.testing.junit.runner.sharding.ShardingFilters.ShardingStrategy.valueOf(strategy.uppercase())
+            } catch (e: java.lang.IllegalArgumentException) {
+                try {
+                    val classLoader: java.lang.ClassLoader = java.lang.Thread.currentThread().getContextClassLoader()
+                    val strategyClass: java.lang.Class<out ShardingFilterFactory> =
+                        classLoader.loadClass(strategy)
+                            .asSubclass<ShardingFilterFactory>(ShardingFilterFactory::class.java)
+                    shardingFilterFactory = strategyClass.getConstructor().newInstance()
+                } catch (e2: java.lang.ReflectiveOperationException) {
+                    throw java.lang.RuntimeException(
+                        "Could not create custom sharding strategy class " + strategy, e2
+                    )
+                } catch (e2: java.lang.IllegalArgumentException) {
+                    throw java.lang.RuntimeException(
+                        "Could not create custom sharding strategy class " + strategy, e2
+                    )
+                }
+            }
+            return shardingFilterFactory
+        }
 
-  /**
-   * Creates a factory with the given sharding environment and the
-   * default sharding strategy.
-   */
-  public ShardingFilters(ShardingEnvironment shardingEnvironment) {
-    this(shardingEnvironment, DEFAULT_SHARDING_STRATEGY);
-  }
-
-  /**
-   * Creates a factory with the given sharding environment and sharding
-   * strategy.
-   */
-  public ShardingFilters(ShardingEnvironment shardingEnvironment,
-      ShardingFilterFactory defaultShardingStrategy) {
-    this.shardingEnvironment = shardingEnvironment;
-    this.defaultShardingStrategy = defaultShardingStrategy;
-  }
-
-  /**
-   * Creates a sharding filter according to strategy specified by the
-   * sharding environment.
-   */
-  public Filter createShardingFilter(Collection<Description> descriptions) {
-    ShardingFilterFactory factory = getShardingFilterFactory();
-    return factory.createFilter(descriptions, shardingEnvironment.getShardIndex(),
-        shardingEnvironment.getTotalShards());
-  }
-
-  private ShardingFilterFactory getShardingFilterFactory() {
-    String strategy = shardingEnvironment.getTestShardingStrategy();
-    if (strategy == null) {
-      return defaultShardingStrategy;
+    companion object {
+        val DEFAULT_SHARDING_STRATEGY: ShardingFilterFactory = ShardingStrategy.ROUND_ROBIN
     }
-    ShardingFilterFactory shardingFilterFactory;
-    try {
-      shardingFilterFactory = ShardingStrategy.valueOf(strategy.toUpperCase(Locale.ENGLISH));
-    } catch (IllegalArgumentException e) {
-      try {
-        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        Class<? extends ShardingFilterFactory> strategyClass =
-            classLoader.loadClass(strategy).asSubclass(ShardingFilterFactory.class);
-        shardingFilterFactory = strategyClass.getConstructor().newInstance();
-      } catch (ReflectiveOperationException | IllegalArgumentException e2) {
-        throw new RuntimeException(
-            "Could not create custom sharding strategy class " + strategy, e2);
-      }
-    }
-    return shardingFilterFactory;
-  }
 }

@@ -11,77 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.configuredtargets
 
-package com.google.devtools.build.lib.analysis.configuredtargets;
-
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.analysis.PackageSpecificationProvider;
-import com.google.devtools.build.lib.analysis.TargetContext;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.analysis.VisibilityProvider;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.PackageGroup;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
  * Dummy ConfiguredTarget for package groups. Contains no functionality, since package groups are
  * not really first-class Targets.
  */
-@Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public class PackageGroupConfiguredTarget extends AbstractConfiguredTarget {
-  private final PackageSpecificationProvider packageSpecificationProvider;
+class PackageGroupConfiguredTarget @VisibleForSerialization @AutoCodec.Instantiator internal constructor(
+    lookupKey: ActionLookupKey?,
+    packageSpecificationProvider: PackageSpecificationProvider
+) : AbstractConfiguredTarget(lookupKey, VisibilityProvider.PUBLIC_VISIBILITY) {
+    private val packageSpecificationProvider: PackageSpecificationProvider
 
-  @Override
-  public <P extends TransitiveInfoProvider> P getProvider(Class<P> provider) {
-    if (provider == FileProvider.class) {
-      return provider.cast(FileProvider.EMPTY); // can't fail
+    override fun <P : TransitiveInfoProvider?> getProvider(provider: java.lang.Class<P?>?): P? {
+        if (provider == FileProvider::class.java) {
+            return provider.cast(FileProvider.EMPTY) // can't fail
+        }
+        if (provider == PackageSpecificationProvider::class.java) {
+            return provider.cast(packageSpecificationProvider)
+        } else {
+            return super.getProvider<P?>(provider)
+        }
     }
-    if (provider == PackageSpecificationProvider.class) {
-      return provider.cast(packageSpecificationProvider);
-    } else {
-      return super.getProvider(provider);
+
+    constructor(actionLookupKey: ActionLookupKey?, targetContext: TargetContext?, packageGroup: PackageGroup?) : this(
+        actionLookupKey,
+        PackageSpecificationProvider.Companion.create(targetContext, packageGroup)
+    )
+
+    init {
+        // Package groups are always public (see PackageGroup#getVisibility).
+        this.packageSpecificationProvider = packageSpecificationProvider
     }
-  }
 
-  public PackageGroupConfiguredTarget(
-      ActionLookupKey actionLookupKey, TargetContext targetContext, PackageGroup packageGroup) {
-    // Package groups are always public (see PackageGroup#getVisibility).
-    this(actionLookupKey, PackageSpecificationProvider.create(targetContext, packageGroup));
-  }
-
-  @VisibleForSerialization
-  @AutoCodec.Instantiator
-  PackageGroupConfiguredTarget(
-      ActionLookupKey lookupKey, PackageSpecificationProvider packageSpecificationProvider) {
-    // Package groups are always public (see PackageGroup#getVisibility).
-    super(lookupKey, VisibilityProvider.PUBLIC_VISIBILITY);
-    this.packageSpecificationProvider = packageSpecificationProvider;
-  }
-
-  @Override
-  public boolean isCreatedInSymbolicMacro() {
-    // Answer is irrelevant because package groups are always public.
-    return false;
-  }
-
-  @Override
-  @Nullable
-  protected Info rawGetStarlarkProvider(Provider.Key providerKey) {
-    if (providerKey.equals(packageSpecificationProvider.getProvider().getKey())) {
-      return packageSpecificationProvider;
+    public override fun isCreatedInSymbolicMacro(): Boolean {
+        // Answer is irrelevant because package groups are always public.
+        return false
     }
-    return null;
-  }
 
-  @Override
-  @Nullable
-  protected Object rawGetStarlarkProvider(String providerKey) {
-    return null;
-  }
+    override fun rawGetStarlarkProvider(providerKey: Provider.Key): Info? {
+        if (providerKey.equals(packageSpecificationProvider.getProvider().getKey())) {
+            return packageSpecificationProvider
+        }
+        return null
+    }
+
+    override fun rawGetStarlarkProvider(providerKey: String?): Any? {
+        return null
+    }
 }

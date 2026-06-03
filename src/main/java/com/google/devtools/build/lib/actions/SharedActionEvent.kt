@@ -11,35 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Posted during the build when an action was shared.  */
+class SharedActionEvent(executed: ActionExecutionValue?, transformed: ActionExecutionValue?) : Postable {
+    private val executed: ActionExecutionValue
+    private val transformed: ActionExecutionValue
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import com.google.devtools.build.lib.skyframe.ActionExecutionValue;
+    init {
+        this.executed = com.google.common.base.Preconditions.checkNotNull<ActionExecutionValue>(executed)
+        this.transformed = com.google.common.base.Preconditions.checkNotNull<ActionExecutionValue>(transformed)
+    }
 
-/** Posted during the build when an action was shared. */
-public final class SharedActionEvent implements Postable {
+    /** Returns the [ActionExecutionValue] for the action that was actually executed.  */
+    fun getExecuted(): ActionExecutionValue {
+        return executed
+    }
 
-  private final ActionExecutionValue executed;
-  private final ActionExecutionValue transformed;
-
-  public SharedActionEvent(ActionExecutionValue executed, ActionExecutionValue transformed) {
-    this.executed = checkNotNull(executed);
-    this.transformed = checkNotNull(transformed);
-  }
-
-  /** Returns the {@link ActionExecutionValue} for the action that was actually executed. */
-  public ActionExecutionValue getExecuted() {
-    return executed;
-  }
-
-  /**
-   * Returns the {@link ActionExecutionValue} that was derived from calling {@link
-   * ActionExecutionValue#transformForSharedAction} on {@link #getExecuted}.
-   */
-  public ActionExecutionValue getTransformed() {
-    return transformed;
-  }
+    /**
+     * Returns the [ActionExecutionValue] that was derived from calling [ ][ActionExecutionValue.transformForSharedAction] on [.getExecuted].
+     */
+    fun getTransformed(): ActionExecutionValue {
+        return transformed
+    }
 }

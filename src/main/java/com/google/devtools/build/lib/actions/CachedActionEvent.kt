@@ -11,52 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+/** This event is fired during the build if an action was in the action cache.  */
+class CachedActionEvent(
+    action: com.google.devtools.build.lib.actions.Action?,
+    inputMetadataProvider: InputMetadataProvider?,
+    nanoTimeStart: Long,
+    nanoTimeFinish: Long
+) : Postable {
+    private val action: com.google.devtools.build.lib.actions.Action?
+    private val inputMetadataProvider: InputMetadataProvider?
+    private val nanoTimeStart: Long
+    private val nanoTimeFinish: Long
 
-/** This event is fired during the build if an action was in the action cache. */
-public final class CachedActionEvent implements Postable {
+    /**
+     * Create an event for an action that was cached.
+     * 
+     * @param action the cached action
+     * @param inputMetadataProvider metadata of the inputs of the action
+     * @param nanoTimeStart the time when the action was started. This allow us to record more
+     * accurately the time spend by the action, since we execute some code before deciding if we
+     * execute the action or not.
+     */
+    init {
+        this.action = action
+        this.inputMetadataProvider = inputMetadataProvider
+        this.nanoTimeStart = nanoTimeStart
+        this.nanoTimeFinish = nanoTimeFinish
+    }
 
-  private final Action action;
-  private final InputMetadataProvider inputMetadataProvider;
-  private final long nanoTimeStart;
-  private final long nanoTimeFinish;
+    fun getAction(): com.google.devtools.build.lib.actions.Action? {
+        return action
+    }
 
-  /**
-   * Create an event for an action that was cached.
-   *
-   * @param action the cached action
-   * @param inputMetadataProvider metadata of the inputs of the action
-   * @param nanoTimeStart the time when the action was started. This allow us to record more
-   *     accurately the time spend by the action, since we execute some code before deciding if we
-   *     execute the action or not.
-   */
-  public CachedActionEvent(
-      Action action,
-      InputMetadataProvider inputMetadataProvider,
-      long nanoTimeStart,
-      long nanoTimeFinish) {
-    this.action = action;
-    this.inputMetadataProvider = inputMetadataProvider;
-    this.nanoTimeStart = nanoTimeStart;
-    this.nanoTimeFinish = nanoTimeFinish;
-  }
+    fun getInputMetadataProvider(): InputMetadataProvider? {
+        return inputMetadataProvider
+    }
 
-  public Action getAction() {
-    return action;
-  }
+    fun getNanoTimeStart(): Long {
+        return nanoTimeStart
+    }
 
-  public InputMetadataProvider getInputMetadataProvider() {
-    return inputMetadataProvider;
-  }
-
-  public long getNanoTimeStart() {
-    return nanoTimeStart;
-  }
-
-  public long getNanoTimeFinish() {
-    return nanoTimeFinish;
-  }
+    fun getNanoTimeFinish(): Long {
+        return nanoTimeFinish
+    }
 }

@@ -11,99 +11,102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.testing.junit.runner.util
 
-package com.google.testing.junit.runner.util;
-
-import java.time.Duration;
-import java.time.Instant;
+import com.google.devtools.build.lib.clock.Clock.nanoTime
+import java.time.Instant
 
 /**
  * A time source used to obtain:
- * <li>a monotonic timestamp with no relation to a wall time;
- * <li>a timestamp that can be used to obtain wall time but is not guaranteed to be monotonic.
+ *  * a monotonic timestamp with no relation to a wall time;
+ *  * a timestamp that can be used to obtain wall time but is not guaranteed to be monotonic.
  */
-public abstract class TestClock {
-  /** Constructor for use by subclasses. */
-  protected TestClock() {}
-
-  /**
-   * Returns an immutable value type that contains both a monotonic timestamp (used to measure
-   * relative time but unrelated to wall time) and an EPOCH relative timestamp.
-   */
-  public TestInstant now() {
-    return new TestInstant(wallTime(), monotonicTime());
-  }
-
-  /**
-   * Returns a monotonic timestamp that can only be used to compute relative time.
-   *
-   * <p><b>Warning:</b> the returned timestamp can only be used to measure elapsed time, not wall
-   * time.
-   */
-  abstract Duration monotonicTime();
-
-  /**
-   * A timestamp that may be used to obtain wall time, but is not guaranteed to be monotonic.
-   *
-   * <p><b>Warning:</b> the returned timestamp is not guaranteed to be monotonic, and it may appear
-   * to go back in time in certain cases (e.g. daylight saving time).
-   */
-  abstract Instant wallTime();
-
-  /**
-   * A time source that produces an epoch timestamp using {@link System#currentTimeMillis} and a
-   * monotonic timestamp using {@link System#nanoTime}.
-   */
-  public static TestClock systemClock() {
-    return SYSTEM_TEST_CLOCK;
-  }
-
-  private static final TestClock SYSTEM_TEST_CLOCK =
-      new TestClock() {
-        @Override
-        public Duration monotonicTime() {
-          return Duration.ofNanos(System.nanoTime());
-        }
-
-        @Override
-        public Instant wallTime() {
-          return Instant.ofEpochMilli(System.currentTimeMillis());
-        }
-      };
-
-  /**
-   * An immutable value type that contains both a monotonic timestamp (used to measure relative time
-   * but unrelated to wall time) and an EPOCH timestamp.
-   */
-  public static class TestInstant {
-    public static final TestInstant UNKNOWN = new TestInstant(Instant.EPOCH, Duration.ZERO);
-
-    private final Instant wallTime;
-    private final Duration monotonicTime;
-
-    public TestInstant(Instant wallTime, Duration monotonicTime) {
-      this.wallTime = wallTime;
-      this.monotonicTime = monotonicTime;
-    }
-
+abstract class TestClock
+/** Constructor for use by subclasses.  */
+protected constructor() {
     /**
-     * A timestamp that may be used to obtain wall time, but is not guaranteed to be monotonic.
-     *
-     * <p><b>Warning:</b> the returned timestamp is not guaranteed to be monotonic, and it may
-     * appear to go back in time in certain cases (e.g. daylight saving time).
+     * Returns an immutable value type that contains both a monotonic timestamp (used to measure
+     * relative time but unrelated to wall time) and an EPOCH relative timestamp.
      */
-    public Instant wallTime() {
-      return wallTime;
+    open fun now(): TestInstant? {
+        return TestInstant(wallTime(), monotonicTime())
     }
 
     /**
      * Returns a monotonic timestamp that can only be used to compute relative time.
-     *
-     * <p><b>Warning:</b> the returned timestamp can only be used to measure elapsed time, not wall
+     * 
+     * 
+     * **Warning:** the returned timestamp can only be used to measure elapsed time, not wall
      * time.
      */
-    public Duration monotonicTime() {
-      return monotonicTime;
+    abstract fun monotonicTime(): java.time.Duration?
+
+    /**
+     * A timestamp that may be used to obtain wall time, but is not guaranteed to be monotonic.
+     * 
+     * 
+     * **Warning:** the returned timestamp is not guaranteed to be monotonic, and it may appear
+     * to go back in time in certain cases (e.g. daylight saving time).
+     */
+    abstract fun wallTime(): Instant?
+
+    /**
+     * An immutable value type that contains both a monotonic timestamp (used to measure relative time
+     * but unrelated to wall time) and an EPOCH timestamp.
+     */
+    class TestInstant(wallTime: Instant?, monotonicTime: java.time.Duration?) {
+        private val wallTime: Instant?
+        private val monotonicTime: java.time.Duration?
+
+        init {
+            this.wallTime = wallTime
+            this.monotonicTime = monotonicTime
+        }
+
+        /**
+         * A timestamp that may be used to obtain wall time, but is not guaranteed to be monotonic.
+         * 
+         * 
+         * **Warning:** the returned timestamp is not guaranteed to be monotonic, and it may
+         * appear to go back in time in certain cases (e.g. daylight saving time).
+         */
+        fun wallTime(): Instant? {
+            return wallTime
+        }
+
+        /**
+         * Returns a monotonic timestamp that can only be used to compute relative time.
+         * 
+         * 
+         * **Warning:** the returned timestamp can only be used to measure elapsed time, not wall
+         * time.
+         */
+        fun monotonicTime(): java.time.Duration? {
+            return monotonicTime
+        }
+
+        companion object {
+            val UNKNOWN: TestInstant = TestInstant(Instant.EPOCH, java.time.Duration.ZERO)
+        }
     }
-  }
+
+    companion object {
+        /**
+         * A time source that produces an epoch timestamp using [System.currentTimeMillis] and a
+         * monotonic timestamp using [System.nanoTime].
+         */
+        fun systemClock(): TestClock {
+            return SYSTEM_TEST_CLOCK
+        }
+
+        private val SYSTEM_TEST_CLOCK: TestClock = object : TestClock() {
+            public override fun monotonicTime(): java.time.Duration? {
+                return java.time.Duration.ofNanos(java.lang.System.nanoTime())
+            }
+
+            public override fun wallTime(): Instant? {
+                return Instant.ofEpochMilli(java.lang.System.currentTimeMillis())
+            }
+        }
+    }
 }

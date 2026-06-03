@@ -11,20 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.actions
 
-package com.google.devtools.build.lib.actions;
+/** Counterpart to [ScanningActionEvent]: indicates that scanning is over.  */
+class StoppedScanningActionEvent(action: com.google.devtools.build.lib.actions.Action?) : Postable {
+    private val action: com.google.devtools.build.lib.actions.Action?
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+    init {
+        this.action = action
+    }
 
-/** Counterpart to {@link ScanningActionEvent}: indicates that scanning is over. */
-public final class StoppedScanningActionEvent implements ExtendedEventHandler.Postable {
-  private final Action action;
-
-  public StoppedScanningActionEvent(Action action) {
-    this.action = action;
-  }
-
-  public Action getAction() {
-    return action;
-  }
+    fun getAction(): com.google.devtools.build.lib.actions.Action? {
+        return action
+    }
 }

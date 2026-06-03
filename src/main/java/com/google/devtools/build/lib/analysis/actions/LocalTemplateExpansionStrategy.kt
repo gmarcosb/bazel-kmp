@@ -11,76 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.actions
 
-package com.google.devtools.build.lib.analysis.actions;
+import com.google.devtools.build.lib.actions.AbstractAction
 
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.StringUtilities;
-import java.io.IOException;
-import java.util.List;
-import net.starlark.java.eval.EvalException;
-
-/** Strategy to perform template expansion locally. */
-public class LocalTemplateExpansionStrategy implements TemplateExpansionContext {
-  public static final Class<LocalTemplateExpansionStrategy> TYPE =
-      LocalTemplateExpansionStrategy.class;
-
-  public static LocalTemplateExpansionStrategy INSTANCE = new LocalTemplateExpansionStrategy();
-
-  @Override
-  public ImmutableList<SpawnResult> expandTemplate(
-      AbstractAction action,
-      ActionExecutionContext ctx,
-      TemplateExpansionContext.TemplateMetadata templateMetadata)
-      throws InterruptedException, ExecException {
-    try {
-      final String expandedTemplate =
-          getExpandedTemplateUnsafe(
-              templateMetadata.template(), templateMetadata.substitutions(), ctx.getPathResolver());
-      DeterministicWriter deterministicWriter =
-          out -> out.write(expandedTemplate.getBytes(ISO_8859_1));
-      return ctx.getContext(FileWriteActionContext.class)
-          .writeOutputToFile(
-              action,
-              ctx,
-              deterministicWriter,
-              templateMetadata.makeExecutable(),
-              /* isRemotable= */ true);
-    } catch (IOException | EvalException e) {
-      throw new EnvironmentalExecException(
-          e,
-          FailureDetail.newBuilder()
-              .setExecution(
-                  Execution.newBuilder().setCode(Execution.Code.LOCAL_TEMPLATE_EXPANSION_FAILURE))
-              .build());
+/** Strategy to perform template expansion locally.  */
+class LocalTemplateExpansionStrategy : TemplateExpansionContext {
+    @Throws(java.lang.InterruptedException::class, ExecException::class)
+    override fun expandTemplate(
+        action: AbstractAction?,
+        ctx: ActionExecutionContext,
+        templateMetadata: TemplateMetadata
+    ): com.google.common.collect.ImmutableList<SpawnResult?> {
+        try {
+            val expandedTemplate =
+                getExpandedTemplateUnsafe(
+                    templateMetadata.template, templateMetadata.substitutions, ctx.getPathResolver()
+                )
+            val deterministicWriter: DeterministicWriter =
+                DeterministicWriter { out -> out.write(expandedTemplate.toByteArray(java.nio.charset.StandardCharsets.ISO_8859_1)) }
+            return ctx.getContext(FileWriteActionContext::class.java)
+                .writeOutputToFile(
+                    action,
+                    ctx,
+                    deterministicWriter,
+                    templateMetadata.makeExecutable,  /* isRemotable= */
+                    true
+                )
+        } catch (e: IOException) {
+            throw EnvironmentalExecException(
+                e,
+                FailureDetail.newBuilder()
+                    .setExecution(
+                        Execution.newBuilder().setCode(Execution.Code.LOCAL_TEMPLATE_EXPANSION_FAILURE)
+                    )
+                    .build()
+            )
+        } catch (e: net.starlark.java.eval.EvalException) {
+            throw EnvironmentalExecException(
+                e,
+                FailureDetail.newBuilder()
+                    .setExecution(
+                        Execution.newBuilder().setCode(Execution.Code.LOCAL_TEMPLATE_EXPANSION_FAILURE)
+                    )
+                    .build()
+            )
+        }
     }
-  }
 
-  /**
-   * Get the result of the template expansion prior to executing the action. TODO(b/110418949): Stop
-   * public access to this method as it's unhealthy to evaluate the action result without the action
-   * being executed.
-   */
-  public String getExpandedTemplateUnsafe(
-      Template template, List<Substitution> substitutions, ArtifactPathResolver resolver)
-      throws EvalException, IOException, InterruptedException {
-    String templateString;
-    templateString = template.getContent(resolver);
-    for (Substitution entry : substitutions) {
-      templateString =
-          StringUtilities.replaceAllLiteral(templateString, entry.getKey(), entry.getValue());
+    /**
+     * Get the result of the template expansion prior to executing the action. TODO(b/110418949): Stop
+     * public access to this method as it's unhealthy to evaluate the action result without the action
+     * being executed.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class, IOException::class, java.lang.InterruptedException::class)
+    fun getExpandedTemplateUnsafe(
+        template: com.google.devtools.build.lib.analysis.actions.Template,
+        substitutions: MutableList<com.google.devtools.build.lib.analysis.actions.Substitution>,
+        resolver: ArtifactPathResolver?
+    ): String {
+        var templateString: String
+        templateString = template.getContent(resolver)
+        for (entry in substitutions) {
+            templateString =
+                StringUtilities.replaceAllLiteral(templateString, entry.getKey(), entry.getValue())
+        }
+        return templateString
     }
-    return templateString;
-  }
+
+    companion object {
+        val TYPE: java.lang.Class<LocalTemplateExpansionStrategy?> = LocalTemplateExpansionStrategy::class.java
+
+        var INSTANCE: LocalTemplateExpansionStrategy = LocalTemplateExpansionStrategy()
+    }
 }

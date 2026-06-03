@@ -11,40 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.docgen;
+package com.google.devtools.build.docgen
 
 /**
  * Rule documentation variables for modular rule documentation, e.g.
  * separate section for Implicit outputs.
  */
-public class RuleDocumentationVariable {
-
-  private String ruleName;
-  private String variableName;
-  private String value;
-  private int startLineCnt;
-
-  public RuleDocumentationVariable(
-      String ruleName, String variableName, String value, int startLineCnt) {
-    this.ruleName = ruleName;
-    this.variableName = variableName;
-    this.value = value;
-    this.startLineCnt = startLineCnt;
-  }
-
-  public String getRuleName() {
-    return ruleName;
-  }
-
-  public String getVariableName() {
-    return variableName;
-  }
-
-  public String getValue() {
-    return value;
-  }
-
-  public int getStartLineCnt() {
-    return startLineCnt;
-  }
-}
+class RuleDocumentationVariable(
+    val ruleName: String?,
+    val variableName: String?,
+    val value: String?,
+    val startLineCnt: Int
+)

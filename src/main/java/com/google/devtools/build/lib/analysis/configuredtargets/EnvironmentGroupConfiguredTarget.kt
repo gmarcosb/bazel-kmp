@@ -11,47 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.analysis.configuredtargets
 
-package com.google.devtools.build.lib.analysis.configuredtargets;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.analysis.VisibilityProvider;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
  * Dummy ConfiguredTarget for environment groups. Contains no functionality, since environment
  * groups are not really first-class Targets.
  */
-@Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public final class EnvironmentGroupConfiguredTarget extends AbstractConfiguredTarget {
+class EnvironmentGroupConfiguredTarget(actionLookupKey: ActionLookupKey) :
+    AbstractConfiguredTarget(actionLookupKey, VisibilityProvider.PRIVATE_VISIBILITY) {
+    init {
+        com.google.common.base.Preconditions.checkState(actionLookupKey.getConfigurationKey() == null, actionLookupKey)
+    }
 
-  public EnvironmentGroupConfiguredTarget(ActionLookupKey actionLookupKey) {
-    super(actionLookupKey, VisibilityProvider.PRIVATE_VISIBILITY);
-    Preconditions.checkState(actionLookupKey.getConfigurationKey() == null, actionLookupKey);
-  }
+    override fun rawGetStarlarkProvider(providerKey: Provider.Key?): Info? {
+        return null
+    }
 
-  @Override
-  @Nullable
-  protected Info rawGetStarlarkProvider(Provider.Key providerKey) {
-    return null;
-  }
+    override fun rawGetStarlarkProvider(providerKey: String?): Any? {
+        return null
+    }
 
-  @Override
-  @Nullable
-  protected Object rawGetStarlarkProvider(String providerKey) {
-    return null;
-  }
-
-  @Override
-  public boolean isCreatedInSymbolicMacro() {
-    // Correct, since environment_group isn't allowed in symbolic macros. But that doesn't matter,
-    // since we don't expect this to be called.
-    return false;
-  }
+    public override fun isCreatedInSymbolicMacro(): Boolean {
+        // Correct, since environment_group isn't allowed in symbolic macros. But that doesn't matter,
+        // since we don't expect this to be called.
+        return false
+    }
 }
