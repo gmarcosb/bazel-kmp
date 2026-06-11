@@ -16,6 +16,7 @@ module(
 bazel_dep(name = "abseil-cpp", version = "20250814.1")
 bazel_dep(name = "bazel_features", version = "1.42.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "rules_kotlin", version = "1.9.6")
 bazel_dep(name = "blake3", version = "1.8.2.bcr.1")
 bazel_dep(name = "googleapis-grpc-java", version = "1.0.0")
 bazel_dep(name = "googleapis-java", version = "1.0.0")
@@ -494,3 +495,7 @@ register_toolchains("@local_config_winsdk//:all")
 register_toolchains("//src/main/res:empty_rc_toolchain")
 
 register_toolchains("@graalvm_ce_toolchains//:gvm")
+
+# Kotlin Toolchain
+rules_kotlin_extensions = use_extension("@rules_kotlin//src/main/starlark/core/repositories:bzlmod_setup.bzl", "rules_kotlin_extensions")
+use_repo(rules_kotlin_extensions, "com_github_jetbrains_kotlin")

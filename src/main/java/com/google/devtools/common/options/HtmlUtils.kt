@@ -13,7 +13,6 @@
 // limitations under the License.
 package com.google.devtools.common.options
 
-import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
 import com.google.devtools.build.lib.util.Markdown
 import java.util.stream.Collectors
 
@@ -148,7 +147,7 @@ object HtmlUtils {
         }
         usage.append("</dt>\n")
         usage.append("<dd>\n")
-        if (!optionDefinition.getHelpText().isEmpty()) {
+        if (!optionDefinition.getHelpText()?.isEmpty() == true) {
             usage.append(Markdown.renderToHtml(optionDefinition.getHelpText()))
             usage.append('\n')
         }

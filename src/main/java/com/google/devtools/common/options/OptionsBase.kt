@@ -38,7 +38,6 @@ package com.google.devtools.common.options
  * `new MyOptions()`, but one of the above methods instead. (Direct construction creates an
  * empty instance, not containing default values. This leads to surprising behavior and often `NullPointerExceptions`, etc.)
  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 abstract class OptionsBase
 /** Subclasses must provide a default (no argument) constructor.  */
 protected constructor() {
@@ -48,6 +47,6 @@ protected constructor() {
      * the generated implementation class.
      */
     fun getOptionsClass(): java.lang.Class<out OptionsBase?> {
-        return getClass()
+        return this::class.java
     }
 }

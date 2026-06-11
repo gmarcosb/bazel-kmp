@@ -1,4 +1,5 @@
 load("@rules_java//java:defs.bzl", "java_library")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
 # Description:
 #   A devtools-common options parser.
@@ -10,18 +11,18 @@ package(
 
 filegroup(
     name = "srcs",
-    srcs = glob(["**"]) + [
+    srcs = glob(["**"], allow_empty = True) + [
         "//src/main/java/com/google/devtools/common/options/processor:srcs",
         "//src/main/java/com/google/devtools/common/options/testing:srcs",
     ],
     visibility = ["//src:__subpackages__"],
 )
 
-java_library(
+kt_jvm_library(
     name = "invocation_policy",
     srcs = [
-        "InvocationPolicyEnforcer.java",
-        "InvocationPolicyParser.java",
+        "InvocationPolicyEnforcer.kt", "InvocationPolicyEnforcer.java",
+        "InvocationPolicyParser.kt", "InvocationPolicyParser.java",
     ],
     deps = [
         ":options_internal",
@@ -33,23 +34,23 @@ java_library(
     ],
 )
 
-java_library(
+kt_jvm_library(
     name = "options",
-    exported_plugins = [
+    plugins = [
         "//src/main/java/com/google/devtools/common/options/processor:options_preprocessor",
         "//src/main/java/com/google/devtools/common/options/processor:options_class_processor",
     ],
     exports = [":options_internal"],
 )
 
-java_library(
+kt_jvm_library(
     name = "options_internal",
     srcs = glob(
-        ["*.java"],
+        ["*.kt", "*.java"], allow_empty = True,
         exclude = [
-            "HtmlUtils.java",
-            "InvocationPolicyEnforcer.java",
-            "InvocationPolicyParser.java",
+            "HtmlUtils.kt", "HtmlUtils.java",
+            "InvocationPolicyEnforcer.kt", "InvocationPolicyEnforcer.java",
+            "InvocationPolicyParser.kt", "InvocationPolicyParser.java",
         ],
     ),
     deps = [
@@ -65,9 +66,9 @@ java_library(
     ],
 )
 
-java_library(
+kt_jvm_library(
     name = "html_utils",
-    srcs = ["HtmlUtils.java"],
+    srcs = ["HtmlUtils.kt", "HtmlUtils.java"],
     deps = [
         ":options_internal",
         "//src/main/java/com/google/devtools/build/lib/util:markdown",

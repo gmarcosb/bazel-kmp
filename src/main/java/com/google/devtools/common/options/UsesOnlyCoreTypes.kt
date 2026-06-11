@@ -37,8 +37,8 @@ annotation class UsesOnlyCoreTypes {
          * 
          * Lists are not considered core types, so [Option.allowMultiple] options are not permitted.
          */
-        val CORE_TYPES: com.google.common.collect.ImmutableList<java.lang.Class<*>?> =
-            com.google.common.collect.ImmutableList.of<java.lang.Class<*>?>( // 1:1 correspondence with Converters.DEFAULT_CONVERTERS.
+        val CORE_TYPES: com.google.common.collect.ImmutableList<java.lang.Class<*>> =
+            com.google.common.collect.ImmutableList.of<java.lang.Class<*>>( // 1:1 correspondence with Converters.DEFAULT_CONVERTERS.
                 String::class.java,
                 Int::class.javaPrimitiveType,
                 Long::class.javaPrimitiveType,

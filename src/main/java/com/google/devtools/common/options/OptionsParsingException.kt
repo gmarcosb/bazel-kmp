@@ -18,9 +18,7 @@ package com.google.devtools.common.options
  * 
  * @see OptionsParser.parse
  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 open class OptionsParsingException : java.lang.Exception {
-    @kotlin.jvm.JvmField
     private val invalidArgument: String?
 
     @kotlin.jvm.JvmOverloads

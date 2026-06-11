@@ -1,3 +1,4 @@
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 // Copyright 2014 The Bazel Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +15,6 @@
 package com.google.devtools.common.options
 
 /** Enum used to represent tri-state options (yes/no/auto).  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 enum class TriState {
     YES,
     NO,

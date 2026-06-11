@@ -13,7 +13,6 @@
 // limitations under the License.
 package com.google.devtools.common.options
 
-import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
 
 /**
  * A helper class for [OptionsParserImpl] to help checking the return type
@@ -35,7 +34,7 @@ internal object GenericTypeHelper {
         if (t is java.lang.Class<*>) {
             return t as java.lang.Class<*>
         } else if (t is java.lang.reflect.ParameterizedType) {
-            return (t as java.lang.reflect.ParameterizedType).getRawType() as java.lang.Class<*>?
+            return (t as java.lang.reflect.ParameterizedType).getRawType() as java.lang.Class<*>
         } else {
             throw java.lang.AssertionError("A known concrete type is not concrete")
         }
@@ -53,7 +52,7 @@ internal object GenericTypeHelper {
         if (type is java.lang.reflect.ParameterizedType) {
             val rawInterfaceType: java.lang.Class<*> =
                 com.google.devtools.common.options.GenericTypeHelper.getRawType(type)
-            val typeParameters: Array<java.lang.reflect.TypeVariable<*>?> = rawInterfaceType.getTypeParameters()
+            val typeParameters: Array<out java.lang.reflect.TypeVariable<*>> = rawInterfaceType.getTypeParameters()
             for (i in typeParameters.indices) {
                 if (variable == typeParameters[i]) {
                     return (type as java.lang.reflect.ParameterizedType).getActualTypeArguments()[i]

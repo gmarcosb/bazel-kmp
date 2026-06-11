@@ -1,4 +1,6 @@
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_library", "java_test")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -14,12 +16,12 @@ filegroup(
     visibility = ["//src:__subpackages__"],
 )
 
-java_library(
+kt_jvm_library(
     name = "testutils",
     testonly = 1,
     srcs = [
-        "InvocationPolicyEnforcerTestBase.java",
-        "TestOptions.java",
+        "InvocationPolicyEnforcerTestBase.kt", "InvocationPolicyEnforcerTestBase.java",
+        "TestOptions.kt", "TestOptions.java",
     ],
     deps = [
         "//src/main/java/com/google/devtools/build/lib/runtime:blaze_server_startup_options",
@@ -31,13 +33,14 @@ java_library(
     ],
 )
 
-java_test(
+kt_jvm_test(
     name = "AllTests",
+    test_class = "com.google.devtools.build.lib.AllTests",
     srcs = glob(
-        ["*.java"],
+        ["*.kt", "*.java"], allow_empty = True,
         exclude = [
-            "TestOptions.java",
-            "InvocationPolicyEnforcerTestBase.java",
+            "TestOptions.kt", "TestOptions.java",
+            "InvocationPolicyEnforcerTestBase.kt", "InvocationPolicyEnforcerTestBase.java",
         ],
     ),
     deps = [
