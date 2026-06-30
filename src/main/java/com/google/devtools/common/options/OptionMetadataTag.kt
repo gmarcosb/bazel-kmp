@@ -1,3 +1,4 @@
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 // Copyright 2017 The Bazel Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +18,7 @@ package com.google.devtools.common.options
  * On top of categorizing options by their intended purpose, these tags should identify options that
  * are either not supported or are intended to break old behavior.
  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
-enum class OptionMetadataTag(@kotlin.jvm.JvmField private val value: Int) {
+enum class OptionMetadataTag(private val value: Int) {
     /**
      * This option triggers an experimental feature with no guarantees of functionality.
      * 

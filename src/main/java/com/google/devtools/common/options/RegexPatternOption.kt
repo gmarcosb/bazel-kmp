@@ -50,18 +50,18 @@ abstract class RegexPatternOption {
         }
 
         val otherOption = other
-        return otherOption.regexPattern().pattern() == regexPattern().pattern()
+        return otherOption.regexPattern()?.pattern() == regexPattern()?.pattern()
     }
 
     override fun hashCode(): Int {
-        return regexPattern().pattern().hashCode()
+        return regexPattern()?.pattern().hashCode()
     }
 
     companion object {
-        fun create(regexPattern: java.util.regex.Pattern?): RegexPatternOption {
+        @JvmStatic fun create(regexPattern: java.util.regex.Pattern?): RegexPatternOption {
             return AutoValue_RegexPatternOption(
-                com.google.common.base.Preconditions.checkNotNull<T?>(regexPattern),
-                com.google.devtools.build.lib.util.regex.RegexUtil.asOptimizedMatchingPredicate(regexPattern)
+                com.google.common.base.Preconditions.checkNotNull(regexPattern),
+                com.google.devtools.build.lib.util.regex.RegexUtil.asOptimizedMatchingPredicate(regexPattern!!)
             )
         }
     }

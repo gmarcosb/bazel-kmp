@@ -19,7 +19,6 @@ import java.util.Collections
  * A read-only interface for options parser results, which only allows to query the options of a
  * specific class, but not e.g. the residue any other information pertaining to the command line.
  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 interface OptionsProvider {
     /**
      * Returns the options instance for the given `optionsClass`, that is, the parsed options,

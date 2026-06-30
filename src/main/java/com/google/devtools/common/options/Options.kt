@@ -29,7 +29,7 @@ import java.util.LinkedHashMap
  * try {
  * parser.parse(FooOptions.class, args);
  * } catch (OptionsParsingException e) {
- * System.err.print("Error parsing options: " + e.getMessage());
+ * System.err.print("Error parsing options: " + e.message);
  * System.err.print(options.getUsage());
  * System.exit(1);
  * }
@@ -42,8 +42,8 @@ import java.util.LinkedHashMap
  * @see OptionsParser for parsing options from multiple options specification classes.
  */
 class Options<O : com.google.devtools.common.options.OptionsBase?> private constructor(
-  @kotlin.jvm.JvmField private val options: O?,
-  @kotlin.jvm.JvmField private val remainingArgs: Array<String?>?
+  private val options: O?,
+  private val remainingArgs: Array<String?>?
 ) {
     /**
      * Returns an instance of options class O.
@@ -70,7 +70,7 @@ class Options<O : com.google.devtools.common.options.OptionsBase?> private const
             vararg args: String?
         ): Options<O?> {
             val parser: com.google.devtools.common.options.OptionsParser =
-                com.google.devtools.common.options.OptionsParser.Companion.builder().optionsClasses(optionsClass)
+                com.google.devtools.common.options.OptionsParser.builder().optionsClasses(optionsClass)
                     .build()
             parser.parse(
                 com.google.devtools.common.options.OptionPriority.PriorityCategory.COMMAND_LINE,
@@ -80,7 +80,7 @@ class Options<O : com.google.devtools.common.options.OptionsBase?> private const
             val remainingArgs: MutableList<String?> = parser.getResidue()
             return com.google.devtools.common.options.Options<O?>(
                 parser.getOptions<O?>(optionsClass), remainingArgs.toArray<String?>(
-                    arrayOfNulls<String>(0)
+                    java.util.function.IntFunction { length -> arrayOfNulls<String>(length) }
                 )
             )
         }
@@ -96,7 +96,7 @@ class Options<O : com.google.devtools.common.options.OptionsBase?> private const
                     *arrayOfNulls<String>(0)
                 ).getOptions()
             } catch (e: com.google.devtools.common.options.OptionsParsingException) {
-                val message = "Error while parsing defaults: " + e.getMessage()
+                val message = "Error while parsing defaults: " + e.message
                 throw java.lang.AssertionError(message)
             }
         }
@@ -118,9 +118,9 @@ class Options<O : com.google.devtools.common.options.OptionsBase?> private const
          */
         fun <O : com.google.devtools.common.options.OptionsBase?> toMap(options: O?): MutableMap<String?, Any?> {
             val definitions: com.google.common.collect.ImmutableList<out com.google.devtools.common.options.OptionDefinition> =
-                com.google.devtools.common.options.IsolatedOptionsData.Companion.getAllOptionDefinitionsForClass(options.getOptionsClass())
+                com.google.devtools.common.options.IsolatedOptionsData.getAllOptionDefinitionsForClass(options?.getOptionsClass()!!)
             val map: LinkedHashMap<String?, Any?> =
-                com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize<String?, Any?>(definitions.size())
+                com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize<String?, Any?>(definitions.size)
             for (definition in definitions) {
                 map.put(definition.getOptionName(), definition.getValue(options))
             }

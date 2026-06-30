@@ -34,3 +34,4 @@ eclipse-*bin/
 .bazelversion
 # User-specific .bazelrc
 user.bazelrc
+*.py\n*.sh\nBUILD.kt_test

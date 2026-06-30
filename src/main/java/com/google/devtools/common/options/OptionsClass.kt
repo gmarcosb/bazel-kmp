@@ -28,7 +28,6 @@ package com.google.devtools.common.options
  * contain a field, a getter and a setter method for each method annotated with `@Option`
  * .
  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class OptionsClass 

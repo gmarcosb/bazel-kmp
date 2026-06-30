@@ -1,4 +1,5 @@
 load("@rules_java//java:defs.bzl", "java_library", "java_plugin")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
 # Description:
 #   A preprocessor for the annotations used in the options parser.
@@ -9,7 +10,7 @@ package(
 
 filegroup(
     name = "srcs",
-    srcs = glob(["**"]),
+    srcs = glob(["**"], allow_empty = True),
     visibility = ["//src:__subpackages__"],
 )
 
@@ -26,9 +27,9 @@ java_plugin(
     deps = [":options_preprocessor_lib"],
 )
 
-java_library(
+kt_jvm_library(
     name = "options_preprocessor_lib",
-    srcs = glob(["*.java"]),
+    srcs = glob(["*.kt", "*.java"], allow_empty = True),
     deps = [
         "//src/main/java/com/google/devtools/common/options:options_internal",
         "//third_party:guava",

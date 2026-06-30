@@ -1,3 +1,4 @@
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_test")
 
 package(
@@ -12,7 +13,7 @@ filegroup(
     visibility = ["//src:__subpackages__"],
 )
 
-java_test(
+kt_jvm_test(
     name = "OptionProcessorTest",
     srcs = ["OptionProcessorTest.java"],
     resources = [":OptionTestFiles"],
@@ -26,7 +27,7 @@ java_test(
     ],
 )
 
-java_test(
+kt_jvm_test(
     name = "OptionsClassProcessorTest",
     srcs = ["OptionsClassProcessorTest.java"],
     resources = [":OptionTestFiles"],
@@ -42,5 +43,5 @@ java_test(
 
 filegroup(
     name = "OptionTestFiles",
-    srcs = glob(["optiontestsources/*.java"]),
+    srcs = glob(["optiontestsources/*.java", "optiontestsources/*.kt"], allow_empty = True),
 )

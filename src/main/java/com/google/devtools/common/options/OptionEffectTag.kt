@@ -1,3 +1,4 @@
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
 // Copyright 2017 The Bazel Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,8 +58,7 @@ package com.google.devtools.common.options
  * file a bug against flag owners or go through them yourself. This is not meant to block you from
  * adding tags, just to keep the end state sane.
  */
-@com.google.devtools.build.lib.skybridge.SkybridgeInterface
-enum class OptionEffectTag(@kotlin.jvm.JvmField private val value: Int) {
+enum class OptionEffectTag(private val value: Int) {
     /**
      * This option's effect or intent is unknown.
      * 

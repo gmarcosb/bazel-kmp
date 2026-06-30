@@ -1,3 +1,4 @@
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_library", "java_test")
 
 # Description:
@@ -17,11 +18,10 @@ filegroup(
     visibility = ["//src:__subpackages__"],
 )
 
-java_library(
+kt_jvm_library(
     name = "OptionsTesterTest_lib",
-    srcs = glob(["*.java"]),
-    javacopts = [
-    ],
+    srcs = glob(["*.java", "*.kt"], allow_empty = True),
+
     deps = [
         "//src/main/java/com/google/devtools/common/options",
         "//src/main/java/com/google/devtools/common/options/testing",
@@ -32,7 +32,7 @@ java_library(
     ],
 )
 
-java_test(
+kt_jvm_test(
     name = "OptionsTesterTest",
     test_class = "com.google.devtools.common.options.testing.AllTests",
     runtime_deps = [":OptionsTesterTest_lib"],

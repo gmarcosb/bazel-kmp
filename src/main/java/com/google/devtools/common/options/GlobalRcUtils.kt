@@ -27,20 +27,20 @@ object GlobalRcUtils {
         )
 
     /** No global RC files in Bazel. Consider "client" options to be global.  */
-    val IS_GLOBAL_RC_OPTION: java.util.function.Predicate<com.google.devtools.common.options.ParsedOptionDescription?> =
+    @JvmField val IS_GLOBAL_RC_OPTION: java.util.function.Predicate<com.google.devtools.common.options.ParsedOptionDescription?> =
         // LINT.IfChange
         java.util.function.Predicate { option: com.google.devtools.common.options.ParsedOptionDescription? ->
             for (globalRc in com.google.devtools.common.options.GlobalRcUtils.GLOBAL_RC_FILES) {
                 // Don't match the full RC file location to be resilient to builds with the same global
                 // RC but different workspaces.
-                if (option.getOrigin().getSource() != null
-                    && option.getOrigin().getSource().endsWith(globalRc)
+                if (option?.getOrigin()?.getSource() != null
+                    && option?.getOrigin()?.getSource()?.endsWith(globalRc!!) == true
                 ) {
                     return@Predicate true
                 }
-                if (option.getExpandedFrom() != null) {
-                    if (option.getExpandedFrom().getOrigin().getSource() != null
-                        && option.getExpandedFrom().getOrigin().getSource().endsWith(globalRc)
+                if (option?.getExpandedFrom() != null) {
+                    if (option?.getExpandedFrom()?.getOrigin()?.getSource() != null
+                        && option?.getExpandedFrom()?.getOrigin()?.getSource()?.endsWith(globalRc!!) == true
                     ) {
                         return@Predicate true
                     }
@@ -54,7 +54,7 @@ object GlobalRcUtils {
     /** Is an rc file path a global rc?  */
     fun isGlobalRcFile(rcFilePath: String): Boolean {
         for (globalRc in com.google.devtools.common.options.GlobalRcUtils.GLOBAL_RC_FILES) {
-            if (rcFilePath.endsWith(globalRc)) {
+            if (rcFilePath.endsWith(globalRc!!)) {
                 return true
             }
         }
