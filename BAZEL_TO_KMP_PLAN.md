@@ -88,7 +88,11 @@ To prevent compilation errors from spiraling out of control, a "Big Bang" migrat
 
 If resuming work on this repository today, **do not attempt to fix all `Converter` implementations at once.**
 
-1.  **Revert** the highly broken auto-converted `Converter.kt`, `Converters.kt`, `BoolOrEnumConverter.kt`, and `EnumConverter.kt` back to `.java` temporarily.
-2.  **Verify** that the rest of the parsing logic (`OptionsParserImpl.kt`, `IsolatedOptionsData.kt`) compiles cleanly when referencing the Java Converter interfaces. This establishes a functioning baseline.
-3.  **Migrate** the Converters one at a time, strictly enforcing the `T` vs `T?` nullability contracts manually rather than relying on regex replacements, ensuring `kt_jvm_library` compiles successfully after *each* file.
+1.  [COMPLETED] **Revert** the highly broken auto-converted `Converter.kt`, `Converters.kt`, `BoolOrEnumConverter.kt`, and `EnumConverter.kt` back to `.java` temporarily.
+2.  [COMPLETED] **Verify** that the rest of the parsing logic (`OptionsParserImpl.kt`, `IsolatedOptionsData.kt`) compiles cleanly when referencing the Java Converter interfaces. This establishes a functioning baseline.
+3.  [IN PROGRESS] **Migrate** the Converters one at a time, strictly enforcing the `T` vs `T?` nullability contracts manually rather than relying on regex replacements, ensuring `kt_jvm_library` compiles successfully after *each* file.
+    *   [DONE] `Converter.kt`
+    *   [DONE] `EnumConverter.kt`
+    *   [DONE] `BoolOrEnumConverter.kt`
+    *   [PENDING] `Converters.java`
 4.  Once `options` compiles cleanly as a mixed Kotlin/Java JVM library, begin **Phase 2** (removing `java.util.regex`, `java.nio.file`, etc.).
